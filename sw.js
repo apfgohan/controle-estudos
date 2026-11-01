@@ -1,7 +1,7 @@
 // Service worker: guarda os arquivos do programa para abrir sem internet.
 // Busca sempre a versão nova na rede primeiro (atualizações chegam sozinhas) e usa a cópia guardada só offline.
 // Os dados não passam por aqui: ficam no navegador e na nuvem.
-var CACHE = 'controle-estudos-v1';
+var CACHE = 'controle-estudos-v2';
 
 self.addEventListener('install', function () { self.skipWaiting(); });
 self.addEventListener('activate', function (e) {
@@ -18,7 +18,9 @@ self.addEventListener('fetch', function (e) {
   var proprio = url.origin === self.location.origin;
   var sdk = url.hostname === 'www.gstatic.com' && url.pathname.indexOf('/firebasejs/') === 0;
   if (!proprio && !sdk) return;
-  e.respondWith(fetch(req).then(function (resp) {
+  // 'no-cache' confere com o servidor a cada abertura: evita misturar arquivos novos e antigos depois de uma atualização.
+  var busca = proprio ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(req);
+  e.respondWith(busca.then(function (resp) {
     if (resp.ok) { var copia = resp.clone(); caches.open(CACHE).then(function (c) { c.put(req, copia); }); }
     return resp;
   }).catch(function () {
