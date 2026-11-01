@@ -254,6 +254,23 @@ h1, h2, p { margin: 0; }
 
 /* Pasta "Cadernos de Teoria" e baterias */
 .pasta-teoria { border-color: var(--azul-borda); }
+.pasta-revisao { border-color: var(--verde-borda); }
+
+/* Lançar estudo: favoritadas e revisão por assunto */
+.linha-caderno-grupo { display: flex; flex-direction: column; gap: 6px; }
+.opcao-finalizado { font-size: 13px; color: var(--verde-texto); padding-left: 2px; }
+.lista-assuntos { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; padding: 8px; border: 1px solid var(--borda); border-radius: 12px; background: var(--superficie); }
+.assunto-linha { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
+.assunto-linha:hover { background: var(--superficie-2); }
+.assunto-linha .revisao-assunto { flex: 1; min-width: 0; }
+.assunto-linha.revisto .revisao-nome { color: var(--texto-3); text-decoration: line-through; }
+.assunto-linha .selo-erro { min-width: 56px; font-size: 12px; padding: 2px 8px; }
+.assunto-num { display: flex; flex-direction: column; gap: 2px; font-size: 11px; font-weight: 700; color: var(--texto-3); }
+.assunto-num input { width: 70px; padding: 6px 8px; border: 1px solid var(--borda); border-radius: 10px; background: var(--superficie-2); }
+@media (max-width: 700px) {
+  .assunto-linha { flex-wrap: wrap; }
+  .assunto-linha .revisao-assunto { flex-basis: 100%; }
+}
 .pasta-teoria-info { padding: 0 20px 6px; display: flex; flex-direction: column; gap: 8px; }
 .pasta-teoria-info > p { font-size: 13px; }
 .pasta-teoria-avisos { list-style: none; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--amarelo-claro); border: 1px solid var(--amarelo-borda); color: var(--amarelo-texto); font-size: 13px; font-weight: 600; display: flex; flex-direction: column; gap: 4px; }
@@ -576,6 +593,10 @@ a.rec-caderno:hover { text-decoration: underline; }
 .rec-rodape { display: flex; justify-content: flex-end; }
 .rec-rodape .btn { padding: 7px 14px; font-size: 13px; }
 .rec-rodape .btn .icone { width: 10px; height: 10px; }
+.recomendacao.rec-revisao { background: var(--verde-claro); border-color: var(--verde-borda); }
+.rec-revisao .rec-topo .icone, .rec-revisao .rec-rotulo, .rec-revisao a, .rec-revisao .rec-caderno { color: var(--verde-texto); }
+.rec-revisao .rec-progresso { border-top-color: var(--verde-borda); }
+.rec-revisao .alerta-lista { margin-bottom: 2px; }
 .rec-depois { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--texto-2); }
 .rec-depois-rotulo { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--texto-3); }
 .selo-modo { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px; font-size: 12px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; }

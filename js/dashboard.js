@@ -284,7 +284,7 @@ var Dashboard = (function () {
   // depois, Modo Revisão com os pontos fracos das Estatísticas.
   function recomendacao(d, plano) {
     if (!plano.blocos) return null;
-    return plano.concluido ? alertaPontosFracos(d) : recomendacaoLeitura(d, plano);
+    return plano.concluido ? recomendacaoRevisao(d) : recomendacaoLeitura(d, plano);
   }
 
   function seloModo(plano) {
@@ -378,43 +378,80 @@ var Dashboard = (function () {
     ]);
   }
 
-  // Alerta de assuntos com desempenho baixo (das Estatísticas) que ainda não foram revistos.
-  // Só aparece no Modo Revisão (Modo Teoria concluído: toda a teoria e todas as baterias).
-  function alertaPontosFracos(d) {
-    if (!window.Estatisticas || !Dados.db.importacoes.length) return null;
-    var fracos = Estatisticas.pontosFracos(d.id);
-    var pendentes = fracos.filter(function (t) { return !t.revisto; });
-    if (!fracos.length) return null;
-    if (!pendentes.length) {
-      return el('div', { class: 'alerta-revisao ok' }, [
-        UI.icone('check'),
-        el('span', { text: 'Todos os ' + fracos.length + ' pontos fracos desta matéria já foram revistos. Voltam a aparecer se continuarem fracos na próxima planilha.' })
-      ]);
+  // ---------- Recomendação do Modo Revisão ----------
+  // Ciclo: caderno de simulado → favoritadas (dúvidas, depois erradas 2x+) → pontos fracos → próximo simulado.
+  // plano.simulado já é o caderno da vez (ou o próximo, quando a etapa atual é favoritadas ou fracos).
+  function textoEtapaRevisao(etapa, plano) {
+    if (etapa === 'simulado') {
+      var c = plano.simulado;
+      return c ?'Resolver o caderno de simulado "' + c.nome + '"' : 'Resolver um novo caderno de simulado';
     }
-    var muito = pendentes.filter(function (t) { return t.classe === 'muito'; }).length;
-    var MOSTRAR = 4;
-    return el('div', { class: 'alerta-revisao' + (muito ? ' urgente' : '') }, [
-      el('div', { class: 'alerta-topo' }, [
-        UI.icone('alerta'),
-        el('strong', { text: muito
-          ? 'Revisar com urgência: ' + pendentes.length + (pendentes.length === 1 ? ' assunto com desempenho baixo' : ' assuntos com desempenho baixo')
-          : pendentes.length + (pendentes.length === 1 ? ' assunto importante para revisar' : ' assuntos importantes para revisar') }),
-        el('span', { class: 'data-fraca', text: muito ? muito + ' com 30% de erro ou mais' : '' })
-      ]),
-      el('ul', { class: 'alerta-lista' }, pendentes.slice(0, MOSTRAR).map(function (t) {
-        return el('li', null, [
-          Estatisticas.seloErro(t),
-          el('span', { class: 'alerta-assunto' }, [
-            el('span', { text: t.nome }),
-            t.caminho.length ? el('span', { class: 'data-fraca', text: ' · ' + t.caminho[t.caminho.length - 1] }) : null
-          ]),
-          el('span', { class: 'data-fraca alerta-num', text: t.erros + ' erros em ' + t.feitas })
+    if (etapa === 'duvidas') return 'Resolver as questões favoritadas em que fiquei em dúvida';
+    if (etapa === 'erros2x') return 'Resolver as questões favoritadas que errei 2x ou mais';
+    return 'Revisar os assuntos em que estou mais fraco';
+  }
+
+  function linkQuestoes(d, texto) { return el('a', { href: '#/questoes/' + d.id, text: texto }); }
+
+  function recomendacaoRevisao(d) {
+    var plano = Dados.planoRevisao(d.id);
+    var etapa = plano.etapa, detalhe, acao;
+
+    if (etapa === 'simulado') {
+      var c = plano.simulado;
+      if (!c) {
+        detalhe = el('p', { class: 'data-fraca' }, [plano.simulados.length ? 'Todos os cadernos de simulado já foram resolvidos. ' : 'Ainda não há cadernos de simulado. ',
+          linkQuestoes(d, 'Cadastre um novo na pasta "' + Dados.NOME_PASTA_SIMULADO + '"'), ' (de preferência com questões de todos os assuntos).']);
+      } else if (!c.totalQuestoes) {
+        detalhe = el('p', { class: 'data-fraca' }, ['Informe o total de questões do caderno "' + c.nome + '" ', linkQuestoes(d, 'em Questões'), '.']);
+      } else {
+        detalhe = el('div', { class: 'rec-bateria' }, [
+          el('div', { class: 'rec-bateria-linha' }, [linkCaderno(c), el('span', { class: 'rec-faltam', text: textoFaltam(plano.simuladoFeitas, c.totalQuestoes, 'deste caderno') })]),
+          plano.simuladoFeitas ? UI.barra(plano.simuladoFeitas / c.totalQuestoes * 100) : null
         ]);
-      })),
-      el('div', { class: 'alerta-rodape' }, [
-        pendentes.length > MOSTRAR ? el('span', { class: 'data-fraca', text: '+ ' + (pendentes.length - MOSTRAR) + ' outros' }) : el('span'),
-        UI.botao('Lançar revisão', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'revisao' }); }, 'btn-revisao', 'play')
-      ])
+        acao = UI.botao('Lançar questões', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [c.id] }); }, 'btn-primario', 'play');
+      }
+    } else if (etapa === 'duvidas' || etapa === 'erros2x') {
+      var f = plano.favoritas[etapa];
+      if (!f) {
+        detalhe = el('p', { class: 'data-fraca' }, ['Ainda não há o caderno de ' + Dados.GRUPOS_FAVORITAS[etapa].toLowerCase() + '. ',
+          linkQuestoes(d, 'Cadastre-o na pasta "' + Dados.NOME_PASTA_FAVORITAS + '"'), '.']);
+      } else {
+        detalhe = el('div', { class: 'rec-bateria' }, [
+          el('div', { class: 'rec-bateria-linha' }, [linkCaderno(f), el('span', { class: 'rec-faltam', text: 'Resolva todas as questões do caderno' })]),
+          el('p', { class: 'data-fraca', text: 'Ao lançar a sessão, marque "Finalizei este caderno" quando terminar. Até lá, ele continua sendo recomendado.' })
+        ]);
+        acao = UI.botao('Lançar questões', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [f.id] }); }, 'btn-primario', 'play');
+      }
+    } else {
+      var pendentes = plano.fracos.filter(function (t) { return !t.revisto; });
+      var nAssuntos = Object.keys(plano.fracosAssuntos).length;
+      var progresso = Math.max(plano.fracosQuestoes / plano.metaQuestoes, plano.metaAssuntos ? nAssuntos / plano.metaAssuntos : 0);
+      detalhe = el('div', { class: 'rec-bateria' }, [
+        pendentes.length ? el('ul', { class: 'alerta-lista' }, pendentes.slice(0, 4).map(function (t) {
+          return el('li', null, [Estatisticas.seloErro(t), el('span', { class: 'alerta-assunto', text: t.nome }), el('span', { class: 'data-fraca alerta-num', text: t.erros + ' erros em ' + t.feitas })]);
+        }).concat(pendentes.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (pendentes.length - 4) + ' outros' })] : []))
+          : el('p', { class: 'data-fraca', text: 'Todos os pontos fracos já foram revistos; lance questões de qualquer um deles.' }),
+        el('span', { class: 'rec-faltam', text: 'Termina com ' + plano.metaQuestoes + ' questões (' + plano.fracosQuestoes + ' feitas) ou ' +
+          plano.metaAssuntos + (plano.metaAssuntos === 1 ? ' assunto' : ' assuntos diferentes') + ' (' + nAssuntos + ' revisto' + (nAssuntos === 1 ? '' : 's') + ')' }),
+        progresso ? UI.barra(Math.min(1, progresso) * 100) : null
+      ]);
+      acao = UI.botao('Lançar revisão', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'revisao' }); }, 'btn-primario', 'play');
+    }
+
+    var SEGUINTE = { simulado: 'duvidas', duvidas: 'erros2x', erros2x: 'fracos', fracos: 'simulado' };
+    var depois = SEGUINTE[etapa];
+    if (depois === 'fracos' && !plano.fracos.length) depois = 'simulado'; // sem pontos fracos, a etapa é pulada
+    return el('div', { class: 'recomendacao rec-revisao' }, [
+      el('div', { class: 'rec-topo' }, [UI.icone(etapa === 'fracos' ? 'alerta' : 'caderno2'), el('span', { class: 'rec-rotulo', text: 'Recomendação' })]),
+      el('div', { class: 'rec-principal' }, [el('strong', { class: 'rec-titulo', text: textoEtapaRevisao(etapa, plano) }), detalhe]),
+      acao ? el('div', { class: 'rec-rodape' }, acao) : null,
+      el('div', { class: 'rec-depois' }, [
+        el('span', { class: 'rec-depois-rotulo', text: 'Em seguida' }),
+        el('span', { text: textoEtapaRevisao(depois, plano) })
+      ]),
+      el('div', { class: 'rec-progresso data-fraca', text: 'Volta ' + plano.rodada + ' do Modo Revisão · ' + plano.simuladosConcluidos +
+        (plano.simuladosConcluidos === 1 ? ' simulado concluído' : ' simulados concluídos') })
     ]);
   }
 

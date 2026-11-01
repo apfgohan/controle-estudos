@@ -44,15 +44,18 @@ var Dados = (function () {
   // Toda disciplina tem exatamente uma de cada (pasta.tipo = 'teoria' / 'erros'):
   // teoria = um caderno por bloco; erros = um caderno por par de blocos (1-2, 3-4, …).
   // Se já existir uma pasta com o nome, ela é aproveitada. Os nomes são reservados.
+  // Modo Revisão: simulado = cadernos com todos os assuntos; favoritas = um caderno de dúvidas e um de erradas 2x+.
   var NOME_PASTA_TEORIA = 'Cadernos de Teoria';
   var NOME_PASTA_ERROS = 'Cadernos de Erros';
-  var PASTAS_FIXAS = [['teoria', NOME_PASTA_TEORIA], ['erros', NOME_PASTA_ERROS]];
+  var NOME_PASTA_SIMULADO = 'Cadernos de Simulado';
+  var NOME_PASTA_FAVORITAS = 'Cadernos de Favoritadas';
+  var PASTAS_FIXAS = [['teoria', NOME_PASTA_TEORIA], ['erros', NOME_PASTA_ERROS], ['simulado', NOME_PASTA_SIMULADO], ['favoritas', NOME_PASTA_FAVORITAS]];
 
   function chaveNome(t) { return (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase(); }
   function nomeReservado(nome) {
     return PASTAS_FIXAS.filter(function (f) { return chaveNome(f[1]) === chaveNome(nome); }).map(function (f) { return f[1]; })[0] || null;
   }
-  function pastaFixa(p) { return !!p && (p.tipo === 'teoria' || p.tipo === 'erros'); }
+  function pastaFixa(p) { return !!p && PASTAS_FIXAS.some(function (f) { return f[0] === p.tipo; }); }
 
   function garantirPastasTeoria(dados) {
     dados.disciplinas.forEach(function (disc) {
@@ -61,10 +64,11 @@ var Dados = (function () {
         if (dela.some(function (p) { return p.tipo === f[0]; })) return;
         var existente = dela.filter(function (p) { return !p.tipo && chaveNome(p.nome) === chaveNome(f[1]); })[0];
         if (existente) { existente.tipo = f[0]; existente.nome = f[1]; return; }
-        // Teoria vai para o começo; Erros logo depois da de Teoria.
-        var teoria = dela.filter(function (p) { return p.tipo === 'teoria'; })[0];
+        // Teoria vai para o começo; as demais fixas logo depois da última pasta fixa.
+        var fixas = dela.filter(function (p) { return p.tipo; });
         var menor = dela.reduce(function (m, p) { return Math.min(m, p.ordem || 0); }, 1);
-        var ordem = f[0] === 'erros' && teoria ? (teoria.ordem || 0) + 0.5 : menor - 1;
+        var ultimaFixa = fixas.reduce(function (m, p) { return Math.max(m, p.ordem || 0); }, -Infinity);
+        var ordem = f[0] !== 'teoria' && fixas.length ? ultimaFixa + 0.5 : menor - 1;
         dados.pastas.push({ id: novoId(), disciplinaId: disc.id, nome: f[1], tipo: f[0], ordem: ordem });
       });
     });
@@ -297,6 +301,8 @@ var Dados = (function () {
   }
   function pastaTeoria(disciplinaId) { return pastaDoTipo(disciplinaId, 'teoria'); }
   function pastaErros(disciplinaId) { return pastaDoTipo(disciplinaId, 'erros'); }
+  function pastaSimulado(disciplinaId) { return pastaDoTipo(disciplinaId, 'simulado'); }
+  function pastaFavoritas(disciplinaId) { return pastaDoTipo(disciplinaId, 'favoritas'); }
 
   // Os nomes das pastas fixas são reservados (lança erro se repetido).
   function criarPasta(disciplinaId, nome) {
@@ -377,7 +383,9 @@ var Dados = (function () {
     var p = pasta(c.pastaId);
     if (!p || p.tipo !== 'teoria') { delete c.blocoId; delete c.baterias; }
     if (!p || p.tipo !== 'erros') delete c.par;
+    if (!p || p.tipo !== 'favoritas') delete c.grupo;
     if (!p) return;
+    if (p.tipo === 'favoritas' && campos.grupo !== undefined) c.grupo = GRUPOS_FAVORITAS[campos.grupo] ? campos.grupo : null;
     if (p.tipo === 'teoria') {
       if (campos.blocoId !== undefined) c.blocoId = campos.blocoId || null;
       if (campos.baterias !== undefined) c.baterias = campos.baterias && campos.baterias.length ? campos.baterias.map(function (n) { return Math.max(0, Math.round(Number(n) || 0)); }) : null;
@@ -429,6 +437,8 @@ var Dados = (function () {
       var parLivre = parSemCaderno(p.disciplinaId, c.id);
       c.par = parLivre ? parLivre.par : null;
     } else delete c.par;
+    if (p && p.tipo === 'favoritas') c.grupo = grupoLivre(p.disciplinaId, c.id);
+    else delete c.grupo;
     salvar();
   }
 
@@ -530,6 +540,80 @@ var Dados = (function () {
     };
   }
 
+  // ---------- Modo Revisão: ciclo simulado → favoritadas (dúvidas, erradas 2x+) → pontos fracos ----------
+  var GRUPOS_FAVORITAS = { duvidas: 'Questões em que fiquei em dúvida', erros2x: 'Questões que errei 2x ou mais' };
+  var ORDEM_FAVORITAS = ['duvidas', 'erros2x'];
+  var FRACOS_QUESTOES = 50, FRACOS_ASSUNTOS = 3;
+
+  function cadernoFavorito(disciplinaId, grupo) {
+    var pf = pastaFavoritas(disciplinaId);
+    return pf ? cadernosDe(pf.id).filter(function (c) { return c.grupo === grupo; })[0] || null : null;
+  }
+  function grupoLivre(disciplinaId, excetoCadernoId) {
+    var pf = pastaFavoritas(disciplinaId);
+    var usados = pf ? cadernosDe(pf.id).filter(function (c) { return c.id !== excetoCadernoId && c.grupo; }).map(function (c) { return c.grupo; }) : [];
+    return ORDEM_FAVORITAS.filter(function (g) { return usados.indexOf(g) < 0; })[0] || null;
+  }
+
+  // O estado é recalculado repassando as sessões em ordem (data e hora de lançamento); assim editar ou
+  // excluir uma sessão no Histórico corrige a recomendação sozinho.
+  //  - simulado: o caderno da vez fica concluído quando as questões lançadas nele alcançam o total;
+  //  - duvidas / erros2x: concluídas quando uma sessão marca o caderno como finalizado;
+  //  - fracos: concluída com 50 questões dos pontos fracos ou 3 assuntos diferentes (ou todos, se houver menos de 3).
+  // Matéria sem pontos fracos nas Estatísticas pula a etapa de fracos.
+  function planoRevisao(disciplinaId) {
+    var ps = pastaSimulado(disciplinaId);
+    var simulados = ps ? cadernosDe(ps.id) : [];
+    var fav = { duvidas: cadernoFavorito(disciplinaId, 'duvidas'), erros2x: cadernoFavorito(disciplinaId, 'erros2x') };
+    var fracos = window.Estatisticas ? Estatisticas.pontosFracos(disciplinaId) : [];
+    var metaAssuntos = Math.min(FRACOS_ASSUNTOS, fracos.length);
+    var sessoes = db.sessoes.filter(function (s) { return s.disciplinaId === disciplinaId; }).sort(function (a, b) {
+      return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
+    });
+    var acum = {};
+    var est = { etapa: 'simulado', indice: 0, rodada: 1, fracosQuestoes: 0, fracosAssuntos: {} };
+
+    function avancar(s) {
+      var mudou = true;
+      while (mudou) {
+        mudou = false;
+        if (est.etapa === 'simulado') {
+          var cur = simulados[est.indice];
+          if (cur && cur.totalQuestoes > 0 && (acum[cur.id] || 0) >= cur.totalQuestoes) { est.etapa = 'duvidas'; est.indice++; mudou = true; }
+        } else if (est.etapa === 'duvidas' || est.etapa === 'erros2x') {
+          var cad = fav[est.etapa];
+          var fim = s && cad && (s.cadernos || []).some(function (l) { return l.cadernoId === cad.id && l.finalizado; });
+          if (fim) { est.etapa = est.etapa === 'duvidas' ? 'erros2x' : 'fracos'; est.fracosQuestoes = 0; est.fracosAssuntos = {}; mudou = true; }
+        } else if (est.etapa === 'fracos') {
+          if (!fracos.length || est.fracosQuestoes >= FRACOS_QUESTOES || Object.keys(est.fracosAssuntos).length >= Math.max(1, metaAssuntos)) {
+            est.etapa = 'simulado'; est.rodada++; mudou = true;
+          }
+        }
+      }
+    }
+
+    sessoes.forEach(function (s) {
+      var etapaAntes = est.etapa;
+      (s.cadernos || []).forEach(function (l) {
+        var n = (l.acertos || 0) + (l.erros || 0);
+        if (l.cadernoId) acum[l.cadernoId] = (acum[l.cadernoId] || 0) + n;
+        if (etapaAntes === 'fracos' && l.assunto && n > 0) { est.fracosQuestoes += n; est.fracosAssuntos[l.assunto.chave] = l.assunto.nome; }
+      });
+      avancar(s);
+    });
+    avancar(null);
+
+    var atual = simulados[est.indice] || null;
+    return {
+      etapa: est.etapa, rodada: est.rodada,
+      simulado: atual, simuladoFeitas: atual ? Math.min(acum[atual.id] || 0, atual.totalQuestoes || 0) : 0,
+      simuladosConcluidos: est.indice, simulados: simulados,
+      favoritas: fav, fracos: fracos,
+      fracosQuestoes: est.fracosQuestoes, fracosAssuntos: est.fracosAssuntos,
+      metaQuestoes: FRACOS_QUESTOES, metaAssuntos: metaAssuntos
+    };
+  }
+
   function excluirCaderno(id) {
     remover('cadernos', function (c) { return c.id === id; });
     salvar();
@@ -548,8 +632,12 @@ var Dados = (function () {
       segundos: Math.max(0, Math.round(Number(campos.segundos) || 0)),
       tipo: tipo,
       topicoIds: teoria ? (campos.topicoIds || []).slice() : [],
+      // finalizado: caderno de favoritadas terminado nesta sessão; assunto: questões avulsas de um ponto fraco (Revisão).
       cadernos: teoria ? [] : (campos.cadernos || []).map(function (c) {
-        return { cadernoId: c.cadernoId || null, acertos: Number(c.acertos) || 0, erros: Number(c.erros) || 0 };
+        var l = { cadernoId: c.cadernoId || null, acertos: Number(c.acertos) || 0, erros: Number(c.erros) || 0 };
+        if (c.finalizado && c.cadernoId) l.finalizado = true;
+        if (c.assunto && !c.cadernoId) l.assunto = { chave: c.assunto.chave, nome: c.assunto.nome };
+        return l;
       }),
       revisados: tipo === 'revisao' ? (campos.revisados || []).slice() : [], // [{ chave, nome }] dos assuntos marcados como revistos
       anotacao: (campos.anotacao || '').trim()
@@ -832,7 +920,11 @@ var Dados = (function () {
     criarTopicos: criarTopicos, atualizarTopico: atualizarTopico, excluirTopico: excluirTopico,
     definirConcluido: definirConcluido, agendarRevisao: agendarRevisao, concluirRevisao: concluirRevisao,
     pastasDe: pastasDe, pasta: pasta, pastaTeoria: pastaTeoria, pastaErros: pastaErros, pastaFixa: pastaFixa,
-    NOME_PASTA_TEORIA: NOME_PASTA_TEORIA, NOME_PASTA_ERROS: NOME_PASTA_ERROS, criarPasta: criarPasta,
+    pastaSimulado: pastaSimulado, pastaFavoritas: pastaFavoritas,
+    NOME_PASTA_TEORIA: NOME_PASTA_TEORIA, NOME_PASTA_ERROS: NOME_PASTA_ERROS,
+    NOME_PASTA_SIMULADO: NOME_PASTA_SIMULADO, NOME_PASTA_FAVORITAS: NOME_PASTA_FAVORITAS, criarPasta: criarPasta,
+    GRUPOS_FAVORITAS: GRUPOS_FAVORITAS, ORDEM_FAVORITAS: ORDEM_FAVORITAS, cadernoFavorito: cadernoFavorito, grupoLivre: grupoLivre,
+    planoRevisao: planoRevisao,
     paresDeBlocos: paresDeBlocos, nomePar: nomePar, cadernoDoPar: cadernoDoPar, parSemCaderno: parSemCaderno, atualizarPasta: atualizarPasta, excluirPasta: excluirPasta,
     cadernosDe: cadernosDe, caderno: caderno, cadernosDaDisciplina: cadernosDaDisciplina,
     criarCaderno: criarCaderno, atualizarCaderno: atualizarCaderno, moverCaderno: moverCaderno, excluirCaderno: excluirCaderno,

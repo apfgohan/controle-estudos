@@ -80,12 +80,16 @@ var Sessao = (function () {
       tipo: existente ? existente.tipo : (op.tipo || 'teoria'),
       topicoIds: existente ? existente.topicoIds.slice() : (op.topicoIds || []).slice(),
       linhas: existente
-        ? existente.cadernos.map(function (c) { return { cadernoId: c.cadernoId || '', acertos: c.acertos, erros: c.erros }; })
+        ? existente.cadernos.filter(function (c) { return !c.assunto; }).map(function (c) { return { cadernoId: c.cadernoId || '', acertos: c.acertos, erros: c.erros, finalizado: !!c.finalizado }; })
         : (op.cadernoIds || []).map(function (id) { return { cadernoId: id, acertos: '', erros: '' }; }),
       segundos: existente ? existente.segundos : (op.segundos || 0),
       concluir: true,
-      revistos: null // Revisão: { chave: { nome, marcado } }, montado ao abrir a área
+      // Revisão: questões avulsas por ponto fraco { chave: { nome, acertos, erros } }
+      assuntos: {}
     };
+    if (existente) existente.cadernos.forEach(function (c) {
+      if (c.assunto) est.assuntos[c.assunto.chave] = { nome: c.assunto.nome, acertos: c.acertos, erros: c.erros };
+    });
     if (!est.linhas.length) est.linhas.push({ cadernoId: '', acertos: '', erros: '' });
 
     var data = el('input', { type: 'date', value: existente ? existente.data : UI.hoje(), max: UI.hoje() });
@@ -93,7 +97,7 @@ var Sessao = (function () {
       est.disciplinaId = disciplina.value;
       est.topicoIds = [];
       est.linhas = [{ cadernoId: '', acertos: '', erros: '' }];
-      est.revistos = null;
+      est.assuntos = {};
       desenharArea();
     } }, discs.map(function (d) { return el('option', { value: d.id, text: d.nome, selected: d.id === est.disciplinaId }); }));
 
@@ -138,16 +142,22 @@ var Sessao = (function () {
         if (Dados.topicosDaDisciplina(est.disciplinaId).length && !est.topicoIds.length) return mostrarErro('Marque o(s) tópico(s) estudado(s).');
         campos.topicoIds = est.topicoIds;
       } else {
-        var linhas = est.linhas.filter(function (l) { return (Number(l.acertos) || 0) + (Number(l.erros) || 0) > 0; });
-        var marcados = [];
-        for (var ch in est.revistos || {}) if (est.revistos[ch].marcado) marcados.push({ chave: ch, nome: est.revistos[ch].nome });
+        // Caderno de favoritadas pode ser finalizado mesmo sem questões (quando ele está vazio).
+        var linhas = est.linhas.filter(function (l) { return (Number(l.acertos) || 0) + (Number(l.erros) || 0) > 0 || (l.finalizado && l.cadernoId); });
+        var porAssunto = [];
         if (est.tipo === 'revisao') {
-          if (!linhas.length && !marcados.length) return mostrarErro('Informe as questões feitas na revisão ou marque os assuntos que já foram revistos.');
-          campos.revisados = marcados;
+          for (var ch in est.assuntos) {
+            var a = est.assuntos[ch];
+            if ((Number(a.acertos) || 0) + (Number(a.erros) || 0) > 0) porAssunto.push({ cadernoId: null, acertos: a.acertos, erros: a.erros, assunto: { chave: ch, nome: a.nome } });
+          }
+          if (!linhas.length && !porAssunto.length) return mostrarErro('Informe os acertos e erros de pelo menos um assunto.');
+          // Assunto com questões lançadas conta como revisto (sai das recomendações até uma planilha nova).
+          campos.revisados = porAssunto.map(function (l) { return l.assunto; })
+            .concat(existente ? (existente.revisados || []).filter(function (r) { return !est.assuntos[r.chave]; }) : []);
         } else if (!linhas.length) {
           return mostrarErro('Informe os acertos e erros de pelo menos um caderno.');
         }
-        campos.cadernos = linhas;
+        campos.cadernos = porAssunto.concat(linhas);
       }
 
       var vezAntes = Dados.proximaDoCiclo();
@@ -157,8 +167,8 @@ var Sessao = (function () {
       if (est.tipo === 'teoria' && est.concluir) {
         est.topicoIds.forEach(function (id) { Dados.definirConcluido(id, true, data.value); });
       }
-      if (est.tipo === 'revisao' && est.revistos) {
-        for (var k in est.revistos) Dados.marcarRevisto(est.disciplinaId, k, est.revistos[k].marcado, data.value);
+      if (est.tipo === 'revisao') {
+        (campos.revisados || []).forEach(function (r) { Dados.marcarRevisto(est.disciplinaId, r.chave, true, data.value); });
       }
       if (op.doCronometro) gravarCron(null);
       App.atualizar();
@@ -236,55 +246,61 @@ var Sessao = (function () {
     return [UI.campo('Tópico(s) estudado(s)', lista), concluir];
   }
 
-  // Revisão: pontos fracos da disciplina (das Estatísticas) com checkbox "revisto" + cadernos de questões.
+  // Revisão: pontos fracos da disciplina (das Estatísticas), com acertos e erros lançados por assunto
+  // (sem caderno). Os já revistos ficam no fim da lista. Abaixo, outras questões opcionais com caderno.
   function areaRevisao(est, redesenhar) {
     var fracos = window.Estatisticas ? Estatisticas.pontosFracos(est.disciplinaId) : [];
-    if (!est.revistos) {
-      est.revistos = {};
-      fracos.forEach(function (t) { est.revistos[t.chave] = { nome: t.nome, marcado: !!t.revisto }; });
+    // Assuntos já lançados nesta sessão aparecem mesmo que tenham saído das Estatísticas.
+    Object.keys(est.assuntos).forEach(function (ch) {
+      if (!fracos.some(function (t) { return t.chave === ch; })) fracos.push({ chave: ch, nome: est.assuntos[ch].nome, caminho: [], revisto: true });
+    });
+    fracos.sort(function (a, b) { return (!!a.revisto && !est.assuntos[a.chave]) - (!!b.revisto && !est.assuntos[b.chave]); });
+    var total = el('span', { class: 'data-fraca' });
+    function atualizarTotal() {
+      var q = 0, n = 0;
+      for (var ch in est.assuntos) { var s = (Number(est.assuntos[ch].acertos) || 0) + (Number(est.assuntos[ch].erros) || 0); q += s; if (s) n++; }
+      total.textContent = q ? q + (q === 1 ? ' questão' : ' questões') + ' em ' + n + (n === 1 ? ' assunto' : ' assuntos') : '';
     }
-    var pendentes = fracos.filter(function (t) { return !est.revistos[t.chave].marcado; }).length;
 
     var lista;
     if (!Dados.db.importacoes.length) {
       lista = el('p', { class: 'aviso-suave', text: 'Nenhuma planilha importada ainda. Importe o histórico do TecConcursos na aba Estatísticas para ver os assuntos que precisam de revisão.' });
     } else if (!fracos.length) {
-      lista = el('p', { class: 'aviso-suave aviso-ok', text: 'Nenhum assunto desta disciplina com 20% de erro ou mais nas Estatísticas. Você ainda pode lançar as questões de revisão abaixo.' });
+      lista = el('p', { class: 'aviso-suave aviso-ok', text: 'Nenhum assunto desta disciplina com 20% de erro ou mais nas Estatísticas.' });
     } else {
-      lista = el('div', { class: 'lista-topicos lista-revisao' }, fracos.map(function (t) {
-        var estado = est.revistos[t.chave];
-        var item = el('label', { class: 'opcao-topico opcao-revisao' + (estado.marcado ? ' revisto' : '') }, [
-          el('input', { type: 'checkbox', checked: estado.marcado, onchange: function (e) {
-            estado.marcado = e.target.checked;
-            item.classList.toggle('revisto', estado.marcado);
-            contador.textContent = textoPendentes();
-          } }),
-          el('span', { class: 'revisao-assunto' }, [
+      lista = el('div', { class: 'lista-assuntos' }, fracos.map(function (t) {
+        var v = est.assuntos[t.chave] || { nome: t.nome, acertos: '', erros: '' };
+        function numero(campo, rotulo) {
+          return el('label', { class: 'assunto-num' }, [
+            el('span', { text: rotulo }),
+            el('input', { type: 'number', min: 0, step: 1, value: v[campo], oninput: function (e) {
+              v[campo] = e.target.value;
+              est.assuntos[t.chave] = v;
+              atualizarTotal();
+            } })
+          ]);
+        }
+        return el('div', { class: 'assunto-linha' + (t.revisto && !est.assuntos[t.chave] ? ' revisto' : '') }, [
+          el('div', { class: 'revisao-assunto' }, [
             el('span', { class: 'revisao-nome', text: t.nome }),
-            t.caminho.length ? el('span', { class: 'revisao-caminho', text: t.caminho.join(' › ') }) : null
+            t.caminho && t.caminho.length ? el('span', { class: 'revisao-caminho', text: t.caminho.join(' › ') }) : null,
+            t.revisto && !est.assuntos[t.chave] ? el('span', { class: 'revisao-caminho', text: 'já revisto' }) : null
           ]),
-          Estatisticas.seloErro(t)
+          t.pctErro != null ? Estatisticas.seloErro(t) : null,
+          numero('acertos', 'Acertos'),
+          numero('erros', 'Erros')
         ]);
-        return item;
       }));
     }
-
-    function textoPendentes() {
-      var n = fracos.filter(function (t) { return !est.revistos[t.chave].marcado; }).length;
-      return n ? n + (n === 1 ? ' pendente' : ' pendentes') : 'todos revistos ✓';
-    }
-    var contador = el('span', { class: 'data-fraca', text: fracos.length ? textoPendentes() : '' });
+    atualizarTotal();
 
     return [
       el('div', { class: 'campo' }, [
-        el('div', { class: 'revisao-cabecalho' }, [
-          el('span', { class: 'campo-rotulo', text: 'Assuntos a revisar (das Estatísticas)' }),
-          contador
-        ]),
+        el('div', { class: 'revisao-cabecalho' }, [el('span', { class: 'campo-rotulo', text: 'Questões por assunto (pontos fracos das Estatísticas)' }), total]),
         lista,
-        fracos.length ? el('span', { class: 'campo-ajuda', text: 'Marque o que você já revisou: sai do alerta da próxima matéria. Se continuar com muitos erros na próxima planilha importada, volta para a lista.' }) : null
+        fracos.length ? el('span', { class: 'campo-ajuda', text: 'Lance quantas questões resolveu de cada assunto. Assunto com questões lançadas fica como revisto e sai das recomendações; se continuar fraco na próxima planilha, volta.' }) : null
       ]),
-      el('div', { class: 'campo-rotulo rotulo-cadernos', text: 'Questões resolvidas na revisão' })
+      el('div', { class: 'campo-rotulo rotulo-cadernos', text: 'Outras questões desta revisão (opcional)' })
     ].concat(areaQuestoes(est, redesenhar));
   }
 
@@ -299,8 +315,14 @@ var Sessao = (function () {
       if (a + e) total.appendChild(el('span', null, ['Total: ', el('strong', { text: (a + e) + ' questões' }), ' · ', UI.acerto(a / (a + e) * 100, a + e)]));
     }
 
+    function ehFavorito(id) { var c = id && Dados.caderno(id); var p = c && Dados.pasta(c.pastaId); return !!(p && p.tipo === 'favoritas'); }
+
     var linhas = est.linhas.map(function (l, i) {
-      var sel = el('select', { onchange: function () { l.cadernoId = sel.value; } }, [
+      var sel = el('select', { onchange: function () {
+        var antes = ehFavorito(l.cadernoId);
+        l.cadernoId = sel.value;
+        if (antes !== ehFavorito(l.cadernoId)) { l.finalizado = false; redesenhar(); }
+      } }, [
         el('option', { value: '', text: 'Questões avulsas (sem caderno)' })
       ].concat(pastas.map(function (p) {
         return el('optgroup', { label: p.nome }, Dados.cadernosDe(p.id).map(function (c) {
@@ -315,7 +337,7 @@ var Sessao = (function () {
           el('input', { type: 'number', min: 0, step: 1, value: l[campo], oninput: function (e) { l[campo] = e.target.value; atualizarTotal(); } })
         ]);
       }
-      return el('div', { class: 'linha-caderno' }, [
+      var linha = el('div', { class: 'linha-caderno' }, [
         el('label', { class: 'campo' }, [el('span', { class: 'campo-rotulo', text: 'Caderno' }), sel]),
         numero('acertos', 'Acertos'),
         numero('erros', 'Erros'),
@@ -323,6 +345,14 @@ var Sessao = (function () {
           est.linhas.splice(i, 1);
           redesenhar();
         } }) : null
+      ]);
+      // Cadernos de favoritadas mudam sempre: em vez do total, você informa se terminou o caderno.
+      if (!ehFavorito(l.cadernoId)) return linha;
+      return el('div', { class: 'linha-caderno-grupo' }, [linha,
+        el('label', { class: 'opcao-check opcao-finalizado' }, [
+          el('input', { type: 'checkbox', checked: !!l.finalizado, onchange: function (e) { l.finalizado = e.target.checked; } }),
+          'Finalizei este caderno (resolvi todas as questões dele)'
+        ])
       ]);
     });
 
@@ -355,10 +385,13 @@ var Sessao = (function () {
     }
     var partes = (s.cadernos || []).map(function (c) {
       var cad = Dados.caderno(c.cadernoId);
-      return (cad ? cad.nome : 'Avulsas') + ': ' + c.acertos + ' acertos · ' + c.erros + ' erros';
+      var nome = c.assunto ? c.assunto.nome : cad ? cad.nome : 'Avulsas';
+      return nome + ': ' + c.acertos + ' acertos · ' + c.erros + ' erros' + (c.finalizado ? ' (caderno finalizado)' : '');
     });
-    if (s.tipo === 'revisao' && s.revisados && s.revisados.length) {
-      partes.push('Revistos: ' + s.revisados.map(function (r) { return r.nome; }).join(', '));
+    // Revistos só marcados (sessões antigas, sem questões por assunto).
+    var soMarcados = (s.revisados || []).filter(function (r) { return !(s.cadernos || []).some(function (c) { return c.assunto && c.assunto.chave === r.chave; }); });
+    if (s.tipo === 'revisao' && soMarcados.length) {
+      partes.push('Revistos: ' + soMarcados.map(function (r) { return r.nome; }).join(', '));
     }
     return partes.join('; ') || '—';
   }

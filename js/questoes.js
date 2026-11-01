@@ -60,8 +60,8 @@ var Questoes = (function () {
     if (!d) { location.hash = '#/questoes'; return; }
     var q = Dados.statsQuestoes(d.id);
     var anot = Dados.ultimaAnotacao(d.id, 'questoes');
-    // As pastas fixas vêm sempre primeiro: "Cadernos de Teoria" e depois "Cadernos de Erros".
-    var PESO = { teoria: 2, erros: 1 };
+    // As pastas fixas vêm sempre primeiro: as do Modo Leitura (Teoria, Erros) e as do Modo Revisão (Simulado, Favoritadas).
+    var PESO = { teoria: 4, erros: 3, simulado: 2, favoritas: 1 };
     var pastas = Dados.pastasDe(d.id).sort(function (a, b) { return (PESO[b.tipo] || 0) - (PESO[a.tipo] || 0); });
 
     raiz.appendChild(el('section', { class: 'painel' }, [
@@ -120,6 +120,7 @@ var Questoes = (function () {
 
   function cartaoPasta(d, p) {
     var teoria = p.tipo === 'teoria', erros = p.tipo === 'erros';
+    var simulado = p.tipo === 'simulado', favoritas = p.tipo === 'favoritas';
     var aberta = !fechadas[p.id];
     var cadernos = Dados.cadernosDe(p.id);
     var sp = Dados.statsPasta(p.id);
@@ -135,8 +136,8 @@ var Questoes = (function () {
     } }, [
       el('div', { class: 'pasta-titulo' }, [
         el('span', { class: 'pasta-nome', text: p.nome }),
-        teoria || erros
-          ? UI.selo('Modo Leitura', 'info')
+        teoria || erros ? UI.selo('Modo Leitura', 'info')
+          : simulado || favoritas ? UI.selo('Modo Revisão', 'sucesso')
           : UI.botaoEngrenagem(function () { editarPasta(d, p); }, 'Editar pasta')
       ]),
       el('div', { class: 'pasta-direita' }, [
@@ -145,17 +146,18 @@ var Questoes = (function () {
       ])
     ]);
 
-    var classe = 'pasta' + (teoria || erros ? ' pasta-teoria' : '');
+    var classe = 'pasta' + (teoria || erros ? ' pasta-teoria' : simulado || favoritas ? ' pasta-revisao' : '');
     if (!aberta) return el('section', { class: classe }, topo);
 
     return el('section', { class: classe }, [
       topo,
       teoria ? avisosPastaTeoria(d, p, cadernos) : null,
       erros ? avisosPastaErros(d, cadernos) : null,
+      simulado || favoritas ? avisosPastaRevisao(d, p, cadernos) : null,
       el('div', { class: 'tabela-rolagem' }, el('table', { class: 'tabela tabela-cadernos' }, [
         el('thead', null, el('tr', null, [
           el('th', { text: 'Caderno' }),
-          el('th', { text: teoria ? 'Baterias' : erros ? 'Blocos' : 'Prioridade' }),
+          el('th', { text: teoria ? 'Baterias' : erros ? 'Blocos' : simulado ? 'Situação' : favoritas ? 'Grupo' : 'Prioridade' }),
           el('th', { text: 'Questões feitas' }),
           el('th', { text: 'Acerto' }),
           el('th', { text: 'Último treino' }),
@@ -163,7 +165,9 @@ var Questoes = (function () {
         ])),
         el('tbody', null, cadernos.length ? cadernos.map(function (c) { return linhaCaderno(d, c, p.tipo); })
           : el('tr', null, el('td', { colspan: 6, class: 'tabela-vazia', text: teoria ? 'Cadastre um caderno para cada bloco de teoria.'
-            : erros ? 'Cadastre aqui o caderno de erros de cada par de blocos quando chegar a hora (o Dashboard avisa).' : 'Nenhum caderno nesta pasta.' })))
+            : erros ? 'Cadastre aqui o caderno de erros de cada par de blocos quando chegar a hora (o Dashboard avisa).'
+            : simulado ? 'Cadastre cadernos com questões de todos os assuntos da matéria (em geral, de 50 a 100 questões).'
+            : favoritas ? 'Cadastre o caderno de questões em que ficou em dúvida e o de questões que errou 2x ou mais.' : 'Nenhum caderno nesta pasta.' })))
       ])),
       el('button', { type: 'button', class: 'btn-adicionar-linha', onclick: function () { editarCaderno(d, p, null); }, text: '+ Caderno' })
     ]);
@@ -210,6 +214,44 @@ var Questoes = (function () {
     ]);
   }
 
+  function avisosPastaRevisao(d, p, cadernos) {
+    var avisos = [], texto;
+    if (p.tipo === 'simulado') {
+      texto = 'No Modo Revisão, cada volta começa resolvendo um caderno inteiro desta pasta, na ordem da lista. Ele fica concluído quando as questões lançadas alcançam o total.';
+      var semTotal = cadernos.filter(function (c) { return !c.totalQuestoes; });
+      if (semTotal.length) avisos.push('Informe o total de questões de: ' + semTotal.map(function (c) { return c.nome; }).join(', ') + '.');
+    } else {
+      texto = 'Depois do simulado, vêm as favoritadas: primeiro o caderno de dúvidas, depois o de erradas 2x ou mais. Como esses cadernos mudam sempre, não há total: ao lançar a sessão, marque "Finalizei este caderno" quando terminar.';
+      var faltam = Dados.ORDEM_FAVORITAS.filter(function (g) { return !Dados.cadernoFavorito(d.id, g); });
+      if (faltam.length) avisos.push('Falta cadastrar: ' + faltam.map(function (g) { return Dados.GRUPOS_FAVORITAS[g].toLowerCase(); }).join(' e ') + '.');
+      var semGrupo = cadernos.filter(function (c) { return !c.grupo; });
+      if (semGrupo.length) avisos.push('Cadernos sem grupo: ' + semGrupo.map(function (c) { return c.nome; }).join(', ') + ' (escolha na engrenagem).');
+    }
+    return el('div', { class: 'pasta-teoria-info' }, [
+      el('p', { class: 'data-fraca', text: texto }),
+      avisos.length ? el('ul', { class: 'pasta-teoria-avisos' }, avisos.map(function (a) { return el('li', null, [UI.icone('alerta'), el('span', { text: a })]); })) : null
+    ]);
+  }
+
+  function statusSimulado(d, c) {
+    var plano = Dados.planoRevisao(d.id);
+    var pos = plano.simulados.indexOf(c);
+    if (pos < plano.simuladosConcluidos) return el('span', { class: 'bateria concluida', text: 'Concluído' });
+    if (c === plano.simulado) return el('span', { class: 'bateria parcial', text: 'Atual' });
+    return el('span', { class: 'bateria', text: 'Na fila' });
+  }
+
+  function statusFavorito(d, c) {
+    var ultimo = null;
+    Dados.sessoesDe(d.id).forEach(function (s) {
+      if ((s.cadernos || []).some(function (l) { return l.cadernoId === c.id && l.finalizado; }) && (!ultimo || s.data > ultimo)) ultimo = s.data;
+    });
+    return el('div', null, [
+      el('div', { class: 'caderno-bloco', text: c.grupo === 'duvidas' ? 'Dúvidas' : c.grupo === 'erros2x' ? 'Errei 2x ou mais' : 'Sem grupo' }),
+      ultimo ? el('span', { class: 'data-fraca', text: 'Finalizado em ' + UI.fmtData(ultimo) }) : null
+    ]);
+  }
+
   function statusErros(d, c) {
     var pares = Dados.paresDeBlocos(d.id);
     var par = c.par && pares[c.par - 1];
@@ -247,7 +289,7 @@ var Questoes = (function () {
         s.completo ? UI.selo('Caderno completo', 'completo') : el('div', { class: 'faltam', text: 'Faltam ' + UI.fmtNum(s.faltam) })
       ];
     } else {
-      feitas = [el('div', { class: 'feitas', text: UI.fmtNum(s.feitas) }), el('div', { class: 'faltam', text: 'Total não informado' })];
+      feitas = [el('div', { class: 'feitas', text: UI.fmtNum(s.feitas) }), el('div', { class: 'faltam', text: tipoPasta === 'favoritas' ? 'Caderno flexível' : 'Total não informado' })];
     }
 
     return el('tr', null, [
@@ -260,7 +302,8 @@ var Questoes = (function () {
         c.assunto ? el('div', { class: 'caderno-assunto', text: c.assunto }) : null,
         teoria && c.blocoId && Dados.bloco(c.blocoId) ? el('div', { class: 'caderno-bloco', text: 'Teoria: ' + Dados.bloco(c.blocoId).nome }) : null
       ]),
-      el('td', null, teoria ? chipsBaterias(d, c) : tipoPasta === 'erros' ? statusErros(d, c) : UI.seloPrioridade(c.prioridade)),
+      el('td', null, teoria ? chipsBaterias(d, c) : tipoPasta === 'erros' ? statusErros(d, c)
+        : tipoPasta === 'simulado' ? statusSimulado(d, c) : tipoPasta === 'favoritas' ? statusFavorito(d, c) : UI.seloPrioridade(c.prioridade)),
       el('td', null, feitas),
       el('td', null, s.feitas ? [
         UI.acerto(s.pct, s.feitas, true),
@@ -302,10 +345,16 @@ var Questoes = (function () {
 
   function editarCaderno(d, p, c) {
     var teoria = p.tipo === 'teoria', erros = p.tipo === 'erros';
+    var simulado = p.tipo === 'simulado', favoritas = p.tipo === 'favoritas';
     var livre = teoria ? (c && c.blocoId && Dados.bloco(c.blocoId) ? Dados.bloco(c.blocoId) : Dados.blocoSemCaderno(d.id, c ? c.id : null)) : null;
     var pares = erros ? Dados.paresDeBlocos(d.id) : [];
     var parLivre = erros ? (c && c.par && pares[c.par - 1] ? pares[c.par - 1] : Dados.parSemCaderno(d.id, c ? c.id : null)) : null;
-    var nomeSugerido = livre ? livre.nome : parLivre ? 'Erros — ' + Dados.nomePar(parLivre) : 'Bloco ' + String(Dados.cadernosDe(p.id).length + 1).padStart(2, '0');
+    var grupo = favoritas ? (c && c.grupo ? c.grupo : Dados.grupoLivre(d.id, c ? c.id : null)) : null;
+    var n = Dados.cadernosDe(p.id).length + 1;
+    var nomeSugerido = livre ? livre.nome : parLivre ? 'Erros — ' + Dados.nomePar(parLivre)
+      : simulado ? 'Simulado ' + String(n).padStart(2, '0')
+      : favoritas ? (grupo === 'erros2x' ? 'Favoritadas — Errei 2x ou mais' : 'Favoritadas — Dúvidas')
+      : 'Bloco ' + String(n).padStart(2, '0');
     var nome = el('input', { type: 'text', value: c ? c.nome : nomeSugerido });
     var assunto = el('input', { type: 'text', value: c ? c.assunto : '', placeholder: 'Ex.: Introdução e Tributos' });
     var link = el('input', { type: 'text', inputmode: 'url', value: c ? c.link : '', placeholder: 'https://www.tecconcursos.com.br/...' });
@@ -319,6 +368,11 @@ var Questoes = (function () {
     var seletorPar = erros ? el('select', null, [el('option', { value: '', text: '— escolha os blocos —' })].concat(pares.map(function (pr) {
       var ocupado = usadosPar.indexOf(pr.par) >= 0;
       return el('option', { value: pr.par, text: Dados.nomePar(pr) + (ocupado ? ' (já tem caderno)' : ''), disabled: ocupado, selected: parLivre && parLivre.par === pr.par });
+    }))) : null;
+    var usadosGrupo = favoritas ? Dados.cadernosDe(p.id).filter(function (x) { return (!c || x.id !== c.id) && x.grupo; }).map(function (x) { return x.grupo; }) : [];
+    var seletorGrupo = favoritas ? el('select', null, [el('option', { value: '', text: '— escolha o grupo —' })].concat(Dados.ORDEM_FAVORITAS.map(function (g) {
+      var ocupado = usadosGrupo.indexOf(g) >= 0;
+      return el('option', { value: g, text: Dados.GRUPOS_FAVORITAS[g] + (ocupado ? ' (já tem caderno)' : ''), disabled: ocupado, selected: grupo === g });
     }))) : null;
 
     var botoes = [{ texto: 'Cancelar', classe: 'btn-secundario' }];
@@ -337,6 +391,7 @@ var Questoes = (function () {
         campos.baterias = extraTeoria.baterias();
       }
       if (seletorPar) campos.par = seletorPar.value || null;
+      if (seletorGrupo) { campos.grupo = seletorGrupo.value || null; campos.totalQuestoes = 0; }
       if (c) Dados.atualizarCaderno(c.id, campos, Number(posicao.value));
       else Dados.criarCaderno(p.id, campos);
       App.atualizar();
@@ -347,12 +402,14 @@ var Questoes = (function () {
       UI.campo('Assunto', assunto),
       UI.campo('Link do caderno no TecConcursos', link, 'Cole o endereço do caderno para abri-lo com um clique.'),
       el('div', { class: 'campos-linha' }, [
-        UI.campo('Total de questões', total, erros ? 'Quantas questões erradas o caderno de erros tem' : 'Quantas questões o caderno tem'),
-        teoria || erros ? null : UI.campo('Prioridade', prioridade),
+        favoritas ? null : UI.campo('Total de questões', total, erros ? 'Quantas questões erradas o caderno de erros tem'
+          : simulado ? 'Em geral, de 50 a 100 questões' : 'Quantas questões o caderno tem'),
+        teoria || erros || simulado || favoritas ? null : UI.campo('Prioridade', prioridade),
         posicao ? UI.campo('Posição', posicao) : null
       ]),
       extraTeoria ? extraTeoria.nos : null,
-      seletorPar ? el('div', { class: 'campos-teoria' }, UI.campo('Blocos', seletorPar, 'A bateria de erros destes blocos fica concluída quando todas as questões do caderno forem lançadas.')) : null
+      seletorPar ? el('div', { class: 'campos-teoria' }, UI.campo('Blocos', seletorPar, 'A bateria de erros destes blocos fica concluída quando todas as questões do caderno forem lançadas.')) : null,
+      seletorGrupo ? el('div', { class: 'campos-teoria' }, UI.campo('Grupo', seletorGrupo, 'Este caderno muda sempre, por isso não tem total: ao lançar a sessão, marque "Finalizei este caderno" quando terminar.')) : null
     ], botoes);
   }
 
