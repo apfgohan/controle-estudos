@@ -247,7 +247,7 @@ var Dashboard = (function () {
     var q = Dados.statsQuestoes(d.id);
     var anot = Dados.ultimaAnotacao(d.id);
     var revisoes = Dados.revisoesPendentes(d.id).filter(function (t) { return t.revisaoAgendada <= UI.hoje(); }).length;
-    var plano = Dados.planoTeoria(d.id);
+    var modo = Dados.modoDeEstudo(d.id);
 
     return el('section', { class: 'painel proxima', style: { borderTopColor: d.cor } }, [
       el('div', { class: 'proxima-topo' }, [
@@ -257,7 +257,7 @@ var Dashboard = (function () {
       el('div', { class: 'proxima-nome' }, [
         el('span', { class: 'proxima-cor', style: { background: d.cor } }),
         el('h2', { text: d.nome }),
-        seloModo(plano),
+        seloModo(modo),
         item.minutosPlanejados ? el('span', { class: 'pilula', text: 'Meta: ' + fmtMinutos(item.minutosPlanejados) }) : null
       ]),
       el('div', { class: 'proxima-metricas' }, [
@@ -266,7 +266,7 @@ var Dashboard = (function () {
         UI.metrica('Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id))),
         UI.metrica('Revisões para hoje', revisoes ? String(revisoes) : '—', revisoes ? 'alerta' : '')
       ]),
-      recomendacao(d, plano),
+      recomendacao(d, modo),
       anot ? UI.blocoAnotacao(anot, { teoria: 'Teoria', questoes: 'Questões', revisao: 'Revisão' }[anot.tipo]) : el('div', { class: 'sem-anotacao', text: 'Nenhuma anotação deixada na última sessão desta matéria.' }),
       el('div', { class: 'proxima-acoes' }, [
         UI.botao('Lançar estudo', function () { Sessao.abrir({ disciplinaId: d.id }); }, 'btn-primario', 'play'),
@@ -282,14 +282,15 @@ var Dashboard = (function () {
 
   // Modo Leitura (teoria + baterias dos Cadernos de Teoria + baterias de erros) enquanto não terminar;
   // depois, Modo Revisão com os pontos fracos das Estatísticas.
-  function recomendacao(d, plano) {
-    if (!plano.blocos) return null;
-    return plano.concluido ? recomendacaoRevisao(d) : recomendacaoLeitura(d, plano);
+  // O Modo Revisão vale quando o Modo Leitura termina ou quando foi escolhido antes, na aba Teoria.
+  function recomendacao(d, modo) {
+    if (modo.modo === 'revisao') return recomendacaoRevisao(d);
+    return modo.plano.blocos ? recomendacaoLeitura(d, modo.plano) : null;
   }
 
-  function seloModo(plano) {
-    return plano.concluido
-      ? el('span', { class: 'selo-modo revisao', title: 'Teoria e todas as baterias concluídas' }, 'Modo Revisão')
+  function seloModo(modo) {
+    return modo.modo === 'revisao'
+      ? el('span', { class: 'selo-modo revisao', title: modo.escolhido ? 'Modo Revisão escolhido na aba Teoria (o Modo Leitura não foi concluído)' : 'Teoria e todas as baterias concluídas' }, 'Modo Revisão')
       : el('span', { class: 'selo-modo leitura', title: 'Teoria e baterias de questões em andamento' }, 'Modo Leitura');
   }
 
@@ -407,7 +408,11 @@ var Dashboard = (function () {
       } else {
         detalhe = el('div', { class: 'rec-bateria' }, [
           el('div', { class: 'rec-bateria-linha' }, [linkCaderno(c), el('span', { class: 'rec-faltam', text: textoFaltam(plano.simuladoFeitas, c.totalQuestoes, 'deste caderno') })]),
-          plano.simuladoFeitas ? UI.barra(plano.simuladoFeitas / c.totalQuestoes * 100) : null
+          plano.simuladoFeitas ? UI.barra(plano.simuladoFeitas / c.totalQuestoes * 100) : null,
+          plano.somaSimulado || c.totalQuestoes < plano.minimoSimulado
+            ? el('p', { class: 'data-fraca', text: 'Nesta volta: ' + plano.somaSimulado + ' de no mínimo ' + plano.minimoSimulado + ' questões de simulado concluídas' +
+                (plano.somaSimulado + c.totalQuestoes < plano.minimoSimulado ? '. Depois deste caderno ainda virá outro simulado.' : '.') })
+            : null
         ]);
         acao = UI.botao('Lançar questões', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [c.id] }); }, 'btn-primario', 'play');
       }
@@ -442,13 +447,21 @@ var Dashboard = (function () {
     var SEGUINTE = { simulado: 'duvidas', duvidas: 'erros2x', erros2x: 'fracos', fracos: 'simulado' };
     var depois = SEGUINTE[etapa];
     if (depois === 'fracos' && !plano.fracos.length) depois = 'simulado'; // sem pontos fracos, a etapa é pulada
+    // Simulados da volta somando menos de 50 questões: o próximo também é simulado.
+    var textoDepois;
+    if (etapa === 'simulado' && plano.simulado && plano.somaSimulado + (plano.simulado.totalQuestoes || 0) < plano.minimoSimulado) {
+      var prox = plano.simulados[plano.simuladosConcluidos + 1];
+      textoDepois = prox ? 'Resolver o caderno de simulado "' + prox.nome + '"' : 'Resolver mais um caderno de simulado (cadastre um novo)';
+    } else {
+      textoDepois = textoEtapaRevisao(depois, plano);
+    }
     return el('div', { class: 'recomendacao rec-revisao' }, [
       el('div', { class: 'rec-topo' }, [UI.icone(etapa === 'fracos' ? 'alerta' : 'caderno2'), el('span', { class: 'rec-rotulo', text: 'Recomendação' })]),
       el('div', { class: 'rec-principal' }, [el('strong', { class: 'rec-titulo', text: textoEtapaRevisao(etapa, plano) }), detalhe]),
       acao ? el('div', { class: 'rec-rodape' }, acao) : null,
       el('div', { class: 'rec-depois' }, [
         el('span', { class: 'rec-depois-rotulo', text: 'Em seguida' }),
-        el('span', { text: textoEtapaRevisao(depois, plano) })
+        el('span', { text: textoDepois })
       ]),
       el('div', { class: 'rec-progresso data-fraca', text: 'Volta ' + plano.rodada + ' do Modo Revisão · ' + plano.simuladosConcluidos +
         (plano.simuladosConcluidos === 1 ? ' simulado concluído' : ' simulados concluídos') })

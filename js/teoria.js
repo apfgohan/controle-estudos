@@ -85,6 +85,41 @@ var Teoria = (function () {
   function corSugerida() { return paleta[Dados.disciplinas().length % paleta.length]; }
 
   // ---------- Tela da disciplina ----------
+  // Escolha do modo de estudo: seguir o Modo Leitura até o fim (passa sozinho para o Modo Revisão)
+  // ou entrar logo no Modo Revisão. Com o Modo Leitura concluído, a matéria já está em Revisão.
+  function painelModo(d) {
+    var m = Dados.modoDeEstudo(d.id);
+    var pendentes = m.plano.pendentes.length;
+    if (m.leituraConcluida) {
+      return el('div', { class: 'painel-modo' }, [
+        el('div', { class: 'painel-modo-texto' }, [
+          el('span', { class: 'rotulo-pequeno', text: 'Modo de estudo' }),
+          el('span', { class: 'selo-modo revisao', text: 'Modo Revisão' }),
+          el('span', { class: 'data-fraca', text: 'O Modo Leitura foi concluído (teoria e todas as baterias).' })
+        ])
+      ]);
+    }
+    function opcao(valor, titulo, sub) {
+      var ativo = (valor === 'revisao') === m.escolhido;
+      return el('button', { type: 'button', class: 'opcao-modo' + (ativo ? ' ativo' : ''), 'aria-pressed': String(ativo), onclick: function () {
+        if (ativo) return;
+        Dados.atualizarDisciplina(d.id, { modo: valor });
+        App.atualizar();
+        UI.aviso(valor === 'revisao' ? d.nome + ' agora está no Modo Revisão' : d.nome + ' voltou para o Modo Leitura');
+      } }, [el('strong', { text: titulo }), el('span', { text: sub })]);
+    }
+    return el('div', { class: 'painel-modo' }, [
+      el('div', { class: 'painel-modo-texto' }, [
+        el('span', { class: 'rotulo-pequeno', text: 'Modo de estudo' }),
+        el('span', { class: 'selo-modo ' + m.modo, text: m.modo === 'revisao' ? 'Modo Revisão' : 'Modo Leitura' })
+      ]),
+      el('div', { class: 'opcoes-modo' }, [
+        opcao('auto', 'Seguir o Modo Leitura até o fim', 'Teoria e baterias; passa sozinho para o Modo Revisão ao terminar' + (pendentes ? ' (faltam ' + pendentes + (pendentes === 1 ? ' etapa)' : ' etapas)') : '')),
+        opcao('revisao', 'Ir direto para o Modo Revisão', 'Simulados, favoritadas e pontos fracos, mesmo sem concluir o Modo Leitura')
+      ])
+    ]);
+  }
+
   function renderDisciplina(raiz, id) {
     var d = Dados.disciplina(id);
     if (!d) { location.hash = '#/teoria'; return; }
@@ -113,6 +148,7 @@ var Teoria = (function () {
         UI.cartao('relogio', 'Tempo acumulado', UI.fmtDuracao(Dados.tempoAcumulado(d.id, 'teoria'))),
         UI.cartao('calendario', 'Revisões pendentes', revisoes ? String(revisoes) : '—')
       ]),
+      painelModo(d),
       UI.blocoAnotacao(anot, detalheAnot)
     ]));
 

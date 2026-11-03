@@ -170,7 +170,22 @@ var Dados = (function () {
     if (campos.nome != null) d.nome = campos.nome;
     if (campos.cor != null) d.cor = campos.cor;
     if (campos.peso != null) d.peso = Number(campos.peso) || 0;
+    // modo: 'revisao' = entrar no Modo Revisão antes de terminar o Modo Leitura; 'auto' = seguir até o fim.
+    if (campos.modo != null) { if (campos.modo === 'revisao') d.modo = 'revisao'; else delete d.modo; }
     salvar();
+  }
+
+  // Modo de estudo da disciplina: Revisão quando o Modo Leitura termina (automático) ou quando o usuário escolhe antes.
+  function modoDeEstudo(disciplinaId) {
+    var d = disciplina(disciplinaId);
+    var plano = planoTeoria(disciplinaId);
+    var escolhido = !!(d && d.modo === 'revisao');
+    return {
+      modo: plano.concluido || escolhido ? 'revisao' : 'leitura',
+      escolhido: escolhido && !plano.concluido,
+      leituraConcluida: plano.concluido,
+      plano: plano
+    };
   }
 
   function excluirDisciplina(id) {
@@ -544,6 +559,7 @@ var Dados = (function () {
   var GRUPOS_FAVORITAS = { duvidas: 'Questões em que fiquei em dúvida', erros2x: 'Questões que errei 2x ou mais' };
   var ORDEM_FAVORITAS = ['duvidas', 'erros2x'];
   var FRACOS_QUESTOES = 50, FRACOS_ASSUNTOS = 3;
+  var SIMULADO_MINIMO = 50; // por volta: soma mínima de questões de simulado antes das favoritadas
 
   function cadernoFavorito(disciplinaId, grupo) {
     var pf = pastaFavoritas(disciplinaId);
@@ -557,7 +573,8 @@ var Dados = (function () {
 
   // O estado é recalculado repassando as sessões em ordem (data e hora de lançamento); assim editar ou
   // excluir uma sessão no Histórico corrige a recomendação sozinho.
-  //  - simulado: o caderno da vez fica concluído quando as questões lançadas nele alcançam o total;
+  //  - simulado: o caderno da vez fica concluído quando as questões lançadas nele alcançam o total; enquanto os
+  //    cadernos concluídos na volta somarem menos de 50 questões, segue para o próximo simulado;
   //  - duvidas / erros2x: concluídas quando uma sessão marca o caderno como finalizado;
   //  - fracos: concluída com 50 questões dos pontos fracos ou 3 assuntos diferentes (ou todos, se houver menos de 3).
   // Matéria sem pontos fracos nas Estatísticas pula a etapa de fracos.
@@ -571,7 +588,7 @@ var Dados = (function () {
       return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
     });
     var acum = {};
-    var est = { etapa: 'simulado', indice: 0, rodada: 1, fracosQuestoes: 0, fracosAssuntos: {} };
+    var est = { etapa: 'simulado', indice: 0, rodada: 1, somaSimulado: 0, fracosQuestoes: 0, fracosAssuntos: {} };
 
     function avancar(s) {
       var mudou = true;
@@ -579,14 +596,19 @@ var Dados = (function () {
         mudou = false;
         if (est.etapa === 'simulado') {
           var cur = simulados[est.indice];
-          if (cur && cur.totalQuestoes > 0 && (acum[cur.id] || 0) >= cur.totalQuestoes) { est.etapa = 'duvidas'; est.indice++; mudou = true; }
+          if (cur && cur.totalQuestoes > 0 && (acum[cur.id] || 0) >= cur.totalQuestoes) {
+            est.indice++;
+            est.somaSimulado += cur.totalQuestoes;
+            if (est.somaSimulado >= SIMULADO_MINIMO) est.etapa = 'duvidas';
+            mudou = true;
+          }
         } else if (est.etapa === 'duvidas' || est.etapa === 'erros2x') {
           var cad = fav[est.etapa];
           var fim = s && cad && (s.cadernos || []).some(function (l) { return l.cadernoId === cad.id && l.finalizado; });
           if (fim) { est.etapa = est.etapa === 'duvidas' ? 'erros2x' : 'fracos'; est.fracosQuestoes = 0; est.fracosAssuntos = {}; mudou = true; }
         } else if (est.etapa === 'fracos') {
           if (!fracos.length || est.fracosQuestoes >= FRACOS_QUESTOES || Object.keys(est.fracosAssuntos).length >= Math.max(1, metaAssuntos)) {
-            est.etapa = 'simulado'; est.rodada++; mudou = true;
+            est.etapa = 'simulado'; est.rodada++; est.somaSimulado = 0; mudou = true;
           }
         }
       }
@@ -608,6 +630,7 @@ var Dados = (function () {
       etapa: est.etapa, rodada: est.rodada,
       simulado: atual, simuladoFeitas: atual ? Math.min(acum[atual.id] || 0, atual.totalQuestoes || 0) : 0,
       simuladosConcluidos: est.indice, simulados: simulados,
+      somaSimulado: est.somaSimulado, minimoSimulado: SIMULADO_MINIMO,
       favoritas: fav, fracos: fracos,
       fracosQuestoes: est.fracosQuestoes, fracosAssuntos: est.fracosAssuntos,
       metaQuestoes: FRACOS_QUESTOES, metaAssuntos: metaAssuntos
@@ -915,6 +938,7 @@ var Dados = (function () {
     porOrdem: porOrdem,
     disciplinas: disciplinas, disciplina: disciplina,
     criarDisciplina: criarDisciplina, atualizarDisciplina: atualizarDisciplina, excluirDisciplina: excluirDisciplina,
+    modoDeEstudo: modoDeEstudo,
     blocosDe: blocosDe, bloco: bloco, criarBloco: criarBloco, atualizarBloco: atualizarBloco, excluirBloco: excluirBloco,
     topicosDe: topicosDe, topico: topico, topicosDaDisciplina: topicosDaDisciplina,
     criarTopicos: criarTopicos, atualizarTopico: atualizarTopico, excluirTopico: excluirTopico,
