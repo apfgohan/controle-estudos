@@ -126,7 +126,7 @@ var Questoes = (function () {
     var sp = Dados.statsPasta(p.id);
     var resumo = cadernos.length + (cadernos.length === 1 ? ' caderno' : ' cadernos') +
       (teoria ? ' de ' + Dados.blocosDe(d.id).length + ' blocos' : '') +
-      (erros ? ' de ' + Dados.paresDeBlocos(d.id).length + (Dados.paresDeBlocos(d.id).length === 1 ? ' par de blocos' : ' pares de blocos') : '') +
+      (erros ? (function () { var g = Dados.gruposDeErros(d.id), n = g.normais.length + (g.final ? 1 : 0); return ' de ' + n + (n === 1 ? ' bateria de erros' : ' baterias de erros'); })() : '') +
       (sp.feitas ? ' · ' + UI.fmtNum(sp.feitas) + ' questões · ' + UI.fmtPct(sp.pct) : '');
 
     var topo = el('div', { class: 'pasta-topo', onclick: function (e) {
@@ -193,23 +193,21 @@ var Questoes = (function () {
     ]);
   }
 
-  // Avisa só dos pares que já precisam do caderno de erros (as últimas baterias dos dois blocos foram feitas).
+  // Avisa só das baterias de erros que já chegaram na sequência (a etapa anterior foi concluída) e ainda não têm caderno.
   function avisosPastaErros(d, cadernos) {
     var plano = Dados.planoTeoria(d.id);
-    var pares = Dados.paresDeBlocos(d.id);
-    function ultimaFeita(bloco) {
-      var p = plano.progresso.filter(function (x) { return x.bloco === bloco; })[0];
-      return !!(p && p.baterias && p.baterias[plano.numBaterias - 1].concluida);
-    }
-    var liberados = plano.itens.filter(function (it) {
-      return it.tipo === 'erros' && !it.caderno && it.par.blocos.every(ultimaFeita);
+    var g = plano.gruposErros;
+    var total = g.normais.length + (g.final ? 1 : 0);
+    var liberados = plano.itens.filter(function (it, i) {
+      return it.tipo === 'erros' && !it.caderno && (i === 0 || plano.itens[i - 1].concluido);
     });
-    var semPar = cadernos.filter(function (c) { return !c.par || c.par > pares.length; });
-    var avisos = liberados.map(function (it) { return 'Já é hora da bateria de erros dos blocos ' + Dados.nomePar(it.par) + ': cadastre o caderno de erros.'; });
-    if (semPar.length) avisos.push('Cadernos sem par de blocos: ' + semPar.map(function (c) { return c.nome; }).join(', ') + ' (escolha na engrenagem).');
+    var semPar = cadernos.filter(function (c) { return !Dados.parDoCaderno(d.id, c); });
+    var avisos = liberados.map(function (it) { return 'Já é hora da bateria de erros ' + (it.par.final ? 'final ' : '') + 'dos ' + Dados.nomePar(it.par) + ': cadastre o caderno de erros.'; });
+    if (semPar.length) avisos.push('Cadernos sem blocos definidos: ' + semPar.map(function (c) { return c.nome; }).join(', ') + ' (escolha na engrenagem).');
     return el('div', { class: 'pasta-teoria-info' }, [
-      el('p', { class: 'data-fraca', text: 'Um caderno de erros por par de blocos (' + cadernos.length + ' de ' + pares.length + '): blocos 1 e 2, 3 e 4, e assim por diante. ' +
-        'A bateria de erros é recomendada depois da última bateria dos dois blocos e fica concluída quando todas as questões do caderno forem lançadas.' }),
+      el('p', { class: 'data-fraca', text: 'Um caderno de erros por bateria de erros (' + cadernos.length + ' de ' + total + '): blocos 1 e 2, 3 e 4, e assim por diante, ' +
+        'cada um depois da última bateria dos dois blocos. Os blocos finais, cujas últimas baterias não chegam a ser recomendadas, ficam juntos numa bateria final' +
+        (g.final ? ' (' + Dados.nomePar(g.final) + ')' : '') + '. Cada bateria fica concluída quando todas as questões do caderno forem lançadas.' }),
       avisos.length ? el('ul', { class: 'pasta-teoria-avisos' }, avisos.map(function (a) { return el('li', null, [UI.icone('alerta'), el('span', { text: a })]); })) : null
     ]);
   }
@@ -253,12 +251,11 @@ var Questoes = (function () {
   }
 
   function statusErros(d, c) {
-    var pares = Dados.paresDeBlocos(d.id);
-    var par = c.par && pares[c.par - 1];
-    if (!par) return el('span', { class: 'data-fraca', text: 'Sem par de blocos' });
+    var par = Dados.parDoCaderno(d.id, c);
+    if (!par) return el('span', { class: 'data-fraca', text: 'Sem blocos definidos' });
     var s = Dados.statsCaderno(c.id);
     return el('div', null, [
-      el('div', { class: 'caderno-bloco', text: Dados.nomePar(par) }),
+      el('div', { class: 'caderno-bloco', text: (par.final ? 'Final: ' : '') + Dados.nomePar(par) }),
       !s.total ? el('span', { class: 'data-fraca', text: 'Informe o total' })
         : el('span', { class: 'bateria' + (s.completo ? ' concluida' : s.feitas ? ' parcial' : '') }, s.completo ? 'Concluída' : Math.min(s.feitas, s.total) + '/' + s.total)
     ]);
@@ -347,11 +344,15 @@ var Questoes = (function () {
     var teoria = p.tipo === 'teoria', erros = p.tipo === 'erros';
     var simulado = p.tipo === 'simulado', favoritas = p.tipo === 'favoritas';
     var livre = teoria ? (c && c.blocoId && Dados.bloco(c.blocoId) ? Dados.bloco(c.blocoId) : Dados.blocoSemCaderno(d.id, c ? c.id : null)) : null;
-    var pares = erros ? Dados.paresDeBlocos(d.id) : [];
-    var parLivre = erros ? (c && c.par && pares[c.par - 1] ? pares[c.par - 1] : Dados.parSemCaderno(d.id, c ? c.id : null)) : null;
+    // Opções de blocos: os pares da sequência e a bateria final (mais o par antigo do caderno, se for o caso).
+    var gruposErros = erros ? Dados.gruposDeErros(d.id) : null;
+    var pares = erros ? gruposErros.normais.concat(gruposErros.final ? [gruposErros.final] : []) : [];
+    var parAtual = erros && c ? Dados.parDoCaderno(d.id, c) : null;
+    if (parAtual && pares.every(function (pr) { return pr.par !== parAtual.par; })) pares.push(parAtual);
+    var parLivre = erros ? (parAtual || Dados.parSemCaderno(d.id, c ? c.id : null)) : null;
     var grupo = favoritas ? (c && c.grupo ? c.grupo : Dados.grupoLivre(d.id, c ? c.id : null)) : null;
     var n = Dados.cadernosDe(p.id).length + 1;
-    var nomeSugerido = livre ? livre.nome : parLivre ? 'Erros — ' + Dados.nomePar(parLivre)
+    var nomeSugerido = livre ? livre.nome : parLivre ? (parLivre.final ? 'Erros finais — ' : 'Erros — ') + Dados.nomePar(parLivre)
       : simulado ? 'Simulado ' + String(n).padStart(2, '0')
       : favoritas ? (grupo === 'erros2x' ? 'Favoritadas — Errei 2x ou mais' : 'Favoritadas — Dúvidas')
       : 'Bloco ' + String(n).padStart(2, '0');
@@ -367,7 +368,7 @@ var Questoes = (function () {
     var usadosPar = erros ? Dados.cadernosDe(p.id).filter(function (x) { return (!c || x.id !== c.id) && x.par; }).map(function (x) { return x.par; }) : [];
     var seletorPar = erros ? el('select', null, [el('option', { value: '', text: '— escolha os blocos —' })].concat(pares.map(function (pr) {
       var ocupado = usadosPar.indexOf(pr.par) >= 0;
-      return el('option', { value: pr.par, text: Dados.nomePar(pr) + (ocupado ? ' (já tem caderno)' : ''), disabled: ocupado, selected: parLivre && parLivre.par === pr.par });
+      return el('option', { value: pr.par, text: (pr.final ? 'Bateria final — ' : '') + Dados.nomePar(pr) + (ocupado ? ' (já tem caderno)' : ''), disabled: ocupado, selected: parLivre && parLivre.par === pr.par });
     }))) : null;
     var usadosGrupo = favoritas ? Dados.cadernosDe(p.id).filter(function (x) { return (!c || x.id !== c.id) && x.grupo; }).map(function (x) { return x.grupo; }) : [];
     var seletorGrupo = favoritas ? el('select', null, [el('option', { value: '', text: '— escolha o grupo —' })].concat(Dados.ORDEM_FAVORITAS.map(function (g) {

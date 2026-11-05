@@ -405,7 +405,7 @@ var Dados = (function () {
       if (campos.blocoId !== undefined) c.blocoId = campos.blocoId || null;
       if (campos.baterias !== undefined) c.baterias = campos.baterias && campos.baterias.length ? campos.baterias.map(function (n) { return Math.max(0, Math.round(Number(n) || 0)); }) : null;
     }
-    if (p.tipo === 'erros' && campos.par !== undefined) c.par = Number(campos.par) || null;
+    if (p.tipo === 'erros' && campos.par !== undefined) c.par = campos.par === 'final' ? 'final' : Number(campos.par) || null;
   }
 
   // Pares de blocos para as baterias de erros: [{ par, blocos: [b1, b2?] }]. Com número ímpar, o último fica sozinho.
@@ -414,21 +414,49 @@ var Dados = (function () {
     for (var i = 0; i < bs.length; i += 2) r.push({ par: i / 2 + 1, blocos: bs.slice(i, i + 2) });
     return r;
   }
-  // "Bloco 01" + "Bloco 02" vira "Blocos 01 e 02"; outros nomes ficam "A e B".
+  // "Bloco 01" + "Bloco 02" vira "Blocos 01 e 02"; vários blocos viram "Blocos 05 a 10"; outros nomes ficam "A e B" / "A a B".
   function nomePar(par) {
-    if (par.blocos.length === 1) return par.blocos[0].nome;
-    var a = /^bloco\s+(.+)$/i.exec(par.blocos[0].nome), b = /^bloco\s+(.+)$/i.exec(par.blocos[1].nome);
-    return a && b ? 'Blocos ' + a[1] + ' e ' + b[1] : par.blocos[0].nome + ' e ' + par.blocos[1].nome;
+    var bs = par.blocos;
+    if (bs.length === 1) return bs[0].nome;
+    var ultimo = bs[bs.length - 1], liga = bs.length === 2 ? ' e ' : ' a ';
+    var a = /^bloco\s+(.+)$/i.exec(bs[0].nome), b = /^bloco\s+(.+)$/i.exec(ultimo.nome);
+    return a && b ? 'Blocos ' + a[1] + liga + b[1] : bs[0].nome + liga + ultimo.nome;
   }
   function cadernoDoPar(disciplinaId, numero) {
     var pe = pastaErros(disciplinaId);
     return pe ? cadernosDe(pe.id).filter(function (c) { return c.par === numero; })[0] || null : null;
   }
-  // Primeiro par ainda sem caderno de erros.
+
+  // Baterias de erros do Modo Leitura. O Modo Leitura termina na 2ª bateria do último bloco; por isso só têm
+  // bateria de erros própria os pares cuja última bateria do 2º bloco ainda cabe na sequência. Os demais pares
+  // (que ainda não tenham caderno de erros concluído) se juntam numa única bateria final, ex.: "Blocos 05 a 10".
+  function gruposDeErros(disciplinaId) {
+    var bs = blocosDe(disciplinaId), N = bs.length;
+    var atrasoUltima = ATRASO_BATERIA[numBaterias(disciplinaId) - 1];
+    var normais = [], finais = [];
+    paresDeBlocos(disciplinaId).forEach(function (par) {
+      var j = bs.indexOf(par.blocos[par.blocos.length - 1]) + 1;
+      if (j + atrasoUltima <= N) { normais.push(par); return; }
+      var antigo = cadernoDoPar(disciplinaId, par.par);
+      if (!(antigo && statsCaderno(antigo.id).completo)) finais.push(par);
+    });
+    var final = finais.length ? { par: 'final', final: true, pares: finais, blocos: finais.reduce(function (a, p) { return a.concat(p.blocos); }, []) } : null;
+    return { normais: normais, final: final };
+  }
+
+  // O par (ou a bateria final) a que um caderno de erros pertence.
+  function parDoCaderno(disciplinaId, c) {
+    if (!c || !c.par) return null;
+    if (c.par === 'final') return gruposDeErros(disciplinaId).final;
+    return paresDeBlocos(disciplinaId)[c.par - 1] || null;
+  }
+
+  // Primeira bateria de erros ainda sem caderno (pares da sequência e, por último, a final).
   function parSemCaderno(disciplinaId, excetoCadernoId) {
     var pe = pastaErros(disciplinaId);
     var usados = pe ? cadernosDe(pe.id).filter(function (c) { return c.id !== excetoCadernoId && c.par; }).map(function (c) { return c.par; }) : [];
-    return paresDeBlocos(disciplinaId).filter(function (p) { return usados.indexOf(p.par) < 0; })[0] || null;
+    var g = gruposDeErros(disciplinaId);
+    return g.normais.concat(g.final ? [g.final] : []).filter(function (p) { return usados.indexOf(p.par) < 0; })[0] || null;
   }
 
   // Bloco de teoria ainda sem caderno na pasta de teoria (o primeiro, pela ordem).
@@ -494,9 +522,10 @@ var Dados = (function () {
     });
   }
 
-  // Sequência do Modo Teoria: no passo n vêm a teoria do bloco n e as baterias
-  // 1ª do bloco n, 2ª do n-1, 3ª do n-3 e 4ª do n-6. Depois da última teoria os passos
-  // continuam só com baterias, até a última bateria do último bloco.
+  // Sequência do Modo Leitura: no passo n vêm a teoria do bloco n e as baterias
+  // 1ª do bloco n, 2ª do n-1, 3ª do n-3 e 4ª do n-6. Depois da última teoria, a sequência termina
+  // na 2ª bateria do último bloco (as baterias seguintes não são recomendadas, embora os cadernos
+  // continuem divididos em 3 ou 4), seguida da bateria final de erros.
   var ATRASO_BATERIA = [0, 1, 3, 6];
 
   function planoTeoria(disciplinaId) {
@@ -530,26 +559,37 @@ var Dados = (function () {
         });
       });
     }
-    // Bateria de erros de cada par de blocos: logo depois da última bateria do segundo bloco do par
+    // Termina na 2ª bateria do último bloco.
+    var fim = -1;
+    itens.forEach(function (it, i) { if (it.tipo === 'bateria' && it.indice === N && it.numero === 2) fim = i; });
+    if (fim >= 0) itens = itens.slice(0, fim + 1);
+
+    function itemErros(par, passo) {
+      var cad = cadernoDoPar(disciplinaId, par.par);
+      var st = cad ? statsCaderno(cad.id) : null;
+      return {
+        tipo: 'erros', passo: passo, par: par, caderno: cad,
+        feitas: st ? Math.min(st.feitas, st.total) : 0, qtd: cad ? cad.totalQuestoes || 0 : 0,
+        concluido: !!(st && st.completo)
+      };
+    }
+    // Bateria de erros de cada par: logo depois da última bateria do segundo bloco do par
     // (que é sempre a última dos dois a acontecer). Fica pronta quando o caderno de erros é todo resolvido.
-    paresDeBlocos(disciplinaId).map(function (par) {
+    var grupos = gruposDeErros(disciplinaId);
+    grupos.normais.map(function (par) {
       var ultimo = blocos.indexOf(par.blocos[par.blocos.length - 1]) + 1;
       var pos = -1;
       itens.forEach(function (it, i) { if (it.tipo === 'bateria' && it.indice === ultimo && it.numero === nb) pos = i; });
-      var cad = cadernoDoPar(disciplinaId, par.par);
-      var st = cad ? statsCaderno(cad.id) : null;
-      return { pos: pos, item: {
-        tipo: 'erros', passo: pos >= 0 ? itens[pos].passo : 0, par: par, caderno: cad,
-        feitas: st ? Math.min(st.feitas, st.total) : 0, qtd: cad ? cad.totalQuestoes || 0 : 0,
-        concluido: !!(st && st.completo)
-      } };
+      return { pos: pos, item: itemErros(par, pos >= 0 ? itens[pos].passo : 0) };
     }).sort(function (a, b) { return b.pos - a.pos; }).forEach(function (x) {
       if (x.pos >= 0) itens.splice(x.pos + 1, 0, x.item);
     });
+    // Erros que sobraram: uma única bateria no fim.
+    if (grupos.final && itens.length) itens.push(itemErros(grupos.final, itens[itens.length - 1].passo));
 
     var pendentes = itens.filter(function (it) { return !it.concluido; });
     return {
-      blocos: N, numBaterias: nb, totalPassos: N ? N + atrasos[atrasos.length - 1] : 0,
+      blocos: N, numBaterias: nb, totalPassos: itens.length ? itens[itens.length - 1].passo : 0, gruposErros: grupos,
       itens: itens, pendentes: pendentes, progresso: progresso,
       concluido: N > 0 && !pendentes.length
     };
@@ -949,7 +989,8 @@ var Dados = (function () {
     NOME_PASTA_SIMULADO: NOME_PASTA_SIMULADO, NOME_PASTA_FAVORITAS: NOME_PASTA_FAVORITAS, criarPasta: criarPasta,
     GRUPOS_FAVORITAS: GRUPOS_FAVORITAS, ORDEM_FAVORITAS: ORDEM_FAVORITAS, cadernoFavorito: cadernoFavorito, grupoLivre: grupoLivre,
     planoRevisao: planoRevisao,
-    paresDeBlocos: paresDeBlocos, nomePar: nomePar, cadernoDoPar: cadernoDoPar, parSemCaderno: parSemCaderno, atualizarPasta: atualizarPasta, excluirPasta: excluirPasta,
+    paresDeBlocos: paresDeBlocos, nomePar: nomePar, cadernoDoPar: cadernoDoPar, parSemCaderno: parSemCaderno,
+    gruposDeErros: gruposDeErros, parDoCaderno: parDoCaderno, atualizarPasta: atualizarPasta, excluirPasta: excluirPasta,
     cadernosDe: cadernosDe, caderno: caderno, cadernosDaDisciplina: cadernosDaDisciplina,
     criarCaderno: criarCaderno, atualizarCaderno: atualizarCaderno, moverCaderno: moverCaderno, excluirCaderno: excluirCaderno,
     blocoSemCaderno: blocoSemCaderno, cadernoDoBloco: cadernoDoBloco,
