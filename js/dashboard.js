@@ -490,7 +490,11 @@ var Dashboard = (function () {
       el('ol', { class: 'ciclo-lista' }, c.itens.map(function (item, i) {
         var d = Dados.disciplina(item.disciplinaId);
         var estado = i < c.posicaoAtual ? 'feito' : i === c.posicaoAtual ? 'atual' : '';
-        return el('li', { class: 'ciclo-item ' + estado }, [
+        return el('li', { class: 'ciclo-item clicavel ' + estado, tabindex: '0', role: 'button',
+          title: estado === 'feito' ? 'Ver o que foi estudado' : 'Ver a recomendação desta matéria',
+          onclick: function (e) { if (!e.target.closest('.ciclo-ir')) detalheCiclo(i); },
+          onkeydown: function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); detalheCiclo(i); } }
+        }, [
           el('span', { class: 'ciclo-num' }, estado === 'feito' ? UI.icone('check') : String(i + 1)),
           el('span', { class: 'bolinha', style: { background: d ? d.cor : '#ccc' } }),
           el('span', { class: 'ciclo-nome', text: d ? d.nome : '(disciplina excluída)' }),
@@ -503,6 +507,49 @@ var Dashboard = (function () {
         ]);
       }))
     ]);
+  }
+
+  // Clique numa matéria do ciclo: as já feitas mostram o que foi estudado nesta volta;
+  // a atual e as próximas mostram a recomendação de agora para aquela matéria.
+  function detalheCiclo(i) {
+    var c = Dados.db.ciclo, item = c.itens[i];
+    var d = item && Dados.disciplina(item.disciplinaId);
+    if (!d) return;
+    var feito = i < c.posicaoAtual;
+    var posicao = (i + 1) + 'º no ciclo · volta ' + ((c.voltas || 0) + 1);
+    var corpo;
+
+    if (feito) {
+      var r = Dados.sessoesDaPosicaoCiclo(i);
+      corpo = r.sessoes.length ? [
+        r.aproximado ? el('p', { class: 'aviso-suave', text: 'Este estudo foi lançado antes do programa registrar a posição no ciclo; mostrando a última sessão desta matéria.' }) : null,
+        el('div', { class: 'ciclo-sessoes' }, r.sessoes.map(function (s) {
+          return el('div', { class: 'ciclo-sessao' }, [
+            el('div', { class: 'ciclo-sessao-topo' }, [
+              Sessao.seloTipo(s.tipo),
+              el('span', { class: 'data-forte', text: UI.fmtData(s.data) }),
+              el('span', { class: 'registro-tempo' }, [UI.icone('relogio'), UI.fmtDuracao(s.segundos)])
+            ]),
+            el('div', { class: 'registro-detalhe', text: Sessao.descrever(s) }),
+            s.anotacao ? el('div', { class: 'registro-anotacao' }, [UI.icone('nota'), el('span', { text: s.anotacao })]) : null
+          ]);
+        }))
+      ] : [el('p', { class: 'data-fraca', text: 'Nenhum estudo foi lançado nesta posição do ciclo nesta volta (ela pode ter sido pulada).' })];
+    } else {
+      var modo = Dados.modoDeEstudo(d.id);
+      var anot = Dados.ultimaAnotacao(d.id);
+      corpo = [
+        el('div', { class: 'ciclo-detalhe-modo' }, [seloModo(modo),
+          i > c.posicaoAtual ? el('span', { class: 'data-fraca', text: 'Recomendação de agora; pode mudar com os estudos lançados até chegar a vez desta matéria.' }) : null]),
+        recomendacao(d, modo) || el('p', { class: 'data-fraca', text: 'Sem recomendação: cadastre os blocos de teoria desta matéria.' }),
+        anot ? UI.blocoAnotacao(anot, { teoria: 'Teoria', questoes: 'Questões', revisao: 'Revisão' }[anot.tipo]) : null
+      ];
+    }
+    var m = UI.modal(d.nome, corpo, [{ texto: 'Fechar', classe: 'btn-secundario' }],
+      { subtitulo: (feito ? 'O que foi estudado · ' : 'Recomendação · ') + posicao });
+    m.caixa.classList.add('modal-largo');
+    // Os botões da recomendação abrem o formulário de lançamento: fecha esta janela antes.
+    m.caixa.querySelectorAll('.recomendacao .btn, .recomendacao a:not([target])').forEach(function (b) { b.addEventListener('click', m.fechar); });
   }
 
   function editarCiclo() {

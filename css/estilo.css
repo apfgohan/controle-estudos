@@ -403,6 +403,13 @@ a.perfil-nome:hover { color: var(--azul-escuro); }
 .ciclo-item.feito .ciclo-num { background: var(--verde-claro); border-color: var(--verde-borda); color: var(--verde-texto); }
 .ciclo-item.atual .ciclo-num { background: var(--azul); border-color: var(--azul); color: #fff; }
 .ciclo-nome { font-weight: 600; flex: 1; min-width: 0; }
+.ciclo-item.clicavel { cursor: pointer; outline: none; }
+.ciclo-item.clicavel:focus-visible { box-shadow: 0 0 0 2px var(--azul); }
+.ciclo-sessoes { display: flex; flex-direction: column; gap: 10px; }
+.ciclo-sessao { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--borda); border-radius: 12px; background: var(--superficie-2); }
+.ciclo-sessao-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ciclo-sessao-topo .registro-tempo { margin-left: auto; }
+.ciclo-detalhe-modo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ciclo-ir { visibility: hidden; }
 .ciclo-item:hover .ciclo-ir, .ciclo-ir:focus { visibility: visible; }
 

@@ -733,9 +733,40 @@ var Dados = (function () {
     s.criadoEm = Date.now();
     db.sessoes.push(s);
     var atual = itemAtualCiclo();
-    if (atual && atual.disciplinaId === s.disciplinaId) avancarCiclo(1);
+    if (atual && atual.disciplinaId === s.disciplinaId) {
+      // Guarda em que posição do ciclo a sessão foi lançada (para mostrar o que foi feito em cada matéria do ciclo).
+      s.ciclo = { itemId: atual.id, volta: db.ciclo.voltas || 0, posicao: db.ciclo.posicaoAtual };
+      avancarCiclo(1);
+    }
     salvar();
     return s;
+  }
+
+  // O que foi estudado numa posição do ciclo, na volta atual: a sessão que avançou o ciclo naquela posição e as
+  // outras da mesma matéria lançadas logo depois (antes do ciclo avançar de novo). Sessões antigas, de antes deste
+  // registro existir, não têm posição: aí devolve a última sessão da matéria e marca o resultado como aproximado.
+  function sessoesDaPosicaoCiclo(indice) {
+    var c = db.ciclo, item = c.itens[indice];
+    if (!item) return { sessoes: [], aproximado: false };
+    var porOrdem = db.sessoes.slice().sort(function (a, b) { return (a.criadoEm || 0) - (b.criadoEm || 0); });
+    var base = null;
+    porOrdem.forEach(function (s) { if (s.ciclo && s.ciclo.itemId === item.id && s.ciclo.volta === (c.voltas || 0)) base = s; });
+    if (base) {
+      var lista = [base], depois = false;
+      for (var i = 0; i < porOrdem.length; i++) {
+        var s = porOrdem[i];
+        if (s === base) { depois = true; continue; }
+        if (!depois) continue;
+        if (s.ciclo) break; // o ciclo avançou de novo
+        if (s.disciplinaId === base.disciplinaId) lista.push(s);
+      }
+      return { sessoes: lista, aproximado: false };
+    }
+    // Aproximação só na volta em que o registro começou (em voltas seguintes, sem registro = posição pulada).
+    var registroAntigo = db.sessoes.some(function (s) { return s.ciclo && s.ciclo.volta < (c.voltas || 0); });
+    var semRegistro = sessoesDe(item.disciplinaId).filter(function (s) { return !s.ciclo; });
+    if (registroAntigo || !semRegistro.length) return { sessoes: [], aproximado: false };
+    return { sessoes: [semRegistro[0]], aproximado: true };
   }
 
   // ---------- Ciclo de estudos ----------
@@ -997,6 +1028,7 @@ var Dados = (function () {
     numBaterias: numBaterias, divisaoBaterias: divisaoBaterias, divisaoIgual: divisaoIgual,
     bateriasCaderno: bateriasCaderno, planoTeoria: planoTeoria,
     proximaDoCiclo: itemAtualCiclo, avancarCiclo: avancarCiclo, irParaPosicaoCiclo: irParaPosicaoCiclo,
+    sessoesDaPosicaoCiclo: sessoesDaPosicaoCiclo,
     definirCiclo: definirCiclo, recomecarCiclo: recomecarCiclo,
     revisto: revisto, marcarRevisto: marcarRevisto,
     sessao: sessao, criarSessao: criarSessao, atualizarSessao: atualizarSessao, excluirSessao: excluirSessao,
