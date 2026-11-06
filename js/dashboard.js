@@ -836,6 +836,66 @@ var Dashboard = (function () {
     ]);
   }
 
+  // ---------- Previsão de conclusão do edital ----------
+  function horasInt(h) { return UI.fmtNum(Math.round(h)) + ' h'; }
+
+  function caixaPrevisao() {
+    var r = Previsao.calcular();
+    if (r.vazio) return null;
+    var valor, detalhe;
+    if (r.concluido) {
+      valor = 'Edital concluído';
+      detalhe = 'Todas as matérias já estão no Modo Revisão.';
+    } else if (r.semRitmo) {
+      valor = 'Sem previsão';
+      detalhe = 'Nenhum estudo nas últimas 4 semanas: falta um ritmo para calcular. Faltam cerca de ' + horasInt(r.horasRestantes) + '.';
+    } else {
+      valor = Previsao.fmtMes(r.data);
+      detalhe = 'Cerca de ' + horasInt(r.horasRestantes) + ' restantes · ' + UI.fmtNum(Math.round(r.horasSemana)) + ' h/semana nas últimas 4 semanas · ' +
+        r.emRevisao + ' de ' + r.total + ' matérias em Revisão';
+    }
+    function abrir() { detalhePrevisao(r); }
+    return el('div', { class: 'caixa-kpi caixa-previsao', role: 'button', tabindex: '0', title: 'Ver o detalhe por matéria', onclick: abrir,
+      onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } } }, [
+      el('div', { class: 'previsao-principal' }, [
+        el('div', { class: 'caixa-titulo', text: 'Conclusão do edital' }),
+        el('div', { class: 'previsao-valor', text: valor })
+      ]),
+      el('div', { class: 'previsao-detalhe', text: detalhe })
+    ]);
+  }
+
+  function detalhePrevisao(r) {
+    function peso(x) { return x.horas > 0 ? (x.data ? new Date(x.data).getTime() : Infinity) : -1; }
+    var linhas = r.materias.slice().sort(function (a, b) { return peso(b) - peso(a); }).map(function (x) {
+      var situacao = x.horas > 0 ? (x.modo === 'revisao' ? 'Teoria pendente' : 'Modo Leitura') : 'Concluída';
+      return el('tr', null, [
+        el('td', null, [el('span', { class: 'bolinha', style: { background: x.d.cor } }), ' ' + x.d.nome]),
+        el('td', { text: situacao }),
+        el('td', { class: 'previsao-num', text: x.horas > 0 ? horasInt(x.horas) : '—' }),
+        el('td', { class: 'previsao-num', text: x.data ? Previsao.fmtMes(x.data) : '—' })
+      ]);
+    });
+    var m = r.medias;
+    UI.modal('Conclusão do edital', [
+      !r.concluido && r.data ? el('p', { class: 'modal-desc', text: 'Mantendo o ritmo das últimas 4 semanas (' + UI.fmtNum(Math.round(r.horasSemana)) + ' h/semana), a previsão é ' + Previsao.fmtMes(r.data) + '. A data muda conforme o seu ritmo real.' }) : null,
+      el('div', { class: 'tabela-rolagem previsao-tabela' }, el('table', { class: 'tabela tabela-previsao' }, [
+        el('thead', null, el('tr', null, [
+          el('th', { text: 'Matéria' }), el('th', { text: 'Situação' }), el('th', { class: 'previsao-num', text: 'Faltam' }), el('th', { class: 'previsao-num', text: 'Previsão' })
+        ])),
+        el('tbody', null, linhas)
+      ])),
+      el('h3', { class: 'processo-titulo', text: 'Como é calculado' }),
+      el('ul', { class: 'previsao-premissas' }, [
+        'O ciclo é repetido no futuro a partir da posição atual. Posições de matérias em Revisão gastam tempo, mas não adiantam o edital.',
+        'Quando uma matéria termina o Modo Leitura, continua no ciclo com 1 vaga, em Revisão, e entra a próxima matéria de fora, em ordem alfabética. Se ela tinha 2 vagas, a extra passa para a nova.',
+        'Cada matéria usa as próprias médias; com menos de 5 tópicos concluídos ou 100 questões, usa as gerais: ' + UI.fmtNum(Math.round(m.horasTopico * 60)) + ' min por tópico e ' + UI.fmtNum(Math.round(m.questoesHora)) + ' questões por hora.',
+        'Cadernos ainda não cadastrados são estimados pela média dos outros; favoritadas sem total, pela média das rodadas já lançadas.',
+        'Matéria em Modo Revisão soma só os tópicos que faltam, não as baterias pendentes.'
+      ].map(function (t) { return el('li', { text: t }); }))
+    ], [{ texto: 'Fechar', classe: 'btn-secundario' }], { subtitulo: 'Previsão para concluir a teoria de todas as matérias' }).caixa.classList.add('modal-largo');
+  }
+
   // ---------- Metas da semana ----------
   function caixaMetas(semana) {
     var m = Dados.db.metas || {};
@@ -1156,6 +1216,8 @@ var Dashboard = (function () {
     }
 
     raiz.appendChild(indicadores());
+    var previsao = caixaPrevisao();
+    if (previsao) raiz.appendChild(previsao);
     raiz.appendChild(el('div', { class: 'grade-topo' }, [
       cartaoProxima(),
       el('div', { class: 'coluna-lateral' }, [cartaoPerfil(), painelCiclo()])
