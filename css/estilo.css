@@ -29,6 +29,7 @@
   --amarelo-claro: #2e2614;
   --amarelo-borda: #594619;
   --amarelo-hover: #3b3018;
+  --ouro: #f2c14e;
   --laranja-claro: #31220f;
   --laranja-borda: #5c3f18;
   --laranja-texto: #f3a24b;
@@ -380,6 +381,45 @@ h1, h2, p { margin: 0; }
 a.perfil-nome:hover { color: var(--azul-escuro); }
 .perfil-frase { color: var(--texto-2); font-size: 14px; font-style: italic; }
 .perfil-topo .btn-icone { align-self: flex-start; }
+/* Patentes */
+.insignia { display: inline-flex; flex-shrink: 0; width: 48px; height: 48px; padding: 4px; border-radius: 12px; background: var(--superficie-3); border: 1px solid var(--borda-forte); }
+.insignia svg { width: 100%; height: 100%; }
+.insignia.imperator { border-color: var(--ouro); }
+.insignia.grande { width: 88px; height: 88px; padding: 8px; border-radius: 20px; }
+.perfil-patente { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; text-align: left; color: inherit; cursor: pointer; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie-2); transition: border-color .15s; }
+.perfil-patente:hover { border-color: var(--borda-forte); }
+.perfil-patente.risco { border-color: var(--vermelho-borda); }
+.perfil-patente-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+.perfil-patente-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 15px; }
+.perfil-patente-risco { color: var(--vermelho); font-weight: 700; }
+.aviso-patente { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.aviso-patente-nome { font-size: 20px; font-weight: 800; }
+.patente-atual { display: flex; align-items: center; gap: 14px; }
+.patente-atual-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.patente-faltas { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border: 1px solid var(--borda); border-radius: 12px; background: var(--superficie-2); font-size: 13px; color: var(--texto-2); }
+.patente-faltas strong { color: var(--texto); }
+.patente-faltas.risco { border-color: var(--vermelho-borda); background: var(--vermelho-claro); }
+.patente-titulo { margin: 4px 0 0; font-size: 14px; font-weight: 800; }
+.patente-pausas { display: flex; flex-direction: column; gap: 8px; }
+.patente-pausa-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.patente-pausa-form .campo { min-width: 140px; }
+.patente-fontes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 20px; font-size: 14px; color: var(--texto-2); }
+.patente-fontes > div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--borda); }
+.patente-fontes strong { color: var(--texto); font-variant-numeric: tabular-nums; }
+.patente-fontes .perda strong, .patente-eventos .perda { color: var(--vermelho); }
+.patente-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.patente-lista li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 10px; opacity: .55; }
+.patente-lista li.alcancada { opacity: 1; }
+.patente-lista li.atual { opacity: 1; background: var(--azul-claro); }
+.patente-lista .insignia { width: 36px; height: 36px; padding: 3px; border-radius: 9px; }
+.patente-lista-nome { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; display: flex; flex-direction: column; }
+.patente-requisito { font-size: 12px; font-weight: 600; color: var(--amarelo-texto); }
+.patente-requisito.ok { color: var(--verde-texto); }
+.patente-eventos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.patente-eventos li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px solid var(--borda); }
+@media (max-width: 700px) {
+  .patente-fontes, .patente-lista { grid-template-columns: 1fr; }
+}
 .perfil-sequencia { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--borda); padding-top: 12px; }
 .perfil-sequencia > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .perfil-sequencia > div + div { padding-left: 16px; border-left: 1px solid var(--borda); }

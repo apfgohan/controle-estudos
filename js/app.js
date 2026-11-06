@@ -27,11 +27,13 @@ var App = (function () {
     raiz.innerHTML = '';
     rotas[nome](raiz, partes.slice(1));
     window.scrollTo(0, rolagem);
+    Patentes.conferirAvisos();
   }
 
   window.addEventListener('hashchange', render);
   document.addEventListener('DOMContentLoaded', function () {
     render();
+    Nuvem.aoMudar(Patentes.conferirAvisos);
     Nuvem.iniciar();         // login e sincronização entre aparelhos (se o Firebase estiver configurado)
     Armazenamento.iniciar(); // conecta à pasta de dados (se já escolhida) e carrega o arquivo, se for mais recente
     // Permite instalar como app e abrir sem internet (só funciona em https ou localhost).

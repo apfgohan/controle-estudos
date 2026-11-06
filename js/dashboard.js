@@ -869,28 +869,28 @@ var Dashboard = (function () {
 
   // Dias seguidos com pelo menos uma sessão lançada. A sequência atual continua valendo até o fim de hoje
   // mesmo que ainda não tenha estudado hoje (conta a partir de ontem).
-  function sequencias() {
-    var dias = {};
-    Dados.db.sessoes.forEach(function (s) { dias[s.data] = true; });
-    var lista = Object.keys(dias).sort();
-    var melhor = 0, corrida = 0, anterior = null;
-    lista.forEach(function (d) {
-      corrida = anterior && UI.somarDias(anterior, 1) === d ? corrida + 1 : 1;
-      if (corrida > melhor) melhor = corrida;
-      anterior = d;
-    });
-    var hoje = UI.hoje();
-    var dia = dias[hoje] ? hoje : UI.somarDias(hoje, -1);
-    var atual = 0;
-    while (dias[dia]) { atual++; dia = UI.somarDias(dia, -1); }
-    return { atual: atual, melhor: melhor, estudouHoje: !!dias[hoje] };
-  }
-
   function qtdDias(n) { return n + (n === 1 ? ' dia' : ' dias'); }
+
+  // Patente atual: abre a janela com todas as patentes, o XP e as pausas.
+  function faixaPatente(r) {
+    return el('button', { type: 'button', class: 'perfil-patente' + (r.risco ? ' risco' : ''), title: 'Ver minha patente', onclick: Patentes.abrir }, [
+      Patentes.insignia(r.indice),
+      el('span', { class: 'perfil-patente-corpo' }, [
+        el('span', { class: 'perfil-patente-topo' }, [
+          el('strong', { text: r.patente.nome }),
+          el('span', { class: 'data-fraca', text: UI.fmtNum(r.xp) + ' XP' })
+        ]),
+        UI.barra(r.pct),
+        el('span', { class: 'data-fraca', text: Patentes.textoProxima(r) }),
+        r.requisito ? el('span', { class: 'patente-requisito' + (r.requisito.ok ? ' ok' : ''), text: Patentes.textoRequisito(r) }) : null,
+        r.risco ? el('span', { class: 'perfil-patente-risco', text: 'Estude hoje para não ser rebaixado' }) : null
+      ])
+    ]);
+  }
 
   function cartaoPerfil() {
     var p = Dados.db.perfil || {};
-    var seq = sequencias();
+    var r = Patentes.calcular();
     return el('section', { class: 'painel perfil-tec' }, [
       el('div', { class: 'perfil-topo' }, [
         fotoPerfil(p),
@@ -900,15 +900,17 @@ var Dashboard = (function () {
         ]),
         UI.botaoEngrenagem(editarPerfil, 'Editar perfil')
       ]),
+      faixaPatente(r),
       el('div', { class: 'perfil-sequencia' }, [
         el('div', null, [
           el('span', { class: 'perfil-seq-rotulo', text: 'Sequência atual' }),
-          el('span', { class: 'perfil-seq-valor', text: qtdDias(seq.atual) + ' seguidos' }),
-          seq.atual && !seq.estudouHoje ? el('span', { class: 'perfil-seq-dica', text: 'estude hoje para manter' }) : null
+          el('span', { class: 'perfil-seq-valor', text: qtdDias(r.sequencia) + (r.sequencia === 1 ? ' seguido' : ' seguidos') }),
+          r.pausa ? el('span', { class: 'perfil-seq-dica', text: 'em pausa até ' + UI.fmtData(r.pausa.fim) })
+            : r.sequencia && !r.estudouHoje ? el('span', { class: 'perfil-seq-dica', text: 'estude hoje para manter' }) : null
         ]),
         el('div', null, [
           el('span', { class: 'perfil-seq-rotulo', text: 'Melhor sequência' }),
-          el('span', { class: 'perfil-seq-valor', text: qtdDias(seq.melhor) })
+          el('span', { class: 'perfil-seq-valor', text: qtdDias(r.melhorSequencia) })
         ])
       ])
     ]);

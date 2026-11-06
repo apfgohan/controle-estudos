@@ -160,6 +160,7 @@ var Sessao = (function () {
         campos.cadernos = porAssunto.concat(linhas);
       }
 
+      var patenteAntes = Patentes.calcular();
       var vezAntes = Dados.proximaDoCiclo();
       if (existente) Dados.atualizarSessao(existente.id, campos);
       else Dados.criarSessao(campos);
@@ -172,11 +173,13 @@ var Sessao = (function () {
       }
       if (op.doCronometro) gravarCron(null);
       App.atualizar();
+      var ganho = Patentes.aposLancar(patenteAntes);
+      var xpTexto = ganho > 0 ? ' · +' + UI.fmtNum(ganho) + ' XP' : '';
       if (!existente && vezAntes && vezAntes !== vezDepois) {
         var prox = Dados.disciplina(vezDepois.disciplinaId);
-        UI.aviso('Estudo lançado · ciclo avançou: agora é ' + (prox ? prox.nome : 'a próxima matéria'));
+        UI.aviso('Estudo lançado' + xpTexto + ' · ciclo avançou: agora é ' + (prox ? prox.nome : 'a próxima matéria'));
       } else {
-        UI.aviso(existente ? 'Sessão atualizada' : 'Estudo lançado');
+        UI.aviso((existente ? 'Sessão atualizada' : 'Estudo lançado') + xpTexto);
       }
     }
 

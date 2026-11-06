@@ -23,8 +23,25 @@ var Dados = (function () {
       // Perfil mostrado no Dashboard: só nome e foto (caminho do arquivo ou imagem enviada, em data URL).
       perfil: { nome: 'APF Gohan - Rumo ao fisco!', foto: 'img/perfil.webp' },
       // Metas da semana (segunda a domingo) no Dashboard. 0 = sem meta.
-      metas: { horas: 30, questoes: 500 }
+      metas: { horas: 30, questoes: 500 },
+      // Pausas programadas das patentes: { id, inicio, fim, motivo }. Nesses dias não há falta.
+      pausas: []
     };
+  }
+
+  function criarPausa(campos) {
+    db.pausas.push({ id: novoId(), inicio: campos.inicio, fim: campos.fim, motivo: campos.motivo || '' });
+    salvar();
+  }
+
+  // Pausa ainda não iniciada é apagada; a já iniciada termina ontem (os dias passados continuam protegidos).
+  function encerrarPausa(id) {
+    var p = buscar(db.pausas, id);
+    if (!p) return;
+    var ontem = UI.somarDias(UI.hoje(), -1);
+    if (p.inicio > ontem) remover('pausas', function (x) { return x.id === id; });
+    else p.fim = ontem;
+    salvar();
   }
 
   function atualizarPerfil(campos) {
@@ -1038,7 +1055,7 @@ var Dados = (function () {
     ultimaAnotacao: ultimaAnotacao, ultimoEstudoTopico: ultimoEstudoTopico, revisoesPendentes: revisoesPendentes,
     importacoes: importacoes, fimUltimaImportacao: fimUltimaImportacao, adicionarImportacao: adicionarImportacao,
     excluirImportacao: excluirImportacao, definirApelido: definirApelido,
-    atualizarPerfil: atualizarPerfil,
+    atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,
     exportar: exportar, importar: importar, limpar: limpar, estaVazio: estaVazio, carregarExemplo: carregarExemplo
   };
 })();
