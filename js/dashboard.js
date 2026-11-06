@@ -256,7 +256,7 @@ var Dashboard = (function () {
       ]),
       el('div', { class: 'proxima-nome' }, [
         el('span', { class: 'proxima-cor', style: { background: d.cor } }),
-        el('h2', { class: 'materia-clicavel', text: d.nome, tabindex: '0', role: 'button', title: 'Ver o processo até o fim da teoria',
+        el('h2', { class: 'materia-clicavel', text: d.nome, tabindex: '0', role: 'button', title: 'Ver o processo desta matéria',
           onclick: function () { verProcesso(d); },
           onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); verProcesso(d); } } }),
         seloModo(modo),
@@ -560,12 +560,73 @@ var Dashboard = (function () {
     ]);
   }
 
+  // Processo do Modo Revisão: o que foi feito em cada volta e o que falta na volta atual.
+  function bloquinhoRevisao(e, estado) {
+    var nome, sub, cor = 'favoritas';
+    if (e.tipo === 'simulado') {
+      cor = 'questoes';
+      nome = 'Simulado';
+      var c = e.caderno;
+      sub = !c ? 'Cadastrar novo' : (e.feitas && c.totalQuestoes ? e.feitas + '/' + c.totalQuestoes + ' · ' : '') + c.nome;
+    } else if (e.tipo === 'fracos') {
+      cor = 'erros';
+      nome = 'Pontos fracos';
+      sub = estado === 'feita' ? (e.questoes + ' questões · ' + e.assuntos + (e.assuntos === 1 ? ' assunto' : ' assuntos'))
+        : e.progresso || 'Assuntos fracos';
+    } else {
+      nome = e.tipo === 'duvidas' ? 'Dúvidas' : 'Errei 2x+';
+      sub = e.caderno ? 'Favoritadas' : 'Cadastrar caderno';
+    }
+    return el('div', { class: 'etapa etapa-' + cor + (estado ? ' ' + estado : '') }, [
+      el('div', { class: 'etapa-nome' }, [estado === 'feita' ? UI.icone('check') : null, el('span', { text: nome })]),
+      el('div', { class: 'etapa-sub', text: sub }),
+      estado === 'atual' ? el('div', { class: 'etapa-agora', text: 'Agora' }) : null
+    ]);
+  }
+
+  function gradeRevisao(d) {
+    var p = Dados.planoRevisao(d.id);
+    var dessaVolta = p.historico.filter(function (e) { return e.rodada === p.rodada; });
+    var total = dessaVolta.length + p.faltam.length;
+    p.faltam.forEach(function (e) {
+      if (e.tipo === 'fracos' && p.etapa === 'fracos') e.progresso = p.fracosQuestoes + '/' + p.metaQuestoes + ' questões · ' + Object.keys(p.fracosAssuntos).length + '/' + p.metaAssuntos + ' assuntos';
+    });
+    var voltas = [];
+    for (var v = 1; v <= p.rodada; v++) voltas.push(v);
+    function grupo(titulo, contagem, blocos) {
+      return el('div', { class: 'processo-grupo' }, [
+        el('div', { class: 'processo-grupo-topo' }, [el('span', { text: titulo }), el('span', { class: 'data-fraca', text: contagem })]),
+        el('div', { class: 'processo-etapas' }, blocos)
+      ]);
+    }
+    return el('div', { class: 'processo' }, [
+      el('div', { class: 'processo-resumo' }, [
+        el('strong', { text: 'Volta ' + p.rodada + ': ' + dessaVolta.length + ' de ' + total + ' etapas concluídas' }),
+        el('span', { class: 'data-fraca', text: p.simuladosConcluidos + ' de ' + p.simulados.length + (p.simulados.length === 1 ? ' simulado' : ' simulados') })
+      ]),
+      UI.barra(total ? dessaVolta.length / total * 100 : 0),
+      el('div', { class: 'processo-legenda' }, [['questoes', 'Simulado'], ['favoritas', 'Favoritadas'], ['erros', 'Pontos fracos']].map(function (x) {
+        return el('span', { class: 'etapa-' + x[0] }, [el('i'), x[1]]);
+      })),
+      voltas.reverse().map(function (n) {
+        var feitas = p.historico.filter(function (e) { return e.rodada === n; });
+        var blocos = feitas.map(function (e) { return bloquinhoRevisao(e, 'feita'); });
+        if (n !== p.rodada) return grupo('Volta ' + n, 'Concluída', blocos);
+        return grupo('Volta ' + n + ' (atual)', feitas.length + '/' + total, blocos.concat(p.faltam.map(function (e, i) { return bloquinhoRevisao(e, i ? '' : 'atual'); })));
+      })
+    ]);
+  }
+
+  // O processo mostrado segue o modo da matéria: Leitura (até o fim da teoria) ou Revisão.
+  function processoDa(d) {
+    return Dados.modoDeEstudo(d.id).modo === 'revisao'
+      ? { titulo: 'Processo do Modo Revisão', conteudo: gradeRevisao(d) }
+      : { titulo: 'Processo até o fim da teoria', conteudo: gradeProcesso(d) };
+  }
+
   function verProcesso(d) {
-    var escolhido = Dados.modoDeEstudo(d.id).escolhido;
-    UI.modal(d.nome, [
-      escolhido ? el('p', { class: 'aviso-suave', text: 'Esta matéria está no Modo Revisão por escolha sua. O processo do Modo Leitura fica aqui só como referência.' }) : null,
-      gradeProcesso(d)
-    ], [{ texto: 'Fechar', classe: 'btn-secundario' }], { subtitulo: 'Processo até o fim da teoria' }).caixa.classList.add('modal-largo');
+    var pr = processoDa(d);
+    UI.modal(d.nome, pr.conteudo, [{ texto: 'Fechar', classe: 'btn-secundario' }], { subtitulo: pr.titulo }).caixa.classList.add('modal-largo');
   }
 
   // ---------- Ciclo ----------
@@ -645,7 +706,8 @@ var Dashboard = (function () {
         anot ? UI.blocoAnotacao(anot, { teoria: 'Teoria', questoes: 'Questões', revisao: 'Revisão' }[anot.tipo]) : null
       ];
     }
-    corpo.push(el('h3', { class: 'processo-titulo', text: 'Processo até o fim da teoria' }), gradeProcesso(d));
+    var pr = processoDa(d);
+    corpo.push(el('h3', { class: 'processo-titulo', text: pr.titulo }), pr.conteudo);
     var m = UI.modal(d.nome, corpo, [{ texto: 'Fechar', classe: 'btn-secundario' }],
       { subtitulo: (feito ? 'O que foi estudado · ' : 'Recomendação · ') + posicao });
     m.caixa.classList.add('modal-largo');

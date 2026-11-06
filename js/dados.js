@@ -503,13 +503,20 @@ var Dados = (function () {
   }
 
   // ---------- Modo Teoria: baterias e sequência de estudo ----------
-  // Menos de 10 blocos: 3 baterias por caderno; 10 ou mais: 4.
-  function numBaterias(disciplinaId) { return blocosDe(disciplinaId).length >= 10 ? 4 : 3; }
+  // Todas as matérias têm 3 baterias por caderno.
+  function numBaterias() { return 3; }
 
-  // Quantidade de questões de cada bateria: a divisão salva no caderno ou, sem ela, partes iguais do total.
+  // Divisão padrão: com menos de 10 blocos, o caderno em 3 partes iguais. Com 10 ou mais, cada bateria continua com
+  // 1/4 do caderno (como quando eram 4 baterias): as quantidades não são redistribuídas e o restante fica fora da sequência.
+  function divisaoPadrao(disciplinaId, total) {
+    return divisaoIgual(total, blocosDe(disciplinaId).length >= 10 ? 4 : 3).slice(0, 3);
+  }
+
+  // Quantidade de questões de cada bateria: a divisão salva no caderno ou, sem ela, a padrão.
   function divisaoBaterias(c, n) {
-    if (c.baterias && c.baterias.length === n) return c.baterias.slice();
-    return divisaoIgual(c.totalQuestoes || 0, n);
+    if (c.baterias && c.baterias.length >= n) return c.baterias.slice(0, n);
+    var p = pasta(c.pastaId);
+    return divisaoPadrao(p ? p.disciplinaId : null, c.totalQuestoes || 0);
   }
   function divisaoIgual(total, n) {
     var base = Math.floor(total / n), resto = total % n, r = [];
@@ -540,10 +547,10 @@ var Dados = (function () {
   }
 
   // Sequência do Modo Leitura: no passo n vêm a teoria do bloco n e as baterias
-  // 1ª do bloco n, 2ª do n-1, 3ª do n-3 e 4ª do n-6. Depois da última teoria, a sequência termina
-  // na 2ª bateria do último bloco (as baterias seguintes não são recomendadas, embora os cadernos
-  // continuem divididos em 3 ou 4), seguida da bateria final de erros.
-  var ATRASO_BATERIA = [0, 1, 3, 6];
+  // 1ª do bloco n, 2ª do n-1 e 3ª do n-3. Depois da última teoria, a sequência termina
+  // na 2ª bateria do último bloco (as baterias seguintes não são recomendadas),
+  // seguida da bateria final de erros.
+  var ATRASO_BATERIA = [0, 1, 3];
 
   function planoTeoria(disciplinaId) {
     var blocos = blocosDe(disciplinaId);
@@ -735,6 +742,7 @@ var Dados = (function () {
     });
     var acum = {};
     var est = { etapa: 'simulado', indice: 0, rodada: 1, somaSimulado: 0, fracosQuestoes: 0, fracosAssuntos: {} };
+    var historico = []; // etapas já concluídas: { rodada, tipo, caderno?, questoes?, assuntos? }
 
     function avancar(s) {
       var mudou = true;
@@ -743,6 +751,7 @@ var Dados = (function () {
         if (est.etapa === 'simulado') {
           var cur = simulados[est.indice];
           if (cur && cur.totalQuestoes > 0 && (acum[cur.id] || 0) >= cur.totalQuestoes) {
+            historico.push({ rodada: est.rodada, tipo: 'simulado', caderno: cur });
             est.indice++;
             est.somaSimulado += cur.totalQuestoes;
             if (est.somaSimulado >= SIMULADO_MINIMO) est.etapa = 'duvidas';
@@ -751,9 +760,10 @@ var Dados = (function () {
         } else if (est.etapa === 'duvidas' || est.etapa === 'erros2x') {
           var cad = fav[est.etapa];
           var fim = s && cad && (s.cadernos || []).some(function (l) { return l.cadernoId === cad.id && l.finalizado; });
-          if (fim) { est.etapa = est.etapa === 'duvidas' ? 'erros2x' : 'fracos'; est.fracosQuestoes = 0; est.fracosAssuntos = {}; mudou = true; }
+          if (fim) { historico.push({ rodada: est.rodada, tipo: est.etapa, caderno: cad }); est.etapa = est.etapa === 'duvidas' ? 'erros2x' : 'fracos'; est.fracosQuestoes = 0; est.fracosAssuntos = {}; mudou = true; }
         } else if (est.etapa === 'fracos') {
           if (!fracos.length || est.fracosQuestoes >= FRACOS_QUESTOES || Object.keys(est.fracosAssuntos).length >= Math.max(1, metaAssuntos)) {
+            if (fracos.length) historico.push({ rodada: est.rodada, tipo: 'fracos', questoes: est.fracosQuestoes, assuntos: Object.keys(est.fracosAssuntos).length });
             est.etapa = 'simulado'; est.rodada++; est.somaSimulado = 0; mudou = true;
           }
         }
@@ -772,7 +782,23 @@ var Dados = (function () {
     avancar(null);
 
     var atual = simulados[est.indice] || null;
+    // O que ainda falta nesta volta, na ordem. A primeira é a etapa atual.
+    var faltam = [];
+    if (est.etapa === 'simulado') {
+      var soma = est.somaSimulado, ind = est.indice;
+      while (soma < SIMULADO_MINIMO) {
+        var prox = simulados[ind] || null;
+        faltam.push({ tipo: 'simulado', caderno: prox, feitas: prox ? Math.min(acum[prox.id] || 0, prox.totalQuestoes || 0) : 0 });
+        if (!prox) break;
+        soma += prox.totalQuestoes || 0;
+        ind++;
+      }
+    }
+    if (est.etapa === 'simulado' || est.etapa === 'duvidas') faltam.push({ tipo: 'duvidas', caderno: fav.duvidas });
+    if (est.etapa !== 'fracos') faltam.push({ tipo: 'erros2x', caderno: fav.erros2x });
+    if (fracos.length) faltam.push({ tipo: 'fracos' });
     return {
+      historico: historico, faltam: faltam,
       etapa: est.etapa, rodada: est.rodada,
       simulado: atual, simuladoFeitas: atual ? Math.min(acum[atual.id] || 0, atual.totalQuestoes || 0) : 0,
       simuladosConcluidos: est.indice, simulados: simulados,
@@ -1135,7 +1161,7 @@ var Dados = (function () {
     cadernosDe: cadernosDe, caderno: caderno, cadernosDaDisciplina: cadernosDaDisciplina,
     criarCaderno: criarCaderno, atualizarCaderno: atualizarCaderno, moverCaderno: moverCaderno, excluirCaderno: excluirCaderno,
     blocoSemCaderno: blocoSemCaderno, cadernoDoBloco: cadernoDoBloco,
-    numBaterias: numBaterias, divisaoBaterias: divisaoBaterias, divisaoIgual: divisaoIgual,
+    numBaterias: numBaterias, divisaoBaterias: divisaoBaterias, divisaoIgual: divisaoIgual, divisaoPadrao: divisaoPadrao,
     bateriasCaderno: bateriasCaderno, planoTeoria: planoTeoria,
     proximaDoCiclo: itemAtualCiclo, avancarCiclo: avancarCiclo, irParaPosicaoCiclo: irParaPosicaoCiclo,
     sessoesDaPosicaoCiclo: sessoesDaPosicaoCiclo,

@@ -197,7 +197,7 @@ var Questoes = (function () {
     if (semTotal.length) avisos.push('Informe o total de questões de: ' + semTotal.map(function (c) { return c.nome; }).join(', ') + ' (sem ele não dá para dividir as baterias).');
     return el('div', { class: 'pasta-teoria-info' }, [
       el('p', { class: 'data-fraca', text: 'Um caderno por bloco de teoria (' + cadernos.length + ' de ' + blocos.length + '). ' +
-        'Cada caderno é dividido em ' + nb + ' baterias' + (nb === 4 ? ' (10 blocos ou mais).' : ' (menos de 10 blocos; com 10 ou mais passam a ser 4).') +
+        'Cada caderno tem ' + nb + ' baterias' + (blocos.length >= 10 ? ', cada uma com 1/4 das questões do caderno (matéria com 10 blocos ou mais); o restante fica fora da sequência.' : ' de tamanho igual.') +
         ' Uma bateria fica concluída quando as questões lançadas no caderno alcançam a quantidade dela.' }),
       avisos.length ? el('ul', { class: 'pasta-teoria-avisos' }, avisos.map(function (a) { return el('li', null, [UI.icone('alerta'), el('span', { text: a })]); })) : null
     ]);
@@ -446,8 +446,8 @@ var Questoes = (function () {
         var ocupado = usados.indexOf(b.id) >= 0;
         return el('option', { value: b.id, text: b.nome + (ocupado ? ' (já tem caderno)' : ''), disabled: ocupado, selected: livre && livre.id === b.id });
       })));
-    var personalizada = !!(c && c.baterias && c.baterias.length === nb);
-    var inicial = c ? Dados.divisaoBaterias(c, nb) : Dados.divisaoIgual(Number(total.value) || 0, nb);
+    var personalizada = !!(c && c.baterias && c.baterias.length >= nb);
+    var inicial = c ? Dados.divisaoBaterias(c, nb) : Dados.divisaoPadrao(d.id, Number(total.value) || 0);
     var soma = el('span', { class: 'campo-ajuda' });
     var entradas = inicial.map(function (v, i) {
       return el('input', { type: 'number', min: 0, step: 1, value: v, 'aria-label': (i + 1) + 'ª bateria', oninput: function () { personalizada = true; atualizarSoma(); } });
@@ -458,7 +458,7 @@ var Questoes = (function () {
       soma.textContent = 'Soma das baterias: ' + s + (t ? ' de ' + t + ' questões' + (s > t ? ' (passa do total do caderno)' : '') : '');
     }
     function dividirIgual() {
-      Dados.divisaoIgual(Number(total.value) || 0, nb).forEach(function (v, i) { entradas[i].value = v; });
+      Dados.divisaoPadrao(d.id, Number(total.value) || 0).forEach(function (v, i) { entradas[i].value = v; });
       personalizada = false;
       atualizarSoma();
     }
@@ -469,8 +469,8 @@ var Questoes = (function () {
       bloco: bloco,
       baterias: function () {
         var valores = entradas.map(function (e) { return Math.max(0, Math.round(Number(e.value) || 0)); });
-        var igual = Dados.divisaoIgual(Number(total.value) || 0, nb);
-        return valores.join() === igual.join() ? null : valores; // null = acompanha o total
+        var padrao = Dados.divisaoPadrao(d.id, Number(total.value) || 0);
+        return valores.join() === padrao.join() ? null : valores; // null = acompanha o total
       },
       nos: el('div', { class: 'campos-teoria' }, [
         UI.campo('Bloco de teoria', bloco, 'As baterias deste caderno são recomendadas depois da teoria deste bloco.'),
@@ -478,7 +478,7 @@ var Questoes = (function () {
           el('span', { class: 'campo-rotulo', text: 'Questões por bateria (' + nb + ' baterias)' }),
           el('div', { class: 'baterias-entrada' }, entradas.map(function (e, i) {
             return el('label', { class: 'bateria-entrada' }, [el('span', { text: (i + 1) + 'ª' }), e]);
-          }).concat([el('button', { type: 'button', class: 'link', text: 'Dividir igualmente', onclick: dividirIgual })])),
+          }).concat([el('button', { type: 'button', class: 'link', text: 'Divisão padrão', onclick: dividirIgual })])),
           soma
         ])
       ])

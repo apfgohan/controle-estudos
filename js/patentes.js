@@ -92,6 +92,9 @@ var Patentes = (function () {
       ate += qtd;
       if (qtd > 0 && antes < ate && depois >= ate) n++;
     });
+    // Terminar o restante do caderno, além das 3 baterias, também conta como etapa (mantém o XP de quem fez a antiga 4ª bateria).
+    var total = c.totalQuestoes || 0;
+    if (ate < total && antes < total && depois >= total) n++;
     return n;
   }
 
