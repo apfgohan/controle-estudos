@@ -816,7 +816,7 @@ var Dashboard = (function () {
     function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
     function semanaRodape(texto) { return [el('span', { class: 'caixa-semana', text: 'Nesta semana' }), ' ', texto]; }
 
-    // Mesmas colunas da grade de baixo: as 3 caixas ocupam a largura da "Próxima matéria" e as metas a do Perfil.
+    // Mesmas colunas da grade de baixo: as 3 caixas ocupam a largura da "Próxima matéria" e as metas a do Ciclo.
     return el('div', { class: 'grade-kpi' }, [
       el('div', { class: 'kpi-tres' }, [
         caixa('Tempo de estudo', UI.fmtDuracao(total.segundos), [
@@ -854,18 +854,21 @@ var Dashboard = (function () {
       valor = Previsao.fmtMes(r.data);
       linhas = [
         [textoEtapas(r.etapasRestantes), 'restantes'],
-        [fmtDecimal(r.mediaEtapasSemana), 'concluídas por semana (últimas 4 semanas)'],
+        [fmtDecimal(r.mediaEtapasSemana), 'por semana (últimas 4 semanas)'],
         [r.emRevisao + ' de ' + r.total, 'matérias em Revisão']
       ];
     }
     function abrir() { detalhePrevisao(r); }
     return el('div', { class: 'caixa-kpi caixa-topo caixa-previsao', role: 'button', tabindex: '0', title: 'Ver o detalhe por matéria', onclick: abrir,
       onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } } }, [
-      el('div', { class: 'caixa-titulo', text: 'Conclusão do edital' }),
-      el('div', { class: 'previsao-valor', text: valor }),
+      el('div', { class: 'previsao-cabeca' }, [
+        el('div', { class: 'caixa-titulo', text: 'Conclusão do edital' }),
+        el('div', { class: 'previsao-valor', text: valor })
+      ]),
       el('div', { class: 'caixa-linhas' }, linhas.map(function (l) {
         return el('div', null, [el('strong', { text: l[0] }), ' ' + l[1]]);
-      }))
+      })),
+      faixaSequencia(Patentes.calcular())
     ]);
   }
 
@@ -922,51 +925,8 @@ var Dashboard = (function () {
     ]);
   }
 
-  // ---------- Mapa de constância ----------
-  var SEMANAS_MAPA = 12;
-
-  function nivelDoDia(segundos) {
-    var h = segundos / 3600;
-    return h < 1 ? 1 : h < 3 ? 2 : h < 5 ? 3 : 4;
-  }
-
-  function caixaConstancia() {
-    var hoje = UI.hoje(), inicio = UI.somarDias(inicioSemana(hoje), -7 * (SEMANAS_MAPA - 1));
-    var porDia = {};
-    Dados.db.sessoes.forEach(function (s) {
-      if (s.data < inicio || s.data > hoje) return;
-      porDia[s.data] = (porDia[s.data] || 0) + (s.segundos || 0);
-    });
-    function emPausa(d) { return (Dados.db.pausas || []).some(function (p) { return p.inicio <= d && d <= p.fim; }); }
-    var estudados = 0, decorridos = 0, celulas = [];
-    for (var n = 0; n < SEMANAS_MAPA * 7; n++) {
-      var d = UI.somarDias(inicio, n);
-      if (d > hoje) { celulas.push(el('span', { class: 'mapa-dia futuro' })); continue; }
-      decorridos++;
-      var estudou = porDia[d] !== undefined, pausa = emPausa(d);
-      if (estudou) estudados++;
-      var classe = estudou ? 'nivel-' + nivelDoDia(porDia[d]) : pausa ? 'pausa' : '';
-      var data = new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '');
-      celulas.push(comDica(el('span', { class: 'mapa-dia ' + classe + (d === hoje ? ' hoje' : '') }), [
-        data, estudou ? fmtHoras(porDia[d]) + ' de estudo' : pausa ? 'Pausa programada' : 'Sem estudo'
-      ]));
-    }
-    return el('div', { class: 'caixa-kpi caixa-topo' }, [
-      el('div', { class: 'caixa-titulo', text: 'Constância' }),
-      el('div', { class: 'comparar-periodo', text: 'Últimas ' + SEMANAS_MAPA + ' semanas' }),
-      el('div', { class: 'mapa' }, [
-        el('div', { class: 'mapa-rotulos' }, ['seg', '', 'qua', '', 'sex', '', 'dom'].map(function (t) { return el('span', { text: t }); })),
-        el('div', { class: 'mapa-dias' }, celulas)
-      ]),
-      el('div', { class: 'mapa-rodape' }, [
-        el('span', null, [el('strong', { text: estudados + ' de ' + decorridos }), ' dias estudados']),
-        el('span', { class: 'mapa-legenda' }, ['menos', el('i', { class: 'mapa-dia' }), el('i', { class: 'mapa-dia nivel-1' }), el('i', { class: 'mapa-dia nivel-2' }), el('i', { class: 'mapa-dia nivel-3' }), el('i', { class: 'mapa-dia nivel-4' }), 'mais'])
-      ])
-    ]);
-  }
-
   function linhaTopo() {
-    return el('div', { class: 'grade-topo-tres' }, [caixaPrevisao(), caixaComparacao(), caixaConstancia()]);
+    return el('div', { class: 'grade-topo-tres' }, [cartaoPerfil(), caixaPrevisao(), caixaComparacao()]);
   }
 
   function detalhePrevisao(r) {
@@ -1240,18 +1200,22 @@ var Dashboard = (function () {
         ]),
         UI.botaoEngrenagem(editarPerfil, 'Editar perfil')
       ]),
-      faixaPatente(r),
-      el('div', { class: 'perfil-sequencia' }, [
-        el('div', null, [
-          el('span', { class: 'perfil-seq-rotulo', text: 'Sequência atual' }),
-          el('span', { class: 'perfil-seq-valor', text: qtdDias(r.sequencia) + (r.sequencia === 1 ? ' seguido' : ' seguidos') }),
-          r.pausa ? el('span', { class: 'perfil-seq-dica', text: 'em pausa até ' + UI.fmtData(r.pausa.fim) })
-            : r.sequencia && !r.estudouHoje ? el('span', { class: 'perfil-seq-dica', text: 'estude hoje para manter' }) : null
-        ]),
-        el('div', null, [
-          el('span', { class: 'perfil-seq-rotulo', text: 'Melhor sequência' }),
-          el('span', { class: 'perfil-seq-valor', text: qtdDias(r.melhorSequencia) })
-        ])
+      faixaPatente(r)
+    ]);
+  }
+
+  // Dias seguidos de estudo (fica na caixa Conclusão do edital).
+  function faixaSequencia(r) {
+    return el('div', { class: 'perfil-sequencia' }, [
+      el('div', null, [
+        el('span', { class: 'perfil-seq-rotulo', text: 'Sequência atual' }),
+        el('span', { class: 'perfil-seq-valor', text: qtdDias(r.sequencia) + (r.sequencia === 1 ? ' seguido' : ' seguidos') }),
+        r.pausa ? el('span', { class: 'perfil-seq-dica', text: 'em pausa até ' + UI.fmtData(r.pausa.fim) })
+          : r.sequencia && !r.estudouHoje ? el('span', { class: 'perfil-seq-dica', text: 'estude hoje para manter' }) : null
+      ]),
+      el('div', null, [
+        el('span', { class: 'perfil-seq-rotulo', text: 'Melhor sequência' }),
+        el('span', { class: 'perfil-seq-valor', text: qtdDias(r.melhorSequencia) })
       ])
     ]);
   }
@@ -1336,7 +1300,7 @@ var Dashboard = (function () {
     raiz.appendChild(indicadores());
     raiz.appendChild(el('div', { class: 'grade-topo' }, [
       cartaoProxima(),
-      el('div', { class: 'coluna-lateral' }, [cartaoPerfil(), painelCiclo()])
+      el('div', { class: 'coluna-lateral' }, [painelCiclo()])
     ]));
     raiz.appendChild(graficos());
   }
