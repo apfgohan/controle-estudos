@@ -624,26 +624,49 @@ a.item-link:hover .chip-link.ativo { background: var(--teal); color: #fff; }
 
 /* Alerta de pontos fracos (cartão "Próxima matéria") */
 /* Recomendação do Modo Teoria (cartão "Próxima matéria") */
-.recomendacao { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--raio); background: var(--azul-claro); border: 1px solid var(--azul-borda); }
+/* A cor acompanha o tipo da tarefa: teoria azul, questões verde, favoritadas amarelo, erros vermelho. */
+.recomendacao, .etapa-teoria { --tipo-fundo: var(--azul-claro); --tipo-borda: var(--azul-borda); --tipo-texto: var(--azul-escuro); }
+.recomendacao.rec-questoes, .etapa-questoes { --tipo-fundo: var(--verde-claro); --tipo-borda: var(--verde-borda); --tipo-texto: var(--verde-texto); }
+.recomendacao.rec-favoritas, .etapa-favoritas { --tipo-fundo: var(--amarelo-claro); --tipo-borda: var(--amarelo-borda); --tipo-texto: var(--amarelo-texto); }
+.recomendacao.rec-erros, .etapa-erros { --tipo-fundo: var(--vermelho-claro); --tipo-borda: var(--vermelho-borda); --tipo-texto: var(--vermelho); }
+.recomendacao { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--raio); background: var(--tipo-fundo); border: 1px solid var(--tipo-borda); }
 .rec-topo { display: flex; align-items: center; gap: 8px; }
-.rec-topo .icone { width: 18px; height: 18px; color: var(--azul-escuro); }
-.rec-rotulo { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--azul-escuro); }
+.rec-topo .icone { width: 18px; height: 18px; color: var(--tipo-texto); }
+.rec-rotulo { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--tipo-texto); }
 .rec-faltam { font-size: 14px; font-weight: 600; color: var(--texto-2); }
 .rec-principal { display: flex; flex-direction: column; gap: 6px; }
 .rec-titulo { font-size: 17px; }
 .rec-topicos { margin: 0; padding-left: 18px; font-size: 14px; color: var(--texto-2); display: flex; flex-direction: column; gap: 2px; }
 .rec-bateria { display: flex; flex-direction: column; gap: 8px; }
 .rec-bateria-linha { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.rec-caderno { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--azul-escuro); text-decoration: none; }
+.rec-caderno { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--tipo-texto); text-decoration: none; }
 a.rec-caderno:hover { text-decoration: underline; }
-.recomendacao a { color: var(--azul-escuro); }
-.rec-rodape { display: flex; justify-content: flex-end; }
+.recomendacao a { color: var(--tipo-texto); }
+.rec-rodape { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .rec-rodape .btn { padding: 7px 14px; font-size: 13px; }
 .rec-rodape .btn .icone { width: 10px; height: 10px; }
-.recomendacao.rec-revisao { background: var(--verde-claro); border-color: var(--verde-borda); }
-.rec-revisao .rec-topo .icone, .rec-revisao .rec-rotulo, .rec-revisao a, .rec-revisao .rec-caderno { color: var(--verde-texto); }
-.rec-revisao .rec-progresso { border-top-color: var(--verde-borda); }
 .rec-revisao .alerta-lista { margin-bottom: 2px; }
+/* Processo até o fim da teoria (bloquinhos) */
+.materia-clicavel { cursor: pointer; }
+.materia-clicavel:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.processo { display: flex; flex-direction: column; gap: 10px; }
+.processo-titulo { font-size: 15px; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--borda); }
+.processo-resumo { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+.processo-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--texto-2); }
+.processo-legenda span { display: inline-flex; align-items: center; gap: 5px; }
+.processo-legenda i { width: 11px; height: 11px; border-radius: 3px; background: var(--tipo-fundo); border: 1px solid var(--tipo-texto); }
+.processo-grupo { display: flex; flex-direction: column; gap: 6px; }
+.processo-grupo-topo { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 700; }
+.processo-etapas { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; }
+.etapa { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 7px 9px; border-radius: 9px; border: 1px dashed var(--borda-forte); color: var(--texto-3); font-size: 12px; }
+.etapa-nome { display: flex; align-items: center; gap: 4px; font-weight: 700; color: var(--tipo-texto); }
+.etapa-nome .icone { width: 12px; height: 12px; flex: none; }
+.etapa-sub { overflow-wrap: anywhere; }
+.etapa.feita { border: 1px solid var(--tipo-borda); background: var(--tipo-fundo); color: var(--texto-2); }
+.etapa.atual { border: 2px solid var(--tipo-texto); padding: 6px 8px; color: var(--texto); }
+.etapa-agora { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--tipo-texto); }
+.campo-total-rodada { margin-top: 8px; }
+.campo-total-rodada input { max-width: 140px; }
 /* Escolha do modo de estudo (aba Teoria) */
 .painel-modo { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding: 14px 16px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie-2); }
 .painel-modo-texto { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -660,7 +683,7 @@ a.rec-caderno:hover { text-decoration: underline; }
 .selo-modo::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .selo-modo.leitura { background: var(--azul-claro); border: 1px solid var(--azul-borda); color: var(--azul-escuro); }
 .selo-modo.revisao { background: var(--verde-claro); border: 1px solid var(--verde-borda); color: var(--verde-texto); }
-.rec-progresso { font-size: 12px; border-top: 1px solid var(--azul-borda); padding-top: 8px; }
+.rec-progresso { font-size: 12px; border-top: 1px solid var(--tipo-borda); padding-top: 8px; }
 
 .alerta-revisao { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--raio); background: var(--laranja-claro); border: 1px solid var(--laranja-borda); }
 .alerta-revisao.urgente { background: var(--vermelho-claro); border-color: var(--vermelho-borda); }

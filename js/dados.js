@@ -563,6 +563,17 @@ var Dados = (function () {
     for (var passo = 1; passo <= N + atrasos[atrasos.length - 1]; passo++) {
       if (passo <= N) {
         var pb = progresso[passo - 1];
+        // Antes de iniciar um novo bloco (do 2º em diante), uma rodada das favoritadas. Se a teoria do bloco já começou,
+        // a rodada não é mais recomendada (mas continua aparecendo se foi concluída).
+        if (passo > 1) ORDEM_FAVORITAS.forEach(function (g) {
+          var cf = cadernoFavorito(disciplinaId, g);
+          var rod = cf ? rodadaFavorita(cf.id, pb.bloco.id) : null;
+          if (teoriaIniciada(pb.topicos) && !(rod && rod.concluida)) return;
+          itens.push({
+            tipo: 'favoritas', passo: passo, indice: passo, bloco: pb.bloco, grupo: g, caderno: cf, rodada: rod,
+            feitas: rod ? rod.feitas : 0, qtd: rod ? rod.total : null, concluido: !!(rod && rod.concluida)
+          });
+        });
         itens.push({ tipo: 'teoria', passo: passo, indice: passo, bloco: pb.bloco, topicos: pb.topicos, concluido: pb.teoriaConcluida });
       }
       atrasos.forEach(function (atraso, k) {
@@ -610,6 +621,84 @@ var Dados = (function () {
       itens: itens, pendentes: pendentes, progresso: progresso,
       concluido: N > 0 && !pendentes.length
     };
+  }
+
+  function teoriaIniciada(topicos) {
+    if (topicos.some(function (t) { return t.concluido; })) return true;
+    var ids = topicos.map(function (t) { return t.id; });
+    return db.sessoes.some(function (s) { return (s.topicoIds || []).some(function (id) { return ids.indexOf(id) >= 0; }); });
+  }
+
+  // ---------- Rodadas das favoritadas no Modo Leitura ----------
+  // Os cadernos de favoritadas mudam sempre, então cada novo bloco tem a sua rodada (identificada pelo bloco), com contagem
+  // própria e o total informado ao lançar. As linhas de sessão guardam rodada e totalRodada; o histórico nunca é apagado.
+  function rodadaFavorita(cadernoId, blocoId, excetoSessaoId) {
+    var r = { blocoId: blocoId, acertos: 0, erros: 0, feitas: 0, total: null, ultimo: null };
+    var c = caderno(cadernoId);
+    r.vazia = !!(c && (c.rodadasVazias || []).indexOf(blocoId) >= 0);
+    db.sessoes.filter(function (s) { return s.id !== excetoSessaoId; }).sort(function (a, b) {
+      return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
+    }).forEach(function (s) {
+      (s.cadernos || []).forEach(function (l) {
+        if (l.cadernoId !== cadernoId || l.rodada !== blocoId) return;
+        r.acertos += Number(l.acertos) || 0;
+        r.erros += Number(l.erros) || 0;
+        if (l.totalRodada) r.total = l.totalRodada;
+        r.ultimo = s.data;
+      });
+    });
+    r.feitas = r.acertos + r.erros;
+    r.concluida = r.vazia || (r.total > 0 && r.feitas >= r.total);
+    return r;
+  }
+
+  function itensFavoritos(cadernoId) {
+    var c = caderno(cadernoId), p = c && pasta(c.pastaId);
+    if (!p || p.tipo !== 'favoritas' || !c.grupo) return null;
+    var m = modoDeEstudo(p.disciplinaId);
+    if (m.modo !== 'leitura') return null;
+    return { plano: m.plano, itens: m.plano.itens.filter(function (it) { return it.tipo === 'favoritas' && it.grupo === c.grupo; }) };
+  }
+
+  // Rodada em que um novo lançamento deste caderno entra (null fora do Modo Leitura ou sem rodada pendente).
+  function rodadaAberta(cadernoId) {
+    var f = itensFavoritos(cadernoId);
+    if (!f) return null;
+    var it = f.itens.filter(function (i) { return !i.concluido; })[0];
+    return it ? it.rodada : null;
+  }
+
+  // Rodada mostrada na aba Questões: a nova começa zerada quando chega a sua vez; até lá fica a última concluída.
+  function rodadaExibida(cadernoId) {
+    var f = itensFavoritos(cadernoId);
+    if (!f || !f.itens.length) return null;
+    var aberto = f.itens.filter(function (i) { return !i.concluido; })[0];
+    var vez = f.plano.pendentes[0];
+    if (aberto && (aberto.feitas || (vez && aberto.passo <= vez.passo))) return aberto;
+    var feitos = f.itens.filter(function (i) { return i.concluido; });
+    return feitos.length ? feitos[feitos.length - 1] : aberto || null;
+  }
+
+  // Sem questões para fazer nesta rodada: não vira sessão (não conta como dia de estudo nem avança o ciclo).
+  function marcarRodadaVazia(cadernoId, blocoId, vazia) {
+    var c = caderno(cadernoId);
+    if (!c) return;
+    var lista = (c.rodadasVazias || []).filter(function (id) { return id !== blocoId; });
+    if (vazia) lista.push(blocoId);
+    if (lista.length) c.rodadasVazias = lista; else delete c.rodadasVazias;
+    salvar();
+  }
+
+  // O total informado por último vale para todas as linhas da rodada.
+  function igualarTotaisRodada(s) {
+    (s.cadernos || []).forEach(function (n) {
+      if (!n.rodada || !n.totalRodada) return;
+      db.sessoes.forEach(function (o) {
+        (o.cadernos || []).forEach(function (l) {
+          if (l.cadernoId === n.cadernoId && l.rodada === n.rodada) l.totalRodada = n.totalRodada;
+        });
+      });
+    });
   }
 
   // ---------- Modo Revisão: ciclo simulado → favoritadas (dúvidas, erradas 2x+) → pontos fracos ----------
@@ -716,6 +805,7 @@ var Dados = (function () {
       cadernos: teoria ? [] : (campos.cadernos || []).map(function (c) {
         var l = { cadernoId: c.cadernoId || null, acertos: Number(c.acertos) || 0, erros: Number(c.erros) || 0 };
         if (c.finalizado && c.cadernoId) l.finalizado = true;
+        if (c.rodada && c.cadernoId) { l.rodada = c.rodada; l.totalRodada = Number(c.totalRodada) || 0; }
         if (c.assunto && !c.cadernoId) l.assunto = { chave: c.assunto.chave, nome: c.assunto.nome };
         return l;
       }),
@@ -749,6 +839,7 @@ var Dados = (function () {
     s.id = novoId();
     s.criadoEm = Date.now();
     db.sessoes.push(s);
+    igualarTotaisRodada(s);
     var atual = itemAtualCiclo();
     if (atual && atual.disciplinaId === s.disciplinaId) {
       // Guarda em que posição do ciclo a sessão foi lançada (para mostrar o que foi feito em cada matéria do ciclo).
@@ -824,6 +915,7 @@ var Dados = (function () {
     if (!s) return;
     var novos = limparCamposSessao(campos);
     for (var k in novos) s[k] = novos[k];
+    igualarTotaisRodada(s);
     salvar();
   }
 
@@ -1037,6 +1129,7 @@ var Dados = (function () {
     NOME_PASTA_SIMULADO: NOME_PASTA_SIMULADO, NOME_PASTA_FAVORITAS: NOME_PASTA_FAVORITAS, criarPasta: criarPasta,
     GRUPOS_FAVORITAS: GRUPOS_FAVORITAS, ORDEM_FAVORITAS: ORDEM_FAVORITAS, cadernoFavorito: cadernoFavorito, grupoLivre: grupoLivre,
     planoRevisao: planoRevisao,
+    rodadaFavorita: rodadaFavorita, rodadaAberta: rodadaAberta, rodadaExibida: rodadaExibida, marcarRodadaVazia: marcarRodadaVazia,
     paresDeBlocos: paresDeBlocos, nomePar: nomePar, cadernoDoPar: cadernoDoPar, parSemCaderno: parSemCaderno,
     gruposDeErros: gruposDeErros, parDoCaderno: parDoCaderno, atualizarPasta: atualizarPasta, excluirPasta: excluirPasta,
     cadernosDe: cadernosDe, caderno: caderno, cadernosDaDisciplina: cadernosDaDisciplina,

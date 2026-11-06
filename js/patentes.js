@@ -60,8 +60,10 @@ var Patentes = (function () {
         g.acertos += a;
         if (n) g.linhas.push({ n: n, a: a });
         if (!l.cadernoId) return;
-        var antes = acum[l.cadernoId] || 0, depois = antes + n;
-        acum[l.cadernoId] = depois;
+        // Cada rodada das favoritadas tem contagem própria.
+        var chaveAcum = l.rodada ? l.cadernoId + '|' + l.rodada : l.cadernoId;
+        var antes = acum[chaveAcum] || 0, depois = antes + n;
+        acum[chaveAcum] = depois;
         g.etapas += etapasConcluidas(s.disciplinaId, l, antes, depois);
       });
     });
@@ -77,7 +79,10 @@ var Patentes = (function () {
     var c = Dados.caderno(linha.cadernoId);
     var p = c && Dados.pasta(c.pastaId);
     if (!p) return 0;
-    if (p.tipo === 'favoritas') return linha.finalizado ? 1 : 0;
+    if (p.tipo === 'favoritas') {
+      if (linha.rodada) return linha.totalRodada > 0 && antes < linha.totalRodada && depois >= linha.totalRodada ? 1 : 0;
+      return linha.finalizado ? 1 : 0;
+    }
     if (p.tipo === 'simulado' || p.tipo === 'erros') {
       return c.totalQuestoes > 0 && antes < c.totalQuestoes && depois >= c.totalQuestoes ? 1 : 0;
     }

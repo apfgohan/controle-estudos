@@ -78,9 +78,10 @@ var Sessao = (function () {
     var est = {
       disciplinaId: existente ? existente.disciplinaId : (op.disciplinaId || (proxima && proxima.disciplinaId) || discs[0].id),
       tipo: existente ? existente.tipo : (op.tipo || 'teoria'),
+      sessaoId: existente ? existente.id : null,
       topicoIds: existente ? existente.topicoIds.slice() : (op.topicoIds || []).slice(),
       linhas: existente
-        ? existente.cadernos.filter(function (c) { return !c.assunto; }).map(function (c) { return { cadernoId: c.cadernoId || '', acertos: c.acertos, erros: c.erros, finalizado: !!c.finalizado }; })
+        ? existente.cadernos.filter(function (c) { return !c.assunto; }).map(function (c) { return { cadernoId: c.cadernoId || '', acertos: c.acertos, erros: c.erros, finalizado: !!c.finalizado, rodada: c.rodada || null, totalRodada: c.totalRodada || '', legado: !c.rodada }; })
         : (op.cadernoIds || []).map(function (id) { return { cadernoId: id, acertos: '', erros: '' }; }),
       segundos: existente ? existente.segundos : (op.segundos || 0),
       concluir: true,
@@ -156,6 +157,15 @@ var Sessao = (function () {
             .concat(existente ? (existente.revisados || []).filter(function (r) { return !est.assuntos[r.chave]; }) : []);
         } else if (!linhas.length) {
           return mostrarErro('Informe os acertos e erros de pelo menos um caderno.');
+        }
+        // Rodada das favoritadas: o total do caderno é obrigatório e precisa comportar o que já foi feito.
+        for (var iL = 0; iL < linhas.length; iL++) {
+          var lr = linhas[iL];
+          if (!lr.rodada) continue;
+          var nomeCad = Dados.caderno(lr.cadernoId).nome, totalR = Number(lr.totalRodada) || 0;
+          if (totalR <= 0) return mostrarErro('Informe quantas questões há no caderno "' + nomeCad + '".');
+          var somaR = Dados.rodadaFavorita(lr.cadernoId, lr.rodada, est.sessaoId).feitas + (Number(lr.acertos) || 0) + (Number(lr.erros) || 0);
+          if (somaR > totalR) return mostrarErro('O caderno "' + nomeCad + '" ficaria com ' + somaR + ' questões feitas, mais do que o total de ' + totalR + '.');
         }
         campos.cadernos = porAssunto.concat(linhas);
       }
@@ -324,7 +334,8 @@ var Sessao = (function () {
       var sel = el('select', { onchange: function () {
         var antes = ehFavorito(l.cadernoId);
         l.cadernoId = sel.value;
-        if (antes !== ehFavorito(l.cadernoId)) { l.finalizado = false; redesenhar(); }
+        l.legado = false; l.rodada = null; l.totalRodada = '';
+        if (antes || ehFavorito(l.cadernoId)) { l.finalizado = false; redesenhar(); }
       } }, [
         el('option', { value: '', text: 'Questões avulsas (sem caderno)' })
       ].concat(pastas.map(function (p) {
@@ -351,6 +362,22 @@ var Sessao = (function () {
       ]);
       // Cadernos de favoritadas mudam sempre: em vez do total, você informa se terminou o caderno.
       if (!ehFavorito(l.cadernoId)) return linha;
+      // Modo Leitura: cada rodada tem o seu total, informado aqui e mantido até a rodada terminar.
+      if (!l.rodada && !l.legado) {
+        var aberta = Dados.rodadaAberta(l.cadernoId);
+        if (aberta) { l.rodada = aberta.blocoId; if (!l.totalRodada && aberta.total) l.totalRodada = aberta.total; }
+      }
+      if (l.rodada) {
+        var rod = Dados.rodadaFavorita(l.cadernoId, l.rodada, est.sessaoId);
+        var bl = Dados.bloco(l.rodada);
+        return el('div', { class: 'linha-caderno-grupo' }, [linha,
+          el('label', { class: 'campo campo-total-rodada' }, [
+            el('span', { class: 'campo-rotulo', text: 'Quantas questões há neste caderno agora?' }),
+            el('input', { type: 'number', min: 1, step: 1, value: l.totalRodada, oninput: function (e) { l.totalRodada = e.target.value; } }),
+            el('span', { class: 'campo-ajuda', text: 'Rodada antes da teoria ' + (bl ? 'do ' + bl.nome : 'do bloco') + (rod.feitas ? ' · ' + rod.feitas + ' já feitas' : ' · rodada nova, começa do zero') })
+          ])
+        ]);
+      }
       return el('div', { class: 'linha-caderno-grupo' }, [linha,
         el('label', { class: 'opcao-check opcao-finalizado' }, [
           el('input', { type: 'checkbox', checked: !!l.finalizado, onchange: function (e) { l.finalizado = e.target.checked; } }),
@@ -389,7 +416,7 @@ var Sessao = (function () {
     var partes = (s.cadernos || []).map(function (c) {
       var cad = Dados.caderno(c.cadernoId);
       var nome = c.assunto ? c.assunto.nome : cad ? cad.nome : 'Avulsas';
-      return nome + ': ' + c.acertos + ' acertos · ' + c.erros + ' erros' + (c.finalizado ? ' (caderno finalizado)' : '');
+      return nome + ': ' + c.acertos + ' acertos · ' + c.erros + ' erros' + (c.finalizado ? ' (caderno finalizado)' : '') + (c.rodada && c.totalRodada ? ' (caderno com ' + c.totalRodada + ' questões)' : '');
     });
     // Revistos só marcados (sessões antigas, sem questões por assunto).
     var soMarcados = (s.revisados || []).filter(function (r) { return !(s.cadernos || []).some(function (c) { return c.assunto && c.assunto.chave === r.chave; }); });

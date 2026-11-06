@@ -124,6 +124,15 @@ var Questoes = (function () {
     var aberta = !fechadas[p.id];
     var cadernos = Dados.cadernosDe(p.id);
     var sp = Dados.statsPasta(p.id);
+    // Favoritadas no Modo Leitura: a contagem da pasta é a das rodadas atuais (o histórico continua intacto).
+    if (favoritas && Dados.modoDeEstudo(d.id).modo === 'leitura') {
+      sp = { feitas: 0, acertos: 0 };
+      cadernos.forEach(function (c) {
+        var it = Dados.rodadaExibida(c.id);
+        if (it && it.rodada) { sp.feitas += it.rodada.feitas; sp.acertos += it.rodada.acertos; }
+      });
+      sp.pct = sp.feitas ? sp.acertos / sp.feitas * 100 : 0;
+    }
     var resumo = cadernos.length + (cadernos.length === 1 ? ' caderno' : ' cadernos') +
       (teoria ? ' de ' + Dados.blocosDe(d.id).length + ' blocos' : '') +
       (erros ? (function () { var g = Dados.gruposDeErros(d.id), n = g.normais.length + (g.final ? 1 : 0); return ' de ' + n + (n === 1 ? ' bateria de erros' : ' baterias de erros'); })() : '') +
@@ -137,7 +146,8 @@ var Questoes = (function () {
       el('div', { class: 'pasta-titulo' }, [
         el('span', { class: 'pasta-nome', text: p.nome }),
         teoria || erros ? UI.selo('Modo Leitura', 'info')
-          : simulado || favoritas ? UI.selo('Modo Revisão', 'sucesso')
+          : favoritas ? UI.selo('Leitura e Revisão', 'sucesso')
+          : simulado ? UI.selo('Modo Revisão', 'sucesso')
           : UI.botaoEngrenagem(function () { editarPasta(d, p); }, 'Editar pasta')
       ]),
       el('div', { class: 'pasta-direita' }, [
@@ -219,7 +229,9 @@ var Questoes = (function () {
       var semTotal = cadernos.filter(function (c) { return !c.totalQuestoes; });
       if (semTotal.length) avisos.push('Informe o total de questões de: ' + semTotal.map(function (c) { return c.nome; }).join(', ') + '.');
     } else {
-      texto = 'Depois do simulado, vêm as favoritadas: primeiro o caderno de dúvidas, depois o de erradas 2x ou mais. Como esses cadernos mudam sempre, não há total: ao lançar a sessão, marque "Finalizei este caderno" quando terminar.';
+      texto = Dados.modoDeEstudo(d.id).modo === 'leitura'
+        ? 'Antes de cada novo bloco de teoria (do 2º em diante) vem uma rodada: primeiro o caderno de dúvidas, depois o de erradas 2x ou mais. Ao lançar, informe quantas questões o caderno tem naquele momento. A contagem aqui recomeça a cada rodada; o histórico não é apagado.'
+        : 'Depois do simulado, vêm as favoritadas: primeiro o caderno de dúvidas, depois o de erradas 2x ou mais. Como esses cadernos mudam sempre, não há total: ao lançar a sessão, marque "Finalizei este caderno" quando terminar.';
       var faltam = Dados.ORDEM_FAVORITAS.filter(function (g) { return !Dados.cadernoFavorito(d.id, g); });
       if (faltam.length) avisos.push('Falta cadastrar: ' + faltam.map(function (g) { return Dados.GRUPOS_FAVORITAS[g].toLowerCase(); }).join(' e ') + '.');
       var semGrupo = cadernos.filter(function (c) { return !c.grupo; });
@@ -240,13 +252,16 @@ var Questoes = (function () {
   }
 
   function statusFavorito(d, c) {
-    var ultimo = null;
+    var ultimo = null, it = Dados.rodadaExibida(c.id);
     Dados.sessoesDe(d.id).forEach(function (s) {
       if ((s.cadernos || []).some(function (l) { return l.cadernoId === c.id && l.finalizado; }) && (!ultimo || s.data > ultimo)) ultimo = s.data;
     });
     return el('div', null, [
       el('div', { class: 'caderno-bloco', text: c.grupo === 'duvidas' ? 'Dúvidas' : c.grupo === 'erros2x' ? 'Errei 2x ou mais' : 'Sem grupo' }),
-      ultimo ? el('span', { class: 'data-fraca', text: 'Finalizado em ' + UI.fmtData(ultimo) }) : null
+      it && it.rodada ? el('span', { class: 'data-fraca', text: 'Rodada antes da teoria do ' + it.bloco.nome }) : null,
+      it && it.rodada && it.rodada.vazia ? el('div', { class: 'data-fraca' }, ['Sem questões nesta rodada · ',
+        el('button', { type: 'button', class: 'link', text: 'Desfazer', onclick: function () { Dados.marcarRodadaVazia(c.id, it.rodada.blocoId, false); App.atualizar(); } })]) : null,
+      !it && ultimo ? el('span', { class: 'data-fraca', text: 'Finalizado em ' + UI.fmtData(ultimo) }) : null
     ]);
   }
 
@@ -275,6 +290,13 @@ var Questoes = (function () {
   function linhaCaderno(d, c, tipoPasta) {
     var teoria = tipoPasta === 'teoria';
     var s = Dados.statsCaderno(c.id);
+    // Favoritadas no Modo Leitura: mostra só a rodada atual, que recomeça zerada a cada novo bloco.
+    var itRodada = tipoPasta === 'favoritas' ? Dados.rodadaExibida(c.id) : null;
+    if (itRodada && itRodada.rodada) {
+      var rd = itRodada.rodada;
+      s = { acertos: rd.acertos, erros: rd.erros, feitas: rd.feitas, pct: rd.feitas ? rd.acertos / rd.feitas * 100 : 0, ultimo: rd.ultimo,
+        total: rd.total || 0, faltam: Math.max(0, (rd.total || 0) - rd.feitas), completo: rd.concluida && !rd.vazia };
+    }
     var nome = c.link
       ? el('a', { class: 'caderno-nome', href: c.link, target: '_blank', rel: 'noopener noreferrer', title: 'Abrir no TecConcursos' }, [c.nome, UI.icone('externo', 'icone-pequeno')])
       : el('span', { class: 'caderno-nome sem-link', text: c.nome });
@@ -286,7 +308,7 @@ var Questoes = (function () {
         s.completo ? UI.selo('Caderno completo', 'completo') : el('div', { class: 'faltam', text: 'Faltam ' + UI.fmtNum(s.faltam) })
       ];
     } else {
-      feitas = [el('div', { class: 'feitas', text: UI.fmtNum(s.feitas) }), el('div', { class: 'faltam', text: tipoPasta === 'favoritas' ? 'Caderno flexível' : 'Total não informado' })];
+      feitas = [el('div', { class: 'feitas', text: UI.fmtNum(s.feitas) }), el('div', { class: 'faltam', text: itRodada && itRodada.rodada ? 'Total informado ao lançar' : tipoPasta === 'favoritas' ? 'Caderno flexível' : 'Total não informado' })];
     }
 
     return el('tr', null, [
@@ -410,7 +432,7 @@ var Questoes = (function () {
       ]),
       extraTeoria ? extraTeoria.nos : null,
       seletorPar ? el('div', { class: 'campos-teoria' }, UI.campo('Blocos', seletorPar, 'A bateria de erros destes blocos fica concluída quando todas as questões do caderno forem lançadas.')) : null,
-      seletorGrupo ? el('div', { class: 'campos-teoria' }, UI.campo('Grupo', seletorGrupo, 'Este caderno muda sempre, por isso não tem total: ao lançar a sessão, marque "Finalizei este caderno" quando terminar.')) : null
+      seletorGrupo ? el('div', { class: 'campos-teoria' }, UI.campo('Grupo', seletorGrupo, 'Este caderno muda sempre, por isso o total não fica aqui: no Modo Leitura, informe quantas questões ele tem ao lançar; no Modo Revisão, marque "Finalizei este caderno" quando terminar.')) : null
     ], botoes);
   }
 

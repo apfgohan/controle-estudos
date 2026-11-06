@@ -256,7 +256,9 @@ var Dashboard = (function () {
       ]),
       el('div', { class: 'proxima-nome' }, [
         el('span', { class: 'proxima-cor', style: { background: d.cor } }),
-        el('h2', { text: d.nome }),
+        el('h2', { class: 'materia-clicavel', text: d.nome, tabindex: '0', role: 'button', title: 'Ver o processo até o fim da teoria',
+          onclick: function () { verProcesso(d); },
+          onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); verProcesso(d); } } }),
         seloModo(modo),
         item.minutosPlanejados ? el('span', { class: 'pilula', text: 'Meta: ' + fmtMinutos(item.minutosPlanejados) }) : null
       ]),
@@ -274,7 +276,8 @@ var Dashboard = (function () {
         UI.botao('Pular', function () { Dados.avancarCiclo(1); App.atualizar(); }, 'btn-secundario'),
         el('span', { class: 'proxima-links' }, [
           el('button', { type: 'button', class: 'link', text: 'Ver teoria', onclick: function () { verTeoria(d); } }), ' · ',
-          el('button', { type: 'button', class: 'link', text: 'Ver cadernos', onclick: function () { verCadernos(d); } })
+          el('button', { type: 'button', class: 'link', text: 'Ver cadernos', onclick: function () { verCadernos(d); } }), ' · ',
+          el('button', { type: 'button', class: 'link', text: 'Ver processo', onclick: function () { verProcesso(d); } })
         ])
       ])
     ]);
@@ -296,6 +299,13 @@ var Dashboard = (function () {
 
   function textoEtapa(it) {
     if (it.tipo === 'teoria') return 'Estudar Teoria do ' + it.bloco.nome;
+    if (it.tipo === 'favoritas') {
+      var alvo = it.grupo === 'duvidas' ? 'em que fiquei em dúvida' : 'que errei 2x ou mais';
+      var resta = it.qtd ? it.qtd - it.feitas : 0;
+      return it.feitas && resta > 0
+        ? 'Terminar ' + (resta === 1 ? 'a questão restante' : 'as ' + resta + ' questões restantes') + ' das favoritadas ' + alvo
+        : 'Resolver as questões favoritadas ' + alvo;
+    }
     if (it.tipo === 'erros') return 'Realizar a bateria de erros ' + (it.par.blocos.length === 1 ? 'do ' : 'dos ') + Dados.nomePar(it.par);
     return 'Realizar a ' + it.numero + 'ª bateria de questões do ' + it.bloco.nome;
   }
@@ -317,7 +327,28 @@ var Dashboard = (function () {
     var feitas = plano.itens.length - plano.pendentes.length;
     var detalhe, acao;
 
-    if (atual.tipo === 'erros') {
+    if (atual.tipo === 'favoritas') {
+      var cf = atual.caderno;
+      if (!cf) {
+        detalhe = el('p', { class: 'data-fraca' }, ['Ainda não há o caderno de ' + Dados.GRUPOS_FAVORITAS[atual.grupo].toLowerCase() + '. ',
+          el('a', { href: '#/questoes/' + d.id, text: 'Cadastre-o na pasta "' + Dados.NOME_PASTA_FAVORITAS + '"' }), '.']);
+      } else {
+        detalhe = el('div', { class: 'rec-bateria' }, [
+          el('div', { class: 'rec-bateria-linha' }, [linkCaderno(cf),
+            el('span', { class: 'rec-faltam', text: atual.qtd ? textoFaltam(atual.feitas, atual.qtd, 'deste caderno') : 'Ao lançar, informe quantas questões o caderno tem agora' })]),
+          atual.feitas && atual.qtd ? UI.barra(atual.feitas / atual.qtd * 100) : null,
+          el('p', { class: 'data-fraca', text: 'Antes de iniciar a teoria do ' + atual.bloco.nome + '.' })
+        ]);
+        acao = [
+          !atual.feitas ? UI.botao('Caderno sem questões', function () {
+            Dados.marcarRodadaVazia(cf.id, atual.bloco.id, true);
+            App.atualizar();
+            UI.aviso('Rodada pulada. Para desfazer, vá ao caderno na aba Questões.');
+          }, 'btn-secundario') : null,
+          UI.botao('Lançar questões', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [cf.id] }); }, 'btn-primario', 'play')
+        ];
+      }
+    } else if (atual.tipo === 'erros') {
       var ce = atual.caderno;
       if (!ce) {
         detalhe = el('p', { class: 'data-fraca' }, ['Monte no TecConcursos um caderno com as questões que você errou nas baterias ' +
@@ -361,7 +392,7 @@ var Dashboard = (function () {
       }, 'btn-primario', 'play');
     }
 
-    return el('div', { class: 'recomendacao' }, [
+    return el('div', { class: 'recomendacao rec-' + TIPO_COR[atual.tipo] }, [
       el('div', { class: 'rec-topo' }, [
         UI.icone(atual.tipo === 'teoria' ? 'lista' : 'caderno2'),
         el('span', { class: 'rec-rotulo', text: 'Recomendação' })
@@ -455,7 +486,7 @@ var Dashboard = (function () {
     } else {
       textoDepois = textoEtapaRevisao(depois, plano);
     }
-    return el('div', { class: 'recomendacao rec-revisao' }, [
+    return el('div', { class: 'recomendacao rec-revisao rec-' + (etapa === 'simulado' ? 'questoes' : etapa === 'fracos' ? 'erros' : 'favoritas') }, [
       el('div', { class: 'rec-topo' }, [UI.icone(etapa === 'fracos' ? 'alerta' : 'caderno2'), el('span', { class: 'rec-rotulo', text: 'Recomendação' })]),
       el('div', { class: 'rec-principal' }, [el('strong', { class: 'rec-titulo', text: textoEtapaRevisao(etapa, plano) }), detalhe]),
       acao ? el('div', { class: 'rec-rodape' }, acao) : null,
@@ -466,6 +497,73 @@ var Dashboard = (function () {
       el('div', { class: 'rec-progresso data-fraca', text: 'Volta ' + plano.rodada + ' do Modo Revisão · ' + plano.simuladosConcluidos +
         (plano.simuladosConcluidos === 1 ? ' simulado concluído' : ' simulados concluídos') })
     ]);
+  }
+
+  // ---------- Processo até o fim da teoria (bloquinhos) ----------
+  var TIPO_COR = { teoria: 'teoria', bateria: 'questoes', favoritas: 'favoritas', erros: 'erros' };
+
+  function bloquinhoEtapa(it, atual) {
+    var nome, sub;
+    if (it.tipo === 'teoria') {
+      var prontos = it.topicos.filter(function (t) { return t.concluido; }).length;
+      nome = 'Teoria';
+      sub = prontos && !it.concluido ? prontos + '/' + it.topicos.length + ' tópicos' : it.bloco.nome;
+    } else if (it.tipo === 'favoritas') {
+      nome = it.grupo === 'duvidas' ? 'Dúvidas' : 'Errei 2x+';
+      sub = it.rodada && it.rodada.vazia ? 'Sem questões' : it.feitas && it.qtd ? it.feitas + '/' + it.qtd : 'Favoritadas';
+    } else if (it.tipo === 'erros') {
+      nome = 'Erros';
+      sub = (it.feitas && !it.concluido ? it.feitas + '/' + it.qtd + ' · ' : '') + Dados.nomePar(it.par);
+    } else {
+      var b = it.bateria;
+      nome = it.numero + 'ª bateria';
+      sub = (b && b.feitas && !it.concluido ? b.feitas + '/' + b.qtd + ' · ' : '') + it.bloco.nome;
+    }
+    return el('div', { class: 'etapa etapa-' + TIPO_COR[it.tipo] + (it.concluido ? ' feita' : '') + (it === atual ? ' atual' : ''), title: textoEtapa(it) }, [
+      el('div', { class: 'etapa-nome' }, [it.concluido ? UI.icone('check') : null, el('span', { text: nome })]),
+      el('div', { class: 'etapa-sub', text: sub }),
+      it === atual ? el('div', { class: 'etapa-agora', text: 'Agora' }) : null
+    ]);
+  }
+
+  function gradeProcesso(d) {
+    var plano = Dados.planoTeoria(d.id);
+    if (!plano.blocos) return el('p', { class: 'data-fraca', text: 'Cadastre os blocos de teoria desta matéria para ver o processo.' });
+    var atual = plano.pendentes[0], feitas = plano.itens.length - plano.pendentes.length, grupos = [];
+    plano.itens.forEach(function (it) {
+      var g = grupos[grupos.length - 1];
+      if (!g || g.passo !== it.passo) grupos.push(g = { passo: it.passo, itens: [] });
+      g.itens.push(it);
+    });
+    var blocos = Dados.blocosDe(d.id);
+    return el('div', { class: 'processo' }, [
+      el('div', { class: 'processo-resumo' }, [
+        el('strong', { text: feitas + ' de ' + plano.itens.length + ' etapas concluídas' }),
+        el('span', { class: 'data-fraca', text: plano.pendentes.length ? 'Faltam ' + plano.pendentes.length : 'Modo Leitura concluído' })
+      ]),
+      UI.barra(plano.itens.length ? feitas / plano.itens.length * 100 : 0),
+      el('div', { class: 'processo-legenda' }, [['teoria', 'Teoria'], ['questoes', 'Questões'], ['favoritas', 'Favoritadas'], ['erros', 'Erros']].map(function (x) {
+        return el('span', { class: 'etapa-' + x[0] }, [el('i'), x[1]]);
+      })),
+      grupos.map(function (g) {
+        var prontos = g.itens.filter(function (it) { return it.concluido; }).length;
+        return el('div', { class: 'processo-grupo' }, [
+          el('div', { class: 'processo-grupo-topo' }, [
+            el('span', { text: g.passo <= blocos.length ? blocos[g.passo - 1].nome : 'Depois da última teoria' }),
+            el('span', { class: 'data-fraca', text: prontos + '/' + g.itens.length })
+          ]),
+          el('div', { class: 'processo-etapas' }, g.itens.map(function (it) { return bloquinhoEtapa(it, atual); }))
+        ]);
+      })
+    ]);
+  }
+
+  function verProcesso(d) {
+    var escolhido = Dados.modoDeEstudo(d.id).escolhido;
+    UI.modal(d.nome, [
+      escolhido ? el('p', { class: 'aviso-suave', text: 'Esta matéria está no Modo Revisão por escolha sua. O processo do Modo Leitura fica aqui só como referência.' }) : null,
+      gradeProcesso(d)
+    ], [{ texto: 'Fechar', classe: 'btn-secundario' }], { subtitulo: 'Processo até o fim da teoria' }).caixa.classList.add('modal-largo');
   }
 
   // ---------- Ciclo ----------
@@ -545,6 +643,7 @@ var Dashboard = (function () {
         anot ? UI.blocoAnotacao(anot, { teoria: 'Teoria', questoes: 'Questões', revisao: 'Revisão' }[anot.tipo]) : null
       ];
     }
+    corpo.push(el('h3', { class: 'processo-titulo', text: 'Processo até o fim da teoria' }), gradeProcesso(d));
     var m = UI.modal(d.nome, corpo, [{ texto: 'Fechar', classe: 'btn-secundario' }],
       { subtitulo: (feito ? 'O que foi estudado · ' : 'Recomendação · ') + posicao });
     m.caixa.classList.add('modal-largo');
