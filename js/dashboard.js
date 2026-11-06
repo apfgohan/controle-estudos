@@ -837,32 +837,136 @@ var Dashboard = (function () {
   }
 
   // ---------- Previsão de conclusão do edital ----------
-  function horasInt(h) { return UI.fmtNum(Math.round(h)) + ' h'; }
+  function fmtDecimal(v) { return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+  function textoEtapas(n) { return UI.fmtNum(n) + (n === 1 ? ' etapa' : ' etapas'); }
 
   function caixaPrevisao() {
     var r = Previsao.calcular();
     if (r.vazio) return null;
-    var valor, detalhe;
+    var valor, linhas;
     if (r.concluido) {
-      valor = 'Edital concluído';
-      detalhe = 'Todas as matérias já estão no Modo Revisão.';
+      valor = 'Concluído';
+      linhas = [['Todas as matérias', 'já estão no Modo Revisão']];
     } else if (r.semRitmo) {
       valor = 'Sem previsão';
-      detalhe = 'Nenhum estudo nas últimas 4 semanas: falta um ritmo para calcular. Faltam cerca de ' + horasInt(r.horasRestantes) + '.';
+      linhas = [[textoEtapas(r.etapasRestantes), 'restantes'], ['Sem estudos', 'nas últimas 4 semanas para calcular o ritmo']];
     } else {
       valor = Previsao.fmtMes(r.data);
-      detalhe = 'Cerca de ' + horasInt(r.horasRestantes) + ' restantes · ' + UI.fmtNum(Math.round(r.horasSemana)) + ' h/semana nas últimas 4 semanas · ' +
-        r.emRevisao + ' de ' + r.total + ' matérias em Revisão';
+      linhas = [
+        [textoEtapas(r.etapasRestantes), 'restantes'],
+        [fmtDecimal(r.mediaEtapasSemana), 'concluídas por semana (últimas 4 semanas)'],
+        [r.emRevisao + ' de ' + r.total, 'matérias em Revisão']
+      ];
     }
     function abrir() { detalhePrevisao(r); }
-    return el('div', { class: 'caixa-kpi caixa-previsao', role: 'button', tabindex: '0', title: 'Ver o detalhe por matéria', onclick: abrir,
+    return el('div', { class: 'caixa-kpi caixa-topo caixa-previsao', role: 'button', tabindex: '0', title: 'Ver o detalhe por matéria', onclick: abrir,
       onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } } }, [
-      el('div', { class: 'previsao-principal' }, [
-        el('div', { class: 'caixa-titulo', text: 'Conclusão do edital' }),
-        el('div', { class: 'previsao-valor', text: valor })
-      ]),
-      el('div', { class: 'previsao-detalhe', text: detalhe })
+      el('div', { class: 'caixa-titulo', text: 'Conclusão do edital' }),
+      el('div', { class: 'previsao-valor', text: valor }),
+      el('div', { class: 'caixa-linhas' }, linhas.map(function (l) {
+        return el('div', null, [el('strong', { text: l[0] }), ' ' + l[1]]);
+      }))
     ]);
+  }
+
+  // ---------- Comparação com a semana anterior ----------
+  // A semana atual ainda não terminou: compara os mesmos dias (de segunda até o dia de hoje).
+  var NOMES_DIAS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
+
+  function textoPeriodoComparado(diasDaSemana) {
+    if (diasDaSemana === 7) return 'Semana inteira, de segunda a domingo';
+    if (diasDaSemana === 1) return 'Só a segunda-feira de cada semana';
+    return 'De ' + NOMES_DIAS[0] + ' a ' + NOMES_DIAS[diasDaSemana - 1] + ' em cada semana';
+  }
+
+  function classeDiferenca(v) { return 'dif' + (v > 0 ? ' dif-mais' : v < 0 ? ' dif-menos' : ''); }
+
+  function linhaComparada(rotulo, atual, diferenca, texto) {
+    return el('div', { class: 'comparar-item' }, [
+      el('span', { class: 'comparar-rotulo', text: rotulo }),
+      el('strong', { text: atual }),
+      el('span', { class: classeDiferenca(diferenca), text: texto })
+    ]);
+  }
+
+  function caixaComparacao() {
+    var hoje = UI.hoje(), seg = inicioSemana(hoje);
+    var dias = UI.diasEntre(seg, hoje) + 1;
+    var agora = resumoPeriodo(seg, hoje);
+    var antes = resumoPeriodo(UI.somarDias(seg, -7), UI.somarDias(hoje, -7));
+    var temAcerto = agora.feitas > 0 && antes.feitas > 0;
+    function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
+    function sinal(v) { return v > 0 ? '+' : v < 0 ? '−' : ''; }
+    var difAcerto = temAcerto ? Math.round((agora.pct - antes.pct) * 10) / 10 : 0;
+    var difSeg = agora.segundos - antes.segundos, difQ = agora.feitas - antes.feitas;
+    function barra(rotulo, pct, classe) {
+      return el('div', { class: 'comparar-barra ' + classe }, [
+        el('span', { text: rotulo }),
+        el('div', { class: 'comparar-trilho' }, el('div', { style: { width: Math.min(100, pct) + '%' } })),
+        el('span', { class: 'comparar-pct', text: pct1(pct) })
+      ]);
+    }
+    return el('div', { class: 'caixa-kpi caixa-topo' }, [
+      el('div', { class: 'caixa-titulo', text: 'Você vs. semana passada' }),
+      el('div', { class: 'comparar-periodo', text: textoPeriodoComparado(dias) }),
+      el('div', { class: 'comparar-acerto' }, [
+        el('span', { class: 'previsao-valor', text: agora.feitas ? pct1(agora.pct) : '—' }),
+        temAcerto ? el('span', { class: classeDiferenca(difAcerto) + ' dif-selo', text: sinal(difAcerto) + UI.fmtPct(Math.abs(difAcerto)).replace('%', '') + ' p.p.' }) : null,
+        el('span', { class: 'comparar-rotulo', text: 'de acerto' })
+      ]),
+      temAcerto ? el('div', { class: 'comparar-barras' }, [barra('Antes', antes.pct, 'antes'), barra('Agora', agora.pct, 'agora')]) : null,
+      el('div', { class: 'comparar-linhas' }, [
+        linhaComparada('Horas', fmtHoras(agora.segundos), difSeg, difSeg ? sinal(difSeg) + fmtHoras(Math.abs(difSeg)) : 'igual'),
+        linhaComparada('Questões', UI.fmtNum(agora.feitas), difQ, difQ ? sinal(difQ) + UI.fmtNum(Math.abs(difQ)) : 'igual')
+      ])
+    ]);
+  }
+
+  // ---------- Mapa de constância ----------
+  var SEMANAS_MAPA = 12;
+
+  function nivelDoDia(segundos) {
+    var h = segundos / 3600;
+    return h < 1 ? 1 : h < 3 ? 2 : h < 5 ? 3 : 4;
+  }
+
+  function caixaConstancia() {
+    var hoje = UI.hoje(), inicio = UI.somarDias(inicioSemana(hoje), -7 * (SEMANAS_MAPA - 1));
+    var porDia = {};
+    Dados.db.sessoes.forEach(function (s) {
+      if (s.data < inicio || s.data > hoje) return;
+      porDia[s.data] = (porDia[s.data] || 0) + (s.segundos || 0);
+    });
+    function emPausa(d) { return (Dados.db.pausas || []).some(function (p) { return p.inicio <= d && d <= p.fim; }); }
+    var estudados = 0, decorridos = 0, celulas = [];
+    for (var n = 0; n < SEMANAS_MAPA * 7; n++) {
+      var d = UI.somarDias(inicio, n);
+      if (d > hoje) { celulas.push(el('span', { class: 'mapa-dia futuro' })); continue; }
+      decorridos++;
+      var estudou = porDia[d] !== undefined, pausa = emPausa(d);
+      if (estudou) estudados++;
+      var classe = estudou ? 'nivel-' + nivelDoDia(porDia[d]) : pausa ? 'pausa' : '';
+      var data = new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '');
+      celulas.push(comDica(el('span', { class: 'mapa-dia ' + classe + (d === hoje ? ' hoje' : '') }), [
+        data, estudou ? fmtHoras(porDia[d]) + ' de estudo' : pausa ? 'Pausa programada' : 'Sem estudo'
+      ]));
+    }
+    return el('div', { class: 'caixa-kpi caixa-topo' }, [
+      el('div', { class: 'caixa-titulo', text: 'Constância' }),
+      el('div', { class: 'comparar-periodo', text: 'Últimas ' + SEMANAS_MAPA + ' semanas' }),
+      el('div', { class: 'mapa' }, [
+        el('div', { class: 'mapa-rotulos' }, ['seg', '', 'qua', '', 'sex', '', 'dom'].map(function (t) { return el('span', { text: t }); })),
+        el('div', { class: 'mapa-dias' }, celulas)
+      ]),
+      el('div', { class: 'mapa-rodape' }, [
+        el('span', null, [el('strong', { text: estudados + ' de ' + decorridos }), ' dias estudados']),
+        el('span', { class: 'mapa-legenda' }, ['menos', el('i', { class: 'mapa-dia' }), el('i', { class: 'mapa-dia nivel-1' }), el('i', { class: 'mapa-dia nivel-2' }), el('i', { class: 'mapa-dia nivel-3' }), el('i', { class: 'mapa-dia nivel-4' }), 'mais'])
+      ])
+    ]);
+  }
+
+  function linhaTopo() {
+    return el('div', { class: 'grade-topo-tres' }, [caixaPrevisao(), caixaComparacao(), caixaConstancia()]);
   }
 
   function detalhePrevisao(r) {
@@ -872,16 +976,28 @@ var Dashboard = (function () {
       return el('tr', null, [
         el('td', null, [el('span', { class: 'bolinha', style: { background: x.d.cor } }), ' ' + x.d.nome]),
         el('td', { text: situacao }),
-        el('td', { class: 'previsao-num', text: x.horas > 0 ? horasInt(x.horas) : '—' }),
+        el('td', { class: 'previsao-num', text: x.totalEtapas ? UI.fmtNum(x.totalEtapas) : '—' }),
         el('td', { class: 'previsao-num', text: x.data ? Previsao.fmtMes(x.data) : '—' })
       ]);
     });
     var m = r.medias;
+    var tipos = [['teoria', 'teoria', 'Teoria'], ['bateria', 'questoes', 'Baterias de questões'], ['favoritas', 'favoritas', 'Favoritadas'], ['erros', 'erros', 'Baterias de erros']];
     UI.modal('Conclusão do edital', [
       !r.concluido && r.data ? el('p', { class: 'modal-desc', text: 'Mantendo o ritmo das últimas 4 semanas (' + UI.fmtNum(Math.round(r.horasSemana)) + ' h/semana), a previsão é ' + Previsao.fmtMes(r.data) + '. A data muda conforme o seu ritmo real.' }) : null,
+      el('div', { class: 'processo-resumo' }, [
+        el('strong', { text: textoEtapas(r.etapasRestantes) + ' restantes' }),
+        el('span', { class: 'data-fraca', text: fmtDecimal(r.mediaEtapasSemana) + ' concluídas por semana nas últimas 4 semanas' })
+      ]),
+      el('div', { class: 'previsao-tipos' }, tipos.map(function (t) {
+        return el('div', { class: 'previsao-tipo etapa-' + t[1] }, [
+          el('div', { class: 'previsao-tipo-nome', text: t[2] }),
+          el('div', { class: 'previsao-tipo-num', text: UI.fmtNum(r.etapas[t[0]]) }),
+          el('div', { class: 'previsao-tipo-media', text: fmtDecimal(r.etapasPorSemana[t[0]]) + ' por semana' })
+        ]);
+      })),
       el('div', { class: 'tabela-rolagem previsao-tabela' }, el('table', { class: 'tabela tabela-previsao' }, [
         el('thead', null, el('tr', null, [
-          el('th', { text: 'Matéria' }), el('th', { text: 'Situação' }), el('th', { class: 'previsao-num', text: 'Faltam' }), el('th', { class: 'previsao-num', text: 'Previsão' })
+          el('th', { text: 'Matéria' }), el('th', { text: 'Situação' }), el('th', { class: 'previsao-num', text: 'Etapas' }), el('th', { class: 'previsao-num', text: 'Previsão' })
         ])),
         el('tbody', null, linhas)
       ])),
@@ -891,7 +1007,8 @@ var Dashboard = (function () {
         'Quando uma matéria termina o Modo Leitura, continua no ciclo com 1 vaga, em Revisão, e entra a próxima matéria de fora, em ordem alfabética. Se ela tinha 2 vagas, a extra passa para a nova.',
         'Cada matéria usa as próprias médias; com menos de 5 tópicos concluídos ou 100 questões, usa as gerais: ' + UI.fmtNum(Math.round(m.horasTopico * 60)) + ' min por tópico e ' + UI.fmtNum(Math.round(m.questoesHora)) + ' questões por hora.',
         'Cadernos ainda não cadastrados são estimados pela média dos outros; favoritadas sem total, pela média das rodadas já lançadas.',
-        'Matéria em Modo Revisão soma só os tópicos que faltam, não as baterias pendentes.'
+        'Matéria em Modo Revisão soma só os tópicos que faltam, não as baterias pendentes.',
+        'Para chegar à data, as etapas restantes são convertidas em horas, porque cada etapa tem um tamanho diferente.'
       ].map(function (t) { return el('li', { text: t }); }))
     ], [{ texto: 'Fechar', classe: 'btn-secundario' }], { subtitulo: 'Previsão para concluir a teoria de todas as matérias' }).caixa.classList.add('modal-largo');
   }
@@ -1215,9 +1332,8 @@ var Dashboard = (function () {
       return;
     }
 
+    raiz.appendChild(linhaTopo());
     raiz.appendChild(indicadores());
-    var previsao = caixaPrevisao();
-    if (previsao) raiz.appendChild(previsao);
     raiz.appendChild(el('div', { class: 'grade-topo' }, [
       cartaoProxima(),
       el('div', { class: 'coluna-lateral' }, [cartaoPerfil(), painelCiclo()])

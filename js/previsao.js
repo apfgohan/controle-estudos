@@ -74,14 +74,17 @@ var Previsao = (function () {
     var partes = bateriasDaMateria(d.id);
     var bateriaMedia = partes.length ? media(partes) : gerais.bateria;
     var rodada = mediaRodadas(d.id);
-    var horas = 0;
+    var horas = 0, etapas = etapasVazias();
 
     plano.pendentes.forEach(function (it) {
       if (it.tipo === 'teoria') {
-        horas += it.topicos.filter(function (t) { return !t.concluido; }).length * horasTopico;
+        var faltam = it.topicos.filter(function (t) { return !t.concluido; }).length;
+        if (faltam) etapas[it.tipo]++;
+        horas += faltam * horasTopico;
         return;
       }
       if (m.modo === 'revisao') return; // em Revisão, só a teoria que falta conta
+      etapas[it.tipo]++;
       var questoes;
       if (it.tipo === 'bateria') {
         questoes = it.bateria && it.bateria.qtd ? it.bateria.qtd - it.bateria.feitas : bateriaMedia;
@@ -94,7 +97,48 @@ var Previsao = (function () {
       }
       horas += Math.max(0, questoes) / questoesHora;
     });
-    return { horas: horas, modo: m.modo };
+    return { horas: horas, modo: m.modo, etapas: etapas };
+  }
+
+  function etapasVazias() { return { teoria: 0, bateria: 0, favoritas: 0, erros: 0 }; }
+  function somaEtapas(e) { return e.teoria + e.bateria + e.favoritas + e.erros; }
+
+  // Etapas do Modo Leitura concluídas desde a data "de", pela data em que cada uma ficou pronta.
+  function etapasConcluidasDesde(de) {
+    var contagem = etapasVazias(), acum = {};
+    Dados.db.sessoes.slice().sort(function (a, b) {
+      return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
+    }).forEach(function (s) {
+      (s.cadernos || []).forEach(function (l) {
+        if (!l.cadernoId) return;
+        var lista = acum[l.cadernoId] || (acum[l.cadernoId] = []);
+        var antes = lista.length ? lista[lista.length - 1].total : 0;
+        lista.push({ data: s.data, total: antes + (Number(l.acertos) || 0) + (Number(l.erros) || 0) });
+      });
+    });
+    // Data em que as questões lançadas no caderno alcançaram a quantidade pedida.
+    function dataAlcancou(cadernoId, quantidade) {
+      var lista = acum[cadernoId] || [];
+      for (var i = 0; i < lista.length; i++) if (lista[i].total >= quantidade) return lista[i].data;
+      return null;
+    }
+    Dados.disciplinas().forEach(function (d) {
+      Dados.planoTeoria(d.id).itens.forEach(function (it) {
+        if (!it.concluido) return;
+        var data = null;
+        if (it.tipo === 'teoria') {
+          data = it.topicos.reduce(function (m, t) { return t.dataConclusao && (!m || t.dataConclusao > m) ? t.dataConclusao : m; }, null);
+        } else if (it.tipo === 'bateria') {
+          data = it.caderno && it.bateria ? dataAlcancou(it.caderno.id, it.bateria.ate) : null;
+        } else if (it.tipo === 'erros') {
+          data = it.caderno ? dataAlcancou(it.caderno.id, it.qtd) : null;
+        } else if (it.rodada && !it.rodada.vazia) {
+          data = it.rodada.ultimo; // rodada marcada como "sem questões" não foi estudo
+        }
+        if (data && data >= de) contagem[it.tipo]++;
+      });
+    });
+    return contagem;
   }
 
   // Ritmo real da janela: horas por semana e tempo médio de cada posição do ciclo (cerca de uma sessão).
@@ -180,7 +224,7 @@ var Previsao = (function () {
     var gerais = mediasGerais();
     var materias = Dados.disciplinas().map(function (d) {
       var r = horasRestantes(d, gerais);
-      return { d: d, horas: r.horas, modo: r.modo, data: null };
+      return { d: d, horas: r.horas, modo: r.modo, etapas: r.etapas, totalEtapas: somaEtapas(r.etapas), data: null };
     });
     var pendentes = materias.filter(function (x) { return x.horas > 0; });
     var r = {
@@ -192,6 +236,14 @@ var Previsao = (function () {
       concluido: !!materias.length && !pendentes.length,
       medias: gerais, data: null, semRitmo: false
     };
+    r.etapas = etapasVazias();
+    materias.forEach(function (x) { for (var k in r.etapas) r.etapas[k] += x.etapas[k]; });
+    r.etapasRestantes = somaEtapas(r.etapas);
+    var semanas = JANELA_DIAS / 7;
+    var feitas = etapasConcluidasDesde(UI.somarDias(UI.hoje(), -(JANELA_DIAS - 1)));
+    r.etapasPorSemana = etapasVazias();
+    for (var k in feitas) r.etapasPorSemana[k] = feitas[k] / semanas;
+    r.mediaEtapasSemana = somaEtapas(feitas) / semanas;
     var ri = ritmo();
     r.horasSemana = ri.horasSemana;
     if (r.vazio || r.concluido) return r;
