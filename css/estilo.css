@@ -394,6 +394,42 @@ a.perfil-nome:hover { color: var(--azul-escuro); }
 .perfil-patente-risco { color: var(--vermelho); font-weight: 700; }
 .aviso-patente { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .aviso-patente-nome { font-size: 20px; font-weight: 800; }
+/* Animação da promoção: o soldadinho destrói o emblema, o novo cai do céu e ele se ajoelha. */
+.cena { position: relative; width: 300px; max-width: 100%; height: 190px; margin: 0 auto; overflow: hidden; border-radius: 14px; background: var(--superficie-2); border: 1px solid var(--borda); cursor: pointer; }
+.cena-chao { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; background: #252a3d; border-top: 1px solid var(--borda-forte); }
+.cena-soldado { position: absolute; bottom: 19px; left: 92px; width: 72px; height: 60px; z-index: 2; animation: cena-marchar 1s linear both; }
+.cena-soldado svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; }
+.cena-em-pe { animation: cena-sumir .01s linear 3.55s forwards; }
+.cena-ajoelhado { opacity: 0; animation: cena-ajoelhar .22s steps(3) 3.55s forwards; }
+.cena-corpo { animation: cena-balanco .25s ease-in-out 4 alternate; }
+.cena-perna-a, .cena-perna-b { transform-box: view-box; transform-origin: 9px 15px; }
+.cena-perna-a { animation: cena-passo-a .25s linear 4 alternate; }
+.cena-perna-b { animation: cena-passo-b .25s linear 4 alternate; }
+.cena-braco { transform-box: view-box; transform-origin: 8px 12px; transform: rotate(-20deg); animation: cena-golpe .5s ease-in-out 1.1s 3; }
+.cena-emblema { position: absolute; left: 160px; bottom: 20px; width: 88px; height: 88px; box-sizing: border-box; padding: 8px; border-radius: 20px; border-style: solid; }
+.cena-emblema > svg { display: block; width: 100%; height: 100%; }
+.cena-velho { animation: cena-tremer .2s linear 1.47s, cena-tremer .2s linear 1.97s, cena-sumir .01s linear 2.48s forwards; }
+.cena-emblema > svg.cena-racha { position: absolute; inset: 0; opacity: 0; animation: cena-mostrar .01s linear forwards; }
+.cena-peca { opacity: 0; animation: cena-voar .7s ease-in 2.48s both; }
+.cena-novo { animation: cena-cair .75s linear 2.75s both; }
+.cena-poeira { position: absolute; bottom: 18px; width: 16px; height: 8px; border-radius: 50%; background: #8b94a8; opacity: 0; animation: cena-poeira .4s ease-out 3.1s both; }
+.cena-texto { animation: cena-revelar .4s ease-out 3.6s both; }
+.cena-fim, .cena-fim * { animation: none !important; }
+.cena-fim .cena-velho, .cena-fim .cena-em-pe { opacity: 0; }
+.cena-fim .cena-ajoelhado { opacity: 1; }
+@keyframes cena-marchar { from { transform: translateX(-180px); } to { transform: translateX(0); } }
+@keyframes cena-balanco { to { transform: translateY(-4%); } }
+@keyframes cena-passo-a { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
+@keyframes cena-passo-b { from { transform: rotate(18deg); } to { transform: rotate(-18deg); } }
+@keyframes cena-golpe { 0% { transform: rotate(-20deg); } 55% { transform: rotate(-90deg); } 75% { transform: rotate(12deg); } 100% { transform: rotate(-20deg); } }
+@keyframes cena-ajoelhar { from { opacity: 1; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
+@keyframes cena-tremer { 25% { transform: translateX(4px) rotate(2deg); } 50% { transform: translateX(-4px) rotate(-2deg); } 75% { transform: translateX(3px); } }
+@keyframes cena-sumir { to { opacity: 0; } }
+@keyframes cena-mostrar { to { opacity: 1; } }
+@keyframes cena-voar { 0% { opacity: 0; transform: none; } 1% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--giro)); } }
+@keyframes cena-cair { 0% { transform: translateY(-240px); } 47% { transform: translateY(0) scale(1, 1); animation-timing-function: ease-out; } 60% { transform: translateY(5px) scale(1.14, .82); } 78% { transform: translateY(-12px) scale(.97, 1.03); } 100% { transform: translateY(0) scale(1, 1); } }
+@keyframes cena-poeira { 0% { opacity: 0; transform: none; } 10% { opacity: .8; } 100% { opacity: 0; transform: translate(var(--dx), -10px) scale(1.6); } }
+@keyframes cena-revelar { from { opacity: 0; } to { opacity: 1; } }
 .patente-atual { display: flex; align-items: center; gap: 14px; }
 .patente-atual-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .patente-faltas { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border: 1px solid var(--borda); border-radius: 12px; background: var(--superficie-2); font-size: 13px; color: var(--texto-2); }

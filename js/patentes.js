@@ -196,58 +196,130 @@ var Patentes = (function () {
 
   // ---------- Emblemas romanos ----------
   // Cada patente deve parecer mais valiosa que a anterior: os materiais evoluem de madeira para bronze, aço, ouro e púrpura,
-  // e a moldura acompanha ([cor da borda, fundo, espessura]).
-  var A = '#f2c14e', A2 = '#b9851f', A3 = '#7f5a12', R = '#b3302f', R2 = '#7d1f1f', S = '#c7cedb', S2 = '#8b94a8';
-  var B = '#c98f4a', B2 = '#8a5a2b', W = '#a8733f', W2 = '#6f4a26', M = '#ece7da', M2 = '#b9b4a6';
+  // e a moldura acompanha ([cor da borda, fundo, espessura]). Estilo: contorno preto grosso, poucas cores e sombras chapadas.
+  var K = '#14100e', V = '#b01e3c', V2 = '#6f1226', O = '#e8b13a', O1 = '#f7d774', O2 = '#9c6a17';
+  var A = '#b9bfc9', A1 = '#e3e6ec', A2 = '#5b6069', B = '#cd8f45', B1 = '#ecbd7c', B2 = '#85551f';
+  var W = '#a8733f', W1 = '#c99a63', W2 = '#6b4522', M = '#ece7da', M2 = '#a9a497';
 
-  // Imperator: dois ramos cruzados na base, com folhas pontiagudas e nervura central (o lado direito espelha o esquerdo).
+  function traco(w) { return ' stroke="' + K + '" stroke-width="' + (w || 1.7) + '" stroke-linejoin="round" stroke-linecap="round"'; }
+  function fino(w) { return ' fill="none"' + traco(w || 1.2); }
+
+  // Imperator: dois ramos cruzados na base, com folhas pontiagudas (o lado direito espelha o esquerdo).
   function coroaDeLouros() {
-    var O = '#f4c84f', O2 = '#d39f2c', O3 = '#8f6a1a';
-    function n(v) { return v.toFixed(2); }
+    function n(v) { return v.toFixed(1); }
     function folha(p) {
-      var bx = p[0], by = p[1], dx = p[2] - bx, dy = p[3] - by, px = -dy * 0.27, py = dx * 0.27;
-      return '<path d="M' + n(bx) + ' ' + n(by) + 'C' + n(bx + dx * 0.3 + px) + ' ' + n(by + dy * 0.3 + py) + ' ' + n(bx + dx * 0.72 + px * 0.85) + ' ' + n(by + dy * 0.72 + py * 0.85) + ' ' + n(p[2]) + ' ' + n(p[3]) + 'L' + n(bx) + ' ' + n(by) + 'Z" fill="' + O + '"/>' +
-        '<path d="M' + n(bx) + ' ' + n(by) + 'C' + n(bx + dx * 0.3 - px) + ' ' + n(by + dy * 0.3 - py) + ' ' + n(bx + dx * 0.72 - px * 0.85) + ' ' + n(by + dy * 0.72 - py * 0.85) + ' ' + n(p[2]) + ' ' + n(p[3]) + 'Z" fill="' + O2 + '"/>' +
-        '<path d="M' + n(bx) + ' ' + n(by) + 'L' + n(bx + dx * 0.88) + ' ' + n(by + dy * 0.88) + '" stroke="' + O3 + '" stroke-width=".35"/>';
+      var bx = p[0], by = p[1], dx = p[2] - bx, dy = p[3] - by, px = -dy * 0.3, py = dx * 0.3;
+      var cima = 'M' + n(bx) + ' ' + n(by) + 'C' + n(bx + dx * .3 + px) + ' ' + n(by + dy * .3 + py) + ' ' + n(bx + dx * .72 + px * .85) + ' ' + n(by + dy * .72 + py * .85) + ' ' + n(p[2]) + ' ' + n(p[3]);
+      var baixo = 'C' + n(bx + dx * .72 - px * .85) + ' ' + n(by + dy * .72 - py * .85) + ' ' + n(bx + dx * .3 - px) + ' ' + n(by + dy * .3 - py) + ' ' + n(bx) + ' ' + n(by) + 'Z';
+      return '<path d="' + cima + baixo + '" fill="' + O + '"' + traco(1.1) + '/>' +
+        '<path d="M' + n(bx) + ' ' + n(by) + 'C' + n(bx + dx * .3 - px) + ' ' + n(by + dy * .3 - py) + ' ' + n(bx + dx * .72 - px * .85) + ' ' + n(by + dy * .72 - py * .85) + ' ' + n(p[2]) + ' ' + n(p[3]) + 'Z" fill="' + O2 + '"/>';
     }
-    var ramo = '<path d="M38 58.3C35.5 55.5 33 54 29.5 52.5C21 49 14 42 11.7 33C10.2 26 13 19 21.5 13.7" stroke="' + O2 + '" stroke-width="1.2" fill="none"/>' +
-      '<path d="M38 58.3C36.5 56.5 35 55.3 33 54.2" stroke="' + O + '" stroke-width="1.8" fill="none"/>' +
-      [[27.4, 52.3, 15.4, 53.2], [20, 49.6, 9, 46.8], [14.5, 45.3, 5.6, 38.5], [11.1, 38.7, 5.2, 30], [10.3, 31.4, 6.2, 22.2], [10.9, 24.6, 10.9, 15.4], [13.5, 18.8, 16, 11], [17.7, 13.7, 22.1, 8.9], [21.4, 13.7, 27.7, 11],
-        [27.4, 50, 21.3, 41.8], [19.9, 47, 17.5, 36.7], [13.9, 41, 15.8, 30.6], [11.2, 33, 17, 24.3], [12.2, 24, 19.7, 19], [16.5, 17.7, 24, 16]].map(folha).join('');
+    var ramo = '<path d="M38 58C35 55 33 54 29 52C21 49 14 42 12 33C10 26 13 19 21 14" stroke="' + K + '" stroke-width="2.6" fill="none" stroke-linecap="round"/>' +
+      [[27, 52, 15, 54], [20, 49, 8, 47], [14, 44, 4, 37], [11, 37, 4, 28], [11, 29, 7, 19], [13, 22, 15, 11], [17, 17, 24, 8],
+       [26, 50, 22, 40], [18, 45, 19, 34], [13, 36, 20, 28], [14, 27, 23, 22]].map(folha).join('');
     return '<g>' + ramo + '</g><g transform="matrix(-1 0 0 1 64 0)">' + ramo + '</g>';
+  }
+
+  // Elmo de perfil com crista (Centurio e, menor, Primus Pilus).
+  var ELMO = '<path d="M41 14C36 2 15 0 8 14C4 23 5 36 9 47C11 38 13 31 18 26C25 18 33 15 41 14Z" fill="' + V + '"' + traco(1.8) + '/>' +
+    '<path d="M8 15C4 23 5 36 9 47C11 38 13 31 18 26C14 26 10 22 8 15Z" fill="' + V2 + '"/>' +
+    '<path d="M14 9l3 7M21 5l3 8M29 3l1 8M36 6l-2 7" stroke="' + K + '" stroke-width="1.3" stroke-linecap="round"/>' +
+    '<path d="M19 34L18 46L31 52L33 36Z" fill="' + A2 + '"' + traco(1.7) + '/>' +
+    '<path d="M33 34L53 35L50 42H43L42 57L33 50Z" fill="' + A + '"' + traco(1.7) + '/>' +
+    '<path d="M33 40L38 42L37 54L33 50Z" fill="' + A2 + '"/>' +
+    '<path d="M18 36C16 23 27 13 39 14C48 15 53 22 54 30L59 36L44 35C35 33 26 34 18 36Z" fill="' + O + '"' + traco(1.8) + '/>' +
+    '<path d="M18 36C17 28 21 22 26 18C24 24 25 28 29 34C25 34 21 35 18 36Z" fill="' + O2 + '"/>' +
+    '<path d="M33 19C39 17 45 20 48 25C43 23 38 22 33 19Z" fill="' + O1 + '"/>' +
+    '<circle cx="30" cy="37" r="4.5" fill="' + A1 + '"' + traco(1.6) + '/><circle cx="30" cy="37" r="1.5" fill="' + K + '"/>';
+
+  // Águia de asas abertas, usada no Quaestor e no Legatus.
+  function aguia(cor) {
+    return '<path d="M32 21c-1.500 0-3 1.500-2.500 3l1 2c-5-.5-9-4-12-6.500.5 6.500 3.500 12.500 10.500 13l3 2 3-2c7-.5 10-6.500 10.500-13-3 2.500-7 6-12 6.500l1-2c.5-1.500-1-3-2.500-3z" fill="' + cor + '"' + traco(1.1) + '/>';
   }
 
   var EMBLEMAS = [
     // Tiro: gládio de madeira
-    '<path d="M32 4l6 9v28H26V13z" fill="' + W + '"/><path d="M32 4l6 9v28h-6z" fill="' + W2 + '"/><path d="M29 16v20M35 18v16" stroke="' + W2 + '" stroke-width="1.2"/><rect x="18" y="41" width="28" height="5" rx="2" fill="' + W2 + '"/><rect x="28.5" y="46" width="7" height="10" fill="' + W2 + '"/><circle cx="32" cy="58" r="4" fill="' + W + '"/>',
-    // Miles: escudo
-    '<rect x="13" y="5" width="38" height="54" rx="6" fill="' + W + '"/><rect x="32" y="5" width="19" height="54" rx="6" fill="' + W2 + '"/><rect x="13" y="5" width="38" height="54" rx="6" fill="none" stroke="' + B2 + '" stroke-width="2.5"/><path d="M32 8v48M16 32h32" stroke="' + B2 + '" stroke-width="1.5"/><circle cx="32" cy="32" r="8" fill="' + S2 + '"/><circle cx="32" cy="32" r="4" fill="' + S + '"/>',
-    // Immunis: ferramentas
-    '<rect x="29.5" y="6" width="5" height="52" rx="2" transform="rotate(38 32 32)" fill="' + W + '"/><rect x="29.5" y="6" width="5" height="52" rx="2" transform="rotate(-38 32 32)" fill="' + W2 + '"/><g transform="rotate(-38 32 32)"><rect x="20" y="2" width="24" height="11" rx="2" fill="' + S + '"/><rect x="20" y="9" width="24" height="4" fill="' + S2 + '"/></g><g transform="rotate(38 32 32)"><path d="M18 11c4-7 24-7 28 0l-4 2c-5-3-15-3-20 0z" fill="' + S + '"/></g><circle cx="32" cy="32" r="4" fill="' + B + '"/>',
+    '<path d="M32 3l7 10v27H25V13z" fill="' + W + '"' + traco(2) + '/><path d="M32 4l6 9.500V39h-6z" fill="' + W2 + '"/><path d="M32 3l7 10v27H25V13z" fill="none"' + traco(2) + '/>' +
+    '<path d="M28.500 15v19" stroke="' + W1 + '" stroke-width="1.6" stroke-linecap="round"/>' +
+    '<rect x="29" y="44" width="6" height="12" fill="' + W2 + '"' + traco(1.7) + '/><rect x="17" y="40" width="30" height="6" rx="2" fill="' + W + '"' + traco(1.8) + '/><circle cx="32" cy="58" r="4" fill="' + W + '"' + traco(1.7) + '/>',
+    // Miles: escudo de madeira
+    '<rect x="13" y="5" width="38" height="54" rx="7" fill="' + W + '"' + traco(2) + '/><path d="M38 6h6a6 6 0 0 1 6 6v40a6 6 0 0 1-6 6h-6z" fill="' + W2 + '"/>' +
+    '<rect x="17" y="9" width="30" height="46" rx="4" fill="none" stroke="' + A2 + '" stroke-width="2"/><path d="M32 10v44M18 32h28" stroke="' + K + '" stroke-width="1.4"/>' +
+    '<circle cx="32" cy="32" r="8.5" fill="' + A + '"' + traco(1.8) + '/><path d="M32 23.500a8.500 8.500 0 0 1 0 17z" fill="' + A2 + '"/><circle cx="29.500" cy="29.500" r="2" fill="' + A1 + '"/>',
+    // Immunis: martelo e picareta cruzados
+    '<g transform="rotate(-38 32 32)"><rect x="29" y="8" width="6" height="52" rx="2" fill="' + W + '"' + traco(1.7) + '/><path d="M15 15C21 3 43 3 49 15L44 17C39 11 25 11 20 17Z" fill="' + A + '"' + traco(1.8) + '/></g>' +
+    '<g transform="rotate(38 32 32)"><rect x="29" y="8" width="6" height="52" rx="2" fill="' + W2 + '"' + traco(1.7) + '/><rect x="19" y="2" width="26" height="13" rx="2" fill="' + A + '"' + traco(1.8) + '/><rect x="20" y="10" width="24" height="4" fill="' + A2 + '"/><rect x="19" y="2" width="26" height="13" rx="2" fill="none"' + traco(1.8) + '/></g>' +
+    '<circle cx="32" cy="33" r="4" fill="' + B + '"' + traco(1.5) + '/>',
     // Tesserarius: torre de vigia
-    '<path d="M12 21h7v-8h6v8h5v-8h4v8h5v-8h6v8h7v10H12z" fill="' + M + '"/><path d="M32 13h2v8h5v-8h6v8h7v10H32z" fill="' + M2 + '"/><path d="M17 31h30l3 30H14z" fill="' + M2 + '"/><path d="M32 31h15l3 30H32z" fill="' + S2 + '"/><path d="M17 39h30M16 47h32M15 55h34M25 31v8M39 31v8M21 39v8M32 39v8M43 39v8M26 47v8M38 47v8" stroke="#7f7a6c" stroke-width="1"/><path d="M25 61V51c0-8 14-8 14 0v10z" fill="' + B2 + '"/><path d="M32 45v16M25 53h14" stroke="#5a3a1a" stroke-width="1.2"/><rect x="29" y="23" width="6" height="7" rx="3" fill="#3a2a18"/>',
+    '<path d="M17 30h30l3 31H14z" fill="' + M2 + '"' + traco(1.8) + '/><path d="M36 31h11l2.800 29H36z" fill="#77736a"/>' +
+    '<path d="M17 39h30M16 48h32" stroke="' + K + '" stroke-width="1.2"/>' +
+    '<path d="M11 20h7v-8h7v8h4v-8h6v8h4v-8h7v8h7v11H11z" fill="' + M + '"' + traco(1.9) + '/><path d="M39 21v-8h7v8h7v9H39z" fill="' + M2 + '"/><path d="M11 20h7v-8h7v8h4v-8h6v8h4v-8h7v8h7v11H11z" fill="none"' + traco(1.9) + '/>' +
+    '<path d="M25 61V51c0-8 14-8 14 0v10z" fill="' + W2 + '"' + traco(1.6) + '/><rect x="29" y="33" width="6" height="8" rx="3" fill="' + K + '"/>',
     // Optio: bastão de comando
-    '<rect x="29" y="12" width="6" height="48" rx="2" fill="' + W + '"/><rect x="32" y="12" width="3" height="48" fill="' + W2 + '"/><rect x="26" y="52" width="12" height="4" rx="1" fill="' + B2 + '"/><rect x="26" y="20" width="12" height="4" rx="1" fill="' + B + '"/><path d="M22 28h20l-3 12-7 5-7-5z" fill="' + R + '"/><path d="M25 31h14M26 36h12" stroke="' + B + '" stroke-width="1.5"/><circle cx="32" cy="9" r="7" fill="' + B + '"/><circle cx="30" cy="7" r="2.3" fill="' + M + '"/>',
+    '<rect x="29" y="12" width="6" height="49" rx="2" fill="' + W + '"' + traco(1.7) + '/><rect x="32" y="13" width="2.200" height="47" fill="' + W2 + '"/>' +
+    '<path d="M21 26h22l-3 13-8 6-8-6z" fill="' + V2 + '"' + traco(1.8) + '/><path d="M32 27h10l-2.500 11.500L32 44z" fill="#4e0d1b"/>' +
+    '<rect x="25" y="20" width="14" height="5" rx="1.500" fill="' + B + '"' + traco(1.5) + '/><rect x="25" y="51" width="14" height="5" rx="1.500" fill="' + B + '"' + traco(1.5) + '/>' +
+    '<circle cx="32" cy="10" r="7.5" fill="' + B + '"' + traco(1.8) + '/><path d="M32 3a7 7 0 0 1 0 14z" fill="' + B2 + '"/><circle cx="29.500" cy="7.500" r="2" fill="' + B1 + '"/>',
     // Signifer: estandarte
-    '<rect x="30" y="4" width="4" height="56" fill="' + W2 + '"/><path d="M26 4l6 7 6-7-2 9h-8z" fill="' + B + '"/><rect x="18" y="14" width="28" height="3.5" rx="1.5" fill="' + B2 + '"/><path d="M20 17v8M44 17v8" stroke="' + R + '" stroke-width="2.5"/><circle cx="32" cy="24" r="6.5" fill="' + B + '"/><circle cx="32" cy="24" r="3" fill="' + R + '"/><circle cx="32" cy="38" r="6.5" fill="' + B + '"/><circle cx="32" cy="38" r="3" fill="' + R + '"/><path d="M24 48c2 5 14 5 16 0l-3 8h-10z" fill="' + S + '"/>',
+    '<rect x="30" y="8" width="4" height="53" fill="' + W2 + '"' + traco(1.5) + '/><path d="M32 2l5 9h-10z" fill="' + B + '"' + traco(1.6) + '/>' +
+    '<rect x="16" y="13" width="32" height="4.500" rx="2" fill="' + B2 + '"' + traco(1.5) + '/>' +
+    '<circle cx="32" cy="26" r="7.5" fill="' + B + '"' + traco(1.7) + '/><circle cx="32" cy="26" r="3" fill="' + V + '"' + traco(1.1) + '/>' +
+    '<circle cx="32" cy="41" r="7.5" fill="' + B + '"' + traco(1.7) + '/><circle cx="32" cy="41" r="3" fill="' + V + '"' + traco(1.1) + '/>' +
+    '<path d="M22 51c3 5 17 5 20 0l-3 8H25z" fill="' + B1 + '"' + traco(1.5) + '/>',
     // Aquilifer: águia da legião
-    '<path d="M32 12c-3 0-6 3-5 6l2 4c-9-1-17-8-23-13 1 13 7 25 21 26l3 3 2-3c14-1 20-13 21-26-6 5-14 12-23 13l2-4c1-3-2-6-5-6z" fill="' + B + '"/><path d="M12 15c3 6 8 10 14 12M52 15c-3 6-8 10-14 12M15 24c3 4 7 7 12 8M49 24c-3 4-7 7-12 8" stroke="' + B2 + '" stroke-width="1.6" fill="none"/><path d="M27 13l-5 2 5 2z" fill="' + B2 + '"/><circle cx="30" cy="16" r="1.3" fill="#2e2614"/><rect x="30" y="38" width="4" height="22" fill="' + W2 + '"/><path d="M20 42c0 4 24 4 24 0v3c0 4-24 4-24 0z" fill="' + R + '"/><rect x="22" y="56" width="20" height="4" rx="1" fill="' + B2 + '"/>',
-    // Centurio: elmo com crista transversal
-    '<path d="M6 16C14 4 50 4 58 16l-3 5C45 12 19 12 9 21z" fill="' + R + '"/><path d="M12 13l3 6M20 10l2 6M28 8l1 6M36 8l-1 6M44 10l-2 6M52 13l-3 6" stroke="' + R2 + '" stroke-width="1.5"/><path d="M14 40c-2-14 6-23 18-23s20 9 18 23l-3 4-5-2-1 12-9 3-9-3-1-12-5 2z" fill="' + S + '"/><path d="M32 17c12 0 20 9 18 23l-3 4-5-2-1 12-9 3z" fill="' + S2 + '"/><rect x="18" y="29" width="28" height="3.5" fill="' + B + '"/><path d="M21 36h8l-1 13-5-2zM43 36h-8l1 13 5-2z" fill="' + B2 + '"/>',
-    // Primus Pilus: elmo com medalha
-    '<path d="M6 13C14 2 50 2 58 13l-3 5C45 9 19 9 9 18z" fill="' + R + '"/><path d="M12 10l3 6M20 7l2 6M28 5l1 6M36 5l-1 6M44 7l-2 6M52 10l-3 6" stroke="' + R2 + '" stroke-width="1.5"/><path d="M15 33c-2-12 6-19 17-19s19 7 17 19l-3 3-5-2-1 8-8 2-8-2-1-8-5 2z" fill="' + S + '"/><path d="M32 14c11 0 19 7 17 19l-3 3-5-2-1 8-8 2z" fill="' + S2 + '"/><rect x="19" y="24" width="26" height="3" fill="' + A2 + '"/><circle cx="32" cy="53" r="9" fill="' + S + '"/><circle cx="32" cy="53" r="6" fill="' + A + '"/><path d="M32 49l1.3 2.7 3 .4-2.2 2 .6 3-2.7-1.5-2.7 1.5.6-3-2.2-2 3-.4z" fill="' + R2 + '"/>',
-    // Tribunus: couraça
-    '<path d="M16 6c5 4 11 6 16 6s11-2 16-6l7 12-7 6v18H16V24L9 18z" fill="' + S + '"/><path d="M32 12c5 0 11-2 16-6l7 12-7 6v18H32z" fill="' + S2 + '"/><path d="M32 16v26M20 25c4 4 20 4 24 0M21 33c4 2 18 2 22 0" stroke="#5f6678" stroke-width="1.6" fill="none"/><circle cx="32" cy="20" r="3.5" fill="' + A + '"/><rect x="14" y="42" width="36" height="4" fill="' + A + '"/><path d="M15 46h6l-1 12h-5zM23 46h6v13h-6zM35 46h6v13h-6zM43 46h6v12h-5z" fill="' + R + '"/>',
+    '<rect x="29.500" y="36" width="5" height="25" fill="' + W + '"' + traco(1.6) + '/>' +
+    '<path d="M32 13c-3 0-6 3-5 6l2 3C20 21 11 14 4 8c1 14 8 27 22 28l6 5 6-5c14-1 21-14 22-28-7 6-16 13-25 14l2-3c1-3-2-6-5-6z" fill="' + B + '"' + traco(1.8) + '/>' +
+    '<path d="M60 8c-1 14-8 27-22 28l-6 5v-19l3 0c9-1 18-8 25-14z" fill="' + B2 + '"/><path d="M60 8c-1 14-8 27-22 28l-6 5" fill="none"' + traco(1.8) + '/>' +
+    '<path d="M11 18c4 5 9 9 15 11M16 28c3 2 7 4 11 4M53 18c-4 5-9 9-15 11M48 28c-3 2-7 4-11 4"' + fino(1.3) + '/>' +
+    '<path d="M27 14l-6 2.500 6 2z" fill="' + B1 + '"' + traco(1.2) + '/><circle cx="30" cy="17" r="1.3" fill="' + K + '"/>' +
+    '<path d="M21 44c0 4 22 4 22 0v4c0 4-22 4-22 0z" fill="' + V + '"' + traco(1.5) + '/>',
+    // Centurio: elmo de perfil com crista
+    ELMO,
+    // Primus Pilus: elmo com medalha de ouro
+    '<g transform="translate(6 -1) scale(.8)">' + ELMO + '</g>' +
+    '<path d="M26 46l-3-9h6l3 6 3-6h6l-3 9z" fill="' + V + '"' + traco(1.4) + '/>' +
+    '<circle cx="32" cy="52" r="10" fill="' + O + '"' + traco(1.8) + '/><path d="M32 42a10 10 0 0 1 0 20z" fill="' + O2 + '"/>' +
+    '<path d="M32 46l1.900 3.900 4.300.6-3.100 3 .7 4.300-3.800-2-3.800 2 .7-4.300-3.100-3 4.300-.6z" fill="' + O1 + '"' + traco(1.1) + '/>',
+    // Tribunus: couraça dourada
+    '<path d="M15 45h7v14h-7zM24 45h7v16h-7zM33 45h7v16h-7zM42 45h7v14h-7z" fill="' + V + '"' + traco(1.6) + '/>' +
+    '<path d="M16 5c5 4 11 6 16 6s11-2 16-6l8 12-8 7v18H16V24l-8-7z" fill="' + O + '"' + traco(2) + '/>' +
+    '<path d="M32 11c5 0 11-2 16-6l7.500 11.500-7.500 7v18H32z" fill="' + O2 + '"/>' +
+    '<path d="M16 5c5 4 11 6 16 6s11-2 16-6l8 12-8 7v18H16V24l-8-7z" fill="none"' + traco(2) + '/>' +
+    '<path d="M32 15v27M20 25c4 4 8 4 12 0c4 4 8 4 12 0M22 34c3 1.500 7 1.500 10 0c3 1.500 7 1.500 10 0"' + fino(1.4) + '/>' +
+    '<rect x="14" y="41" width="36" height="5" rx="1.500" fill="' + O1 + '"' + traco(1.6) + '/>',
     // Quaestor: moeda de ouro com águia
-    '<circle cx="32" cy="32" r="28" fill="' + A2 + '"/><circle cx="32" cy="32" r="25" fill="' + A + '"/><circle cx="32" cy="32" r="21" fill="none" stroke="' + A2 + '" stroke-width="1.5" stroke-dasharray="2.5 2.5"/><path d="M32 17c-2 0-4 2-3.5 4l1.5 3c-6-.5-11-5-15-8.500.5 8.500 5 16.500 14 17l3 2.500 3-2.500c9-.5 13.500-8.500 14-17-4 3.500-9 8-15 8.500l1.500-3c.5-2-1.500-4-3.500-4z" fill="' + A3 + '"/><rect x="30.5" y="35" width="3" height="10" fill="' + A3 + '"/><path d="M24 46h16" stroke="' + A3 + '" stroke-width="2.5" stroke-linecap="round"/>',
+    '<circle cx="32" cy="32" r="28" fill="' + O + '"' + traco(2.2) + '/><path d="M32 4a28 28 0 0 1 0 56a24 24 0 0 0 0-56z" fill="' + O2 + '"/>' +
+    '<circle cx="32" cy="32" r="22" fill="none" stroke="' + K + '" stroke-width="1.2" stroke-dasharray="2.5 2.5"/>' +
+    '<g transform="translate(-7.700 -9.300) scale(1.240)">' + aguia(O1) + '</g><rect x="30" y="35" width="4" height="11" fill="' + O1 + '"' + traco(1.2) + '/><path d="M24 47h16" stroke="' + K + '" stroke-width="2.4" stroke-linecap="round"/>',
     // Aedilis: templo
-    '<path d="M32 6L58 22H6z" fill="' + A + '"/><path d="M32 11l16 9H16z" fill="' + A2 + '"/><circle cx="32" cy="17" r="2.5" fill="' + R + '"/><rect x="7" y="22" width="50" height="4" fill="' + A2 + '"/><g fill="' + M + '"><rect x="11" y="28" width="6" height="21"/><rect x="23" y="28" width="6" height="21"/><rect x="35" y="28" width="6" height="21"/><rect x="47" y="28" width="6" height="21"/></g><g fill="' + M2 + '"><rect x="14.5" y="28" width="2.5" height="21"/><rect x="26.5" y="28" width="2.5" height="21"/><rect x="38.5" y="28" width="2.5" height="21"/><rect x="50.5" y="28" width="2.5" height="21"/></g><rect x="6" y="49" width="52" height="4" fill="' + A2 + '"/><rect x="3" y="53" width="58" height="5" fill="' + A + '"/>',
+    '<path d="M32 5L60 22H4z" fill="' + O + '"' + traco(2) + '/><path d="M32 6l26.500 15.500H32z" fill="' + O2 + '"/><path d="M32 5L60 22H4z" fill="none"' + traco(2) + '/><circle cx="32" cy="15" r="3" fill="' + V + '"' + traco(1.3) + '/>' +
+    '<rect x="6" y="22" width="52" height="5" fill="' + O1 + '"' + traco(1.7) + '/>' +
+    '<g fill="' + M + '"' + traco(1.5) + '><rect x="10" y="27" width="7" height="22"/><rect x="22" y="27" width="7" height="22"/><rect x="35" y="27" width="7" height="22"/><rect x="47" y="27" width="7" height="22"/></g>' +
+    '<g fill="' + M2 + '"><rect x="14" y="28" width="2.200" height="20"/><rect x="26" y="28" width="2.200" height="20"/><rect x="39" y="28" width="2.200" height="20"/><rect x="51" y="28" width="2.200" height="20"/></g>' +
+    '<rect x="5" y="49" width="54" height="5" fill="' + O2 + '"' + traco(1.7) + '/><rect x="2" y="54" width="60" height="6" rx="1" fill="' + O + '"' + traco(1.8) + '/>',
     // Praetor: a Justiça vendada, com balança e espada
-    '<path d="M2 10h22" stroke="' + A + '" stroke-width="2" stroke-linecap="round"/><path d="M4 10L1 23M4 10l6 13M22 10l-4 13M22 10l5 13" stroke="' + A2 + '" stroke-width="1"/><path d="M0 23h11c0 6-11 6-11 0zM17 23h11c0 6-11 6-11 0z" fill="' + A + '"/><path d="M27 21L13 15" stroke="' + A + '" stroke-width="3.5" stroke-linecap="round"/><circle cx="13" cy="11" r="2" fill="' + A + '"/><path d="M26 11c0-7 12-7 12 0l1 8h-14z" fill="' + A3 + '"/><circle cx="32" cy="4.5" r="3" fill="' + A3 + '"/><circle cx="32" cy="11.5" r="5.5" fill="' + A + '"/><rect x="26" y="9.3" width="12" height="3.4" rx="1" fill="' + M + '"/><path d="M38 11l6-1-1 4zM38 12l5 4-3 2z" fill="' + M + '"/><rect x="30" y="16" width="4" height="4" fill="' + A2 + '"/><path d="M25 21c3-3 11-3 14 0l4 16 6 22H15l6-22z" fill="' + A + '"/><path d="M32 22l2 37H15l6-22 4-16c2-2 4-2.5 7-2z" fill="#f4c84f"/><path d="M28 28l-3 31M36 28l3 31M32 34v25" stroke="' + A2 + '" stroke-width="1.1"/><rect x="24" y="30" width="16" height="3" fill="' + R + '"/><path d="M38 21l10 11" stroke="' + A2 + '" stroke-width="3.5" stroke-linecap="round"/><rect x="43" y="33" width="10" height="2.2" rx="1" fill="' + A2 + '"/><rect x="47" y="28" width="2.2" height="5" fill="' + A3 + '"/><path d="M46.500 35.200h3.200l-.2 21-1.400 3-1.400-3z" fill="' + S + '"/><rect x="11" y="59" width="42" height="4" rx="1" fill="' + M + '"/>',
+    '<path d="M2 11h22" stroke="' + K + '" stroke-width="2.2" stroke-linecap="round"/><path d="M4 11L1 23M4 11l6 12M22 11l-4 12M22 11l5 12" stroke="' + K + '" stroke-width="1"/>' +
+    '<path d="M0 23h11c0 6-11 6-11 0zM17 23h11c0 6-11 6-11 0z" fill="' + O + '"' + traco(1.3) + '/>' +
+    '<path d="M27 22L14 15" stroke="' + K + '" stroke-width="5" stroke-linecap="round"/><path d="M27 22L14 15" stroke="' + O1 + '" stroke-width="2.600" stroke-linecap="round"/>' +
+    '<path d="M38 22L48 33" stroke="' + K + '" stroke-width="5" stroke-linecap="round"/><path d="M38 22L48 33" stroke="' + O2 + '" stroke-width="2.600" stroke-linecap="round"/>' +
+    '<path d="M46.500 36h4v19l-2 4-2-4z" fill="' + A1 + '"' + traco(1.3) + '/><rect x="42" y="33" width="13" height="3" rx="1" fill="' + O + '"' + traco(1.2) + '/>' +
+    '<path d="M25 21c3-3 11-3 14 0l4 16 5 22H16l5-22z" fill="' + O + '"' + traco(1.8) + '/><path d="M32 19.500c3 0 5 .5 7 1.500l4 16 5 22H32z" fill="' + O2 + '"/><path d="M25 21c3-3 11-3 14 0l4 16 5 22H16l5-22z" fill="none"' + traco(1.8) + '/>' +
+    '<rect x="23" y="30" width="18" height="3.500" fill="' + V + '"' + traco(1.2) + '/><path d="M28 36l-3 22M36 36l3 22"' + fino(1.1) + '/>' +
+    '<path d="M25 13c-1-12 15-12 14 0l1 7H24z" fill="' + W2 + '"' + traco(1.5) + '/><circle cx="32" cy="12" r="5.500" fill="' + O1 + '"' + traco(1.3) + '/>' +
+    '<rect x="25.500" y="9.500" width="13" height="4" rx="1" fill="' + M + '"' + traco(1.2) + '/><path d="M38.500 10l6-1-1 4zM38.500 13l5 4-3 2z" fill="' + M + '"' + traco(1) + '/>' +
+    '<rect x="11" y="59" width="42" height="4.500" rx="1" fill="' + M + '"' + traco(1.5) + '/>',
     // Legatus: bandeira de comando
-    '<rect x="30" y="3" width="4" height="58" fill="' + A2 + '"/><circle cx="32" cy="5" r="3.5" fill="' + A + '"/><rect x="10" y="10" width="44" height="4" rx="2" fill="' + A + '"/><rect x="12" y="14" width="40" height="30" fill="' + R + '"/><rect x="15" y="17" width="34" height="24" fill="none" stroke="' + A + '" stroke-width="1.5"/><path d="M32 21c-1.5 0-3 1.5-2.5 3l1 2c-5-.5-9-4-12-6.5.5 6.5 3.5 12.5 10.5 13l3 2 3-2c7-.5 10-6.5 10.5-13-3 2.5-7 6-12 6.5l1-2c.5-1.5-1-3-2.5-3z" fill="' + A + '"/><path d="M12 44v9M18 44v9M24 44v9M40 44v9M46 44v9M52 44v9" stroke="' + A + '" stroke-width="2"/>',
+    '<rect x="30" y="4" width="4" height="57" fill="' + O2 + '"' + traco(1.5) + '/>' +
+    '<path d="M12 44v9M18 44v9M24 44v9M40 44v9M46 44v9M52 44v9" stroke="' + K + '" stroke-width="3.400" stroke-linecap="round"/><path d="M12 44v9M18 44v9M24 44v9M40 44v9M46 44v9M52 44v9" stroke="' + O + '" stroke-width="1.700" stroke-linecap="round"/>' +
+    '<rect x="11" y="14" width="42" height="31" fill="' + V + '"' + traco(1.9) + '/><rect x="42" y="15" width="10" height="29" fill="' + V2 + '"/>' +
+    '<rect x="15" y="18" width="34" height="23" fill="none" stroke="' + O + '" stroke-width="1.600"/>' + aguia(O) +
+    '<rect x="8" y="9" width="48" height="5" rx="2" fill="' + O + '"' + traco(1.7) + '/><circle cx="32" cy="5" r="4" fill="' + O1 + '"' + traco(1.6) + '/>',
     // Consul: placa SPQR entre louros
-    '<path d="M7 44c1-14 3-27 9-38" stroke="' + A2 + '" stroke-width="3.5" fill="none" stroke-dasharray="4 2"/><path d="M57 44c-1-14-3-27-9-38" stroke="' + A2 + '" stroke-width="3.5" fill="none" stroke-dasharray="4 2"/><path d="M13 13h38v28c0 9-13 14-19 18-6-4-19-9-19-18z" fill="' + R + '"/><path d="M13 13h38v28c0 9-13 14-19 18-6-4-19-9-19-18z" fill="none" stroke="' + A + '" stroke-width="2.5"/><text x="32" y="29" font-family="Georgia,serif" font-size="13" font-weight="700" text-anchor="middle" fill="' + A + '">SP</text><text x="32" y="43" font-family="Georgia,serif" font-size="13" font-weight="700" text-anchor="middle" fill="' + A + '">QR</text>',
+    '<path d="M7 45c1-14 3-27 9-39" stroke="' + K + '" stroke-width="6" fill="none" stroke-dasharray="4.500 1.500"/><path d="M7 45c1-14 3-27 9-39" stroke="' + O + '" stroke-width="3.600" fill="none" stroke-dasharray="4.500 1.500"/>' +
+    '<path d="M57 45c-1-14-3-27-9-39" stroke="' + K + '" stroke-width="6" fill="none" stroke-dasharray="4.500 1.500"/><path d="M57 45c-1-14-3-27-9-39" stroke="' + O + '" stroke-width="3.600" fill="none" stroke-dasharray="4.500 1.500"/>' +
+    '<path d="M13 12h38v29c0 9-13 15-19 19-6-4-19-10-19-19z" fill="' + V + '"' + traco(2.2) + '/><path d="M40 13h10v28c0 7-9 12-10 13z" fill="' + V2 + '"/>' +
+    '<path d="M16.500 15.500h31v25c0 7-10 12-15.500 15.500-5.500-3.500-15.500-8.500-15.500-15.500z" fill="none" stroke="' + O + '" stroke-width="1.800"/>' +
+    '<text x="32" y="30" font-family="Georgia,serif" font-size="13" font-weight="700" text-anchor="middle" fill="' + O1 + '">SP</text><text x="32" y="44" font-family="Georgia,serif" font-size="13" font-weight="700" text-anchor="middle" fill="' + O1 + '">QR</text>',
     // Imperator: coroa de louros
     coroaDeLouros()
   ];
@@ -265,6 +337,209 @@ var Patentes = (function () {
     return el('span', { class: 'insignia' + (classe ? ' ' + classe : ''), title: LISTA[i].nome,
       style: { borderColor: q[0], background: q[1], borderWidth: q[2] + 'px' },
       html: '<svg viewBox="0 0 64 64" aria-hidden="true">' + EMBLEMAS[i] + '</svg>' });
+  }
+
+  // ---------- Animação da promoção ----------
+  // Um soldadinho em pixel art destrói o emblema atual; o novo cai do céu e ele se ajoelha com a espada no chão.
+  // A sequência é toda em CSS (ver .cena-* em estilo.css): fechar a janela no meio não deixa nada pendente.
+  var PIXEL = { r: '#c8352f', d: '#8e2320', s: '#d5dbe6', S: '#98a1b5', k: '#20243a', g: '#f2c14e', G: '#b9851f', t: '#b3302f', T: '#7d1f1f', y: '#c8352f', b: '#8a5a2b', B: '#5f3d1e', p: '#d9a877', w: '#e8ecf4', W: '#a7b0c2' };
+  function pixels(linhas, x0, y0) {
+    var o = '';
+    linhas.forEach(function (f, y) {
+      f.split('').forEach(function (c, x) {
+        if (c !== '.') o += '<rect x="' + (x + x0) + '" y="' + (y + y0) + '" width="1.02" height="1.02" fill="' + PIXEL[c] + '"/>';
+      });
+    });
+    return o;
+  }
+  function retangulos(lista) {
+    return lista.map(function (q) { return '<rect x="' + (q[0] - 2) + '" y="' + q[1] + '" width="' + (q[2] + .02) + '" height="' + (q[3] + .02) + '" fill="' + PIXEL[q[4]] + '"/>'; }).join('');
+  }
+  var SOLDADO_EM_PE = '<svg class="cena-em-pe" viewBox="0 0 24 20" shape-rendering="crispEdges" aria-hidden="true">' +
+    '<g class="cena-perna-b">' + pixels(['..BB..', '..BB..', '..BB..', '..BBB.'], 6, 16) + '</g>' +
+    '<g class="cena-corpo">' + pixels(['...rrrrrr.......', '..rrdrrdrr......', '..rr.ssssss.....', '..r.sssssssS....', '....sssssssSS...', '....ggggggggg...', '....ssskkkkkS...', '....sssSkkkSS...', '.....sSSSSS.....', '.gGGg..tttt.....', 'gyyyyG.ssss.....', 'gyggyG.sSsS.....', 'gyggyG.ssss.....', 'gyyyyG.gggg.....', '.gGGg..TtTt.....', '......tTtT......'], 0, 0) + '</g>' +
+    '<g class="cena-perna-a">' + pixels(['...pp.', '...pp.', '...bb.', '...bbb'], 6, 16) + '</g>' +
+    '<g class="cena-braco">' + pixels(['..........GG..........', '..........GG..........', '......pp..GGwwwwwwww..', '......pppbGGwwwwwwwww.', '......pp..GGWWWWWWWW..', '..........GG..........'], 2, 9) + '</g></svg>';
+  var SOLDADO_AJOELHADO = '<svg class="cena-ajoelhado" viewBox="0 0 24 20" shape-rendering="crispEdges" aria-hidden="true">' + retangulos([
+    [20, 3, 2, 2, 'G'], [20, 5, 2, 2, 'b'], [20, 8, 1, 12, 'w'], [21, 8, 1, 12, 'W'], [18, 7, 6, 1, 'G'],
+    [2, 18, 2, 2, 'B'], [4, 19, 6, 1, 'B'], [9, 18, 3, 2, 'B'], [10, 17, 2, 1, 'B'],
+    [4, 11, 3, 1, 'G'], [3, 12, 5, 5, 'y'], [3, 12, 1, 5, 'g'], [7, 12, 1, 5, 'G'], [5, 14, 1, 1, 'g'], [4, 17, 3, 1, 'G'],
+    [8, 11, 7, 4, 's'], [9, 12, 5, 1, 'S'], [8, 15, 7, 1, 'g'], [8, 16, 4, 1, 'T'],
+    [11, 16, 6, 2, 'b'], [15, 18, 2, 1, 'b'], [15, 19, 4, 1, 'B'],
+    [6, 3, 5, 1, 'r'], [5, 4, 8, 1, 'r'], [7, 4, 1, 1, 'd'], [10, 4, 1, 1, 'd'], [5, 5, 2, 2, 'r'], [5, 7, 1, 1, 'r'],
+    [8, 5, 6, 1, 's'], [14, 5, 1, 1, 'S'], [7, 6, 7, 2, 's'], [14, 6, 2, 2, 'S'], [7, 8, 10, 1, 'g'], [7, 9, 4, 1, 's'], [11, 9, 5, 1, 'k'], [16, 9, 1, 1, 'S'], [8, 10, 3, 1, 's'], [11, 10, 3, 1, 'k'], [14, 10, 2, 1, 'S'],
+    [18, 5, 3, 2, 'p'], [17, 7, 2, 2, 'p'], [16, 9, 2, 1, 'p'], [15, 10, 2, 1, 'p'], [14, 11, 2, 1, 'p']
+  ]) + '</svg>';
+
+  var CORTES = [
+    ['0 0,45% 0,35% 40%,0 50%', '-46px', '-30px', '-70deg'],
+    ['45% 0,100% 0,100% 35%,60% 45%,35% 40%', '50px', '-40px', '80deg'],
+    ['0 50%,35% 40%,50% 65%,30% 100%,0 100%', '-60px', '50px', '-110deg'],
+    ['35% 40%,60% 45%,50% 65%', '6px', '-60px', '140deg'],
+    ['60% 45%,100% 35%,100% 100%,70% 100%,50% 65%', '66px', '40px', '100deg'],
+    ['50% 65%,70% 100%,30% 100%', '4px', '60px', '-40deg']
+  ];
+  var RACHAS = ['M32 2L27 18L36 28', 'M36 28L24 40L28 62', 'M36 28L52 40L46 62M52 40L62 36'];
+
+  function cenaPromocao(de, para) {
+    function emblema(i, classe, extra, dentro) {
+      var q = MOLDURAS[i];
+      return '<div class="cena-emblema ' + classe + '" style="border-color:' + q[0] + ';background:' + q[1] + ';border-width:' + q[2] + 'px;' + (extra || '') + '">' +
+        '<svg viewBox="0 0 64 64" aria-hidden="true">' + EMBLEMAS[i] + '</svg>' + (dentro || '') + '</div>';
+    }
+    var rachas = RACHAS.map(function (d, i) {
+      return '<svg class="cena-racha" viewBox="0 0 64 64" aria-hidden="true" style="animation-delay:' + (1.48 + i * .5) + 's"><path d="' + d + '" fill="none" stroke="#0f111b" stroke-width="2"/></svg>';
+    }).join('');
+    var pecas = CORTES.map(function (c) {
+      return emblema(de, 'cena-peca', 'clip-path:polygon(' + c[0] + ');--dx:' + c[1] + ';--dy:' + c[2] + ';--giro:' + c[3]);
+    }).join('');
+    return el('div', { class: 'cena', html: '<div class="cena-chao"></div>' + emblema(de, 'cena-velho', '', rachas) + pecas + emblema(para, 'cena-novo') +
+      '<span class="cena-poeira" style="left:150px;--dx:-14px"></span><span class="cena-poeira" style="left:242px;--dx:14px"></span>' +
+      '<div class="cena-soldado">' + SOLDADO_EM_PE + SOLDADO_AJOELHADO + '</div>' });
+  }
+
+  // ---------- Som da promoção ----------
+  // Gerado no navegador (sem arquivos) e sincronizado com a cena. A preferência vale por aparelho.
+  var CHAVE_SOM = 'controle-estudos.som-patente';
+  function somLigado() {
+    try { return localStorage.getItem(CHAVE_SOM) !== 'nao'; } catch (e) { return true; }
+  }
+  function gravarSom(ligado) {
+    try { localStorage.setItem(CHAVE_SOM, ligado ? 'sim' : 'nao'); } catch (e) { /* vale só agora */ }
+  }
+
+  function agendarSons(ctx) {
+    var saida = ctx.createGain();
+    saida.gain.value = 0.5;
+    saida.connect(ctx.destination);
+    var inicio = ctx.currentTime;
+
+    var ruido = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), dados = ruido.getChannelData(0);
+    for (var i = 0; i < dados.length; i++) dados[i] = Math.random() * 2 - 1;
+
+    function envelope(t, pico, duracao) {
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(pico, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + duracao);
+      g.connect(saida);
+      return g;
+    }
+    function tom(t, tipo, freq, pico, duracao, freqFinal) {
+      var o = ctx.createOscillator();
+      o.type = tipo;
+      o.frequency.setValueAtTime(freq, t);
+      if (freqFinal) o.frequency.exponentialRampToValueAtTime(freqFinal, t + duracao);
+      o.connect(envelope(t, pico, duracao));
+      o.start(t);
+      o.stop(t + duracao + 0.02);
+    }
+    function chiado(t, filtro, freq, pico, duracao) {
+      var f = ctx.createBufferSource();
+      f.buffer = ruido;
+      var q = ctx.createBiquadFilter();
+      q.type = filtro;
+      q.frequency.value = freq;
+      f.connect(q);
+      q.connect(envelope(t, pico, duracao));
+      f.start(t, Math.random() * 0.5, duracao + 0.02);
+    }
+
+    // Golpe do gládio: metal contra o emblema.
+    function golpe(t) {
+      tom(t, 'square', 830, 0.16, 0.16);
+      tom(t, 'triangle', 1370, 0.2, 0.22);
+      tom(t, 'triangle', 2240, 0.1, 0.12);
+      chiado(t, 'highpass', 3000, 0.35, 0.06);
+    }
+    // O emblema se parte: estrondo e estilhaços espalhados.
+    function quebra(t) {
+      tom(t, 'sine', 130, 0.6, 0.3, 45);
+      chiado(t, 'bandpass', 2400, 0.8, 0.5);
+      [0.03, 0.09, 0.14, 0.21, 0.29, 0.38, 0.5].forEach(function (d, n) {
+        tom(t + d, 'triangle', 1700 + (n * 1270) % 2600, 0.14 - n * 0.012, 0.09);
+      });
+    }
+    // O novo emblema vem caindo do céu: um assobio de ar que sobe até o impacto.
+    function queda(t, duracao) {
+      var f = ctx.createBufferSource();
+      f.buffer = ruido;
+      var q = ctx.createBiquadFilter();
+      q.type = 'bandpass';
+      q.Q.value = 2.5;
+      q.frequency.setValueAtTime(400, t);
+      q.frequency.exponentialRampToValueAtTime(2200, t + duracao);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(1.2, t + duracao);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + duracao + 0.02);
+      f.connect(q); q.connect(g); g.connect(saida);
+      f.start(t, 0, duracao + 0.04);
+    }
+    // Pouso pesado no chão.
+    function impacto(t) {
+      tom(t, 'sine', 120, 0.9, 0.4, 38);
+      chiado(t, 'lowpass', 500, 0.7, 0.22);
+    }
+    // Fanfarra curta, parecida com metais.
+    function nota(t, freq, duracao) {
+      var f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.setValueAtTime(900, t);
+      f.frequency.linearRampToValueAtTime(2400, t + 0.05);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
+      g.gain.setValueAtTime(0.2, t + duracao * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + duracao);
+      f.connect(g); g.connect(saida);
+      [1, 1.004].forEach(function (d) {
+        var o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = freq * d;
+        o.connect(f);
+        o.start(t);
+        o.stop(t + duracao + 0.02);
+      });
+    }
+    function fanfarra(t) {
+      nota(t, 392, 0.13);
+      nota(t + 0.14, 523.25, 0.13);
+      nota(t + 0.28, 659.25, 0.13);
+      nota(t + 0.42, 783.99, 0.7);
+      nota(t + 0.42, 523.25, 0.7);
+    }
+
+    golpe(inicio + 1.475);
+    golpe(inicio + 1.975);
+    golpe(inicio + 2.475);
+    quebra(inicio + 2.48);
+    queda(inicio + 2.75, 0.35);
+    impacto(inicio + 3.1);
+    fanfarra(inicio + 3.4);
+  }
+
+  // Devolve a função que interrompe o som. Sem clique recente do usuário, o navegador pode bloquear o áudio:
+  // nesse caso a cena segue em silêncio, e o som não toca atrasado depois.
+  function tocarPromocao() {
+    var Contexto = window.AudioContext || window.webkitAudioContext;
+    if (!Contexto) return function () {};
+    var ctx;
+    try { ctx = new Contexto(); } catch (e) { return function () {}; }
+    var parado = false;
+    function parar() {
+      if (parado) return;
+      parado = true;
+      ctx.close().catch(function () {});
+    }
+    if (ctx.state === 'running') { agendarSons(ctx); return parar; }
+    var pedido = performance.now();
+    ctx.resume().then(function () {
+      if (parado) return;
+      if (performance.now() - pedido < 300) agendarSons(ctx); else parar();
+    }).catch(parar);
+    setTimeout(function () { if (ctx.state !== 'running') parar(); }, 300);
+    return parar;
   }
 
   // ---------- Textos da próxima patente ----------
@@ -294,11 +569,47 @@ var Patentes = (function () {
     ]), [{ texto: 'Continuar', classe: 'btn-primario' }]);
   }
 
-  function promocao(r) {
+  function promocao(r, de) {
     var txt = r.proxima
       ? 'Você chegou a ' + UI.fmtNum(r.xp) + ' XP. ' + textoProxima(r) + '.' + (r.requisito ? ' ' + textoRequisito(r) + '.' : '')
       : 'Você chegou ao topo. Não há patente acima desta.';
-    janela('Promoção!', r.indice, txt);
+    var cena = cenaPromocao(de, r.indice);
+    var texto = el('div', { class: 'cena-texto' }, [
+      el('div', { class: 'aviso-patente-nome', text: LISTA[r.indice].nome }),
+      el('p', { text: txt })
+    ]);
+    var pular, botaoSom, pararSom = function () {};
+    function irAoFim() {
+      cena.classList.add('cena-fim');
+      texto.classList.add('cena-fim');
+      pararSom();
+      if (pular) pular.style.display = 'none';
+    }
+    function rotuloSom() { return somLigado() ? 'Desligar som' : 'Ligar som'; }
+    cena.addEventListener('click', irAoFim);
+    var m = UI.modal('Promoção!', el('div', { class: 'aviso-patente' }, [cena, texto]), [
+      { texto: rotuloSom(), classe: 'btn-secundario btn-esquerda', acao: function () {
+        gravarSom(!somLigado());
+        botaoSom.textContent = rotuloSom();
+        if (somLigado()) { if (!cena.classList.contains('cena-fim')) UI.aviso('O som volta na próxima promoção'); } else pararSom();
+        return false;
+      } },
+      { texto: 'Pular', classe: 'btn-secundario', acao: function () { irAoFim(); return false; } },
+      { texto: 'Continuar', classe: 'btn-primario' }
+    ]);
+    var secundarios = m.caixa.querySelectorAll('.btn-secundario');
+    botaoSom = secundarios[0];
+    pular = secundarios[1];
+    texto.addEventListener('animationend', function () { if (pular) pular.style.display = 'none'; });
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { irAoFim(); return; }
+    if (somLigado()) {
+      pararSom = tocarPromocao();
+      // Fechar a janela no meio também encerra o som.
+      var vigia = setInterval(function () {
+        if (!cena.isConnected) { pararSom(); clearInterval(vigia); }
+      }, 200);
+      setTimeout(function () { clearInterval(vigia); pararSom(); }, 6000);
+    }
   }
 
   function marcarVista(i) {
@@ -323,7 +634,7 @@ var Patentes = (function () {
     vista = Number(vista);
     if (r.indice === vista) return;
     marcarVista(r.indice);
-    if (r.indice > vista) { promocao(r); return; }
+    if (r.indice > vista) { promocao(r, vista); return; }
     var ultimo = r.eventos[r.eventos.length - 1];
     var motivo = ultimo && ultimo.tipo === 'rebaixamento' && ultimo.para === r.indice
       ? 'Motivo: ' + ultimo.motivo + '.' : 'Seu XP diminuiu porque o histórico de estudos foi alterado.';
@@ -333,7 +644,7 @@ var Patentes = (function () {
   // ---------- Depois de lançar um estudo ----------
   function aposLancar(antes) {
     var r = calcular();
-    if (r.indice > antes.indice) { marcarVista(r.indice); promocao(r); }
+    if (r.indice > antes.indice) { marcarVista(r.indice); promocao(r, antes.indice); }
     return r.xp - antes.xp;
   }
 
