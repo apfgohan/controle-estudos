@@ -936,22 +936,22 @@ var Dashboard = (function () {
       return el('tr', null, [
         el('td', null, [el('span', { class: 'bolinha', style: { background: x.d.cor } }), ' ' + x.d.nome]),
         el('td', { text: situacao }),
-        el('td', { class: 'previsao-num', text: x.totalEtapas ? UI.fmtNum(x.totalEtapas) : '—' }),
+        el('td', { class: 'previsao-num', text: UI.fmtNum(x.concluidas) + '/' + UI.fmtNum(x.concluidas + x.restantes) }),
         el('td', { class: 'previsao-num', text: x.data ? Previsao.fmtMes(x.data) : '—' })
       ]);
     });
     var m = r.medias;
-    var tipos = [['teoria', 'teoria', 'Teoria'], ['bateria', 'questoes', 'Baterias de questões'], ['favoritas', 'favoritas', 'Favoritadas'], ['erros', 'erros', 'Baterias de erros']];
+    var tipos = [['teoria', 'teoria', 'Assuntos de teoria'], ['bateria', 'questoes', 'Baterias de questões'], ['favoritas', 'favoritas', 'Favoritadas'], ['erros', 'erros', 'Baterias de erros']];
     UI.modal('Conclusão do edital', [
       !r.concluido && r.data ? el('p', { class: 'modal-desc', text: 'Mantendo o ritmo das últimas 4 semanas (' + UI.fmtNum(Math.round(r.horasSemana)) + ' h/semana), a previsão é ' + Previsao.fmtMes(r.data) + '. A data muda conforme o seu ritmo real.' }) : null,
       el('div', { class: 'processo-resumo' }, [
-        el('strong', { text: textoEtapas(r.etapasRestantes) + ' restantes' }),
+        el('strong', { text: UI.fmtNum(r.etapasConcluidas) + '/' + UI.fmtNum(r.etapasConcluidas + r.etapasRestantes) + ' etapas concluídas' }),
         el('span', { class: 'data-fraca', text: fmtDecimal(r.mediaEtapasSemana) + ' concluídas por semana nas últimas 4 semanas' })
       ]),
       el('div', { class: 'previsao-tipos' }, tipos.map(function (t) {
         return el('div', { class: 'previsao-tipo etapa-' + t[1] }, [
           el('div', { class: 'previsao-tipo-nome', text: t[2] }),
-          el('div', { class: 'previsao-tipo-num', text: UI.fmtNum(r.etapas[t[0]]) }),
+          el('div', { class: 'previsao-tipo-num', text: UI.fmtNum(r.etapasFeitas[t[0]]) + '/' + UI.fmtNum(r.etapasFeitas[t[0]] + r.etapas[t[0]]) }),
           el('div', { class: 'previsao-tipo-media', text: fmtDecimal(r.etapasPorSemana[t[0]]) + ' por semana' })
         ]);
       })),
@@ -968,7 +968,7 @@ var Dashboard = (function () {
         'Cada matéria usa as próprias médias; com menos de 5 tópicos concluídos ou 100 questões, usa as gerais: ' + UI.fmtNum(Math.round(m.horasTopico * 60)) + ' min por tópico e ' + UI.fmtNum(Math.round(m.questoesHora)) + ' questões por hora.',
         'Cadernos ainda não cadastrados são estimados pela média dos outros; favoritadas sem total, pela média das rodadas já lançadas.',
         'Matéria em Modo Revisão soma só os tópicos que faltam, não as baterias pendentes.',
-        'Para chegar à data, as etapas restantes são convertidas em horas, porque cada etapa tem um tamanho diferente.'
+        'Na teoria, cada assunto conta como uma etapa. Para chegar à data, as etapas restantes são convertidas em horas, porque cada etapa tem um tamanho diferente.'
       ].map(function (t) { return el('li', { text: t }); }))
     ], [{ texto: 'Fechar', classe: 'btn-secundario' }], { subtitulo: 'Previsão para concluir a teoria de todas as matérias' }).caixa.classList.add('modal-largo');
   }

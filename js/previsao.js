@@ -79,7 +79,7 @@ var Previsao = (function () {
     plano.pendentes.forEach(function (it) {
       if (it.tipo === 'teoria') {
         var faltam = it.topicos.filter(function (t) { return !t.concluido; }).length;
-        if (faltam) etapas[it.tipo]++;
+        etapas.teoria += faltam; // na teoria, cada assunto (tópico) conta como uma etapa
         horas += faltam * horasTopico;
         return;
       }
@@ -97,7 +97,11 @@ var Previsao = (function () {
       }
       horas += Math.max(0, questoes) / questoesHora;
     });
-    return { horas: horas, modo: m.modo, etapas: etapas };
+    // O que já foi concluído: assuntos de teoria e etapas de questões do plano.
+    var feitas = etapasVazias();
+    feitas.teoria = Dados.topicosDaDisciplina(d.id).filter(function (t) { return t.concluido; }).length;
+    plano.itens.forEach(function (it) { if (it.concluido && it.tipo !== 'teoria') feitas[it.tipo]++; });
+    return { horas: horas, modo: m.modo, etapas: etapas, feitas: feitas };
   }
 
   function etapasVazias() { return { teoria: 0, bateria: 0, favoritas: 0, erros: 0 }; }
@@ -123,12 +127,13 @@ var Previsao = (function () {
       return null;
     }
     Dados.disciplinas().forEach(function (d) {
+      Dados.topicosDaDisciplina(d.id).forEach(function (t) {
+        if (t.concluido && t.dataConclusao && t.dataConclusao >= de) contagem.teoria++;
+      });
       Dados.planoTeoria(d.id).itens.forEach(function (it) {
-        if (!it.concluido) return;
+        if (!it.concluido || it.tipo === 'teoria') return;
         var data = null;
-        if (it.tipo === 'teoria') {
-          data = it.topicos.reduce(function (m, t) { return t.dataConclusao && (!m || t.dataConclusao > m) ? t.dataConclusao : m; }, null);
-        } else if (it.tipo === 'bateria') {
+        if (it.tipo === 'bateria') {
           data = it.caderno && it.bateria ? dataAlcancou(it.caderno.id, it.bateria.ate) : null;
         } else if (it.tipo === 'erros') {
           data = it.caderno ? dataAlcancou(it.caderno.id, it.qtd) : null;
@@ -224,7 +229,7 @@ var Previsao = (function () {
     var gerais = mediasGerais();
     var materias = Dados.disciplinas().map(function (d) {
       var r = horasRestantes(d, gerais);
-      return { d: d, horas: r.horas, modo: r.modo, etapas: r.etapas, totalEtapas: somaEtapas(r.etapas), data: null };
+      return { d: d, horas: r.horas, modo: r.modo, etapas: r.etapas, feitas: r.feitas, restantes: somaEtapas(r.etapas), concluidas: somaEtapas(r.feitas), data: null };
     });
     var pendentes = materias.filter(function (x) { return x.horas > 0; });
     var r = {
@@ -237,8 +242,12 @@ var Previsao = (function () {
       medias: gerais, data: null, semRitmo: false
     };
     r.etapas = etapasVazias();
-    materias.forEach(function (x) { for (var k in r.etapas) r.etapas[k] += x.etapas[k]; });
+    r.etapasFeitas = etapasVazias();
+    materias.forEach(function (x) {
+      for (var k in r.etapas) { r.etapas[k] += x.etapas[k]; r.etapasFeitas[k] += x.feitas[k]; }
+    });
     r.etapasRestantes = somaEtapas(r.etapas);
+    r.etapasConcluidas = somaEtapas(r.etapasFeitas);
     var semanas = JANELA_DIAS / 7;
     var feitas = etapasConcluidasDesde(UI.somarDias(UI.hoje(), -(JANELA_DIAS - 1)));
     r.etapasPorSemana = etapasVazias();
