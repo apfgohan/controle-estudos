@@ -531,8 +531,10 @@ var Dashboard = (function () {
     if (!plano.blocos) return el('p', { class: 'data-fraca', text: 'Cadastre os blocos de teoria desta matéria para ver o processo.' });
     var atual = plano.pendentes[0], feitas = plano.itens.length - plano.pendentes.length, grupos = [];
     plano.itens.forEach(function (it) {
+      // As favoritadas encerram o bloco anterior; cada bloco começa com a teoria (só muda a apresentação, não a ordem).
+      var passoGrupo = it.tipo === 'favoritas' ? it.passo - 1 : it.passo;
       var g = grupos[grupos.length - 1];
-      if (!g || g.passo !== it.passo) grupos.push(g = { passo: it.passo, itens: [] });
+      if (!g || g.passo !== passoGrupo) grupos.push(g = { passo: passoGrupo, itens: [] });
       g.itens.push(it);
     });
     var blocos = Dados.blocosDe(d.id);
