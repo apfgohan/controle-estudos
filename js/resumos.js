@@ -318,7 +318,7 @@ var Resumos = (function () {
         return;
       }
       if (!c) return;
-      var tr = c.parentElement, tab = c.closest('table'), indice = Array.prototype.indexOf.call(tr.children, c);
+      var tr = c.parentElement, tab = c.closest('table'), indice = Array.prototype.indexOf.call(tr.children, c), linhaAntes = tr.rowIndex;
       function novaLinha() {
         var nova = document.createElement('tr');
         Array.prototype.forEach.call(tr.children, function (x) { var n = document.createElement('td'); n.innerHTML = '<br>'; if (x.style.width) n.style.width = x.style.width; nova.appendChild(n); });
@@ -347,7 +347,13 @@ var Resumos = (function () {
       } else if (acao === 'excluir') tab.remove();
       else if (acao === 'larguras') tab.querySelectorAll('td,th').forEach(function (x) { x.style.width = ''; });
       limparSelecaoCelulas();
-      if (!tab.isConnected) esconderBarraTabela(); else if (acao !== 'larguras' && !c.isConnected) esconderBarraTabela();
+      if (!tab.isConnected) esconderBarraTabela();
+      else if (!c.isConnected) {
+        // A célula do cursor foi excluída: o cursor vai para a vizinha e a barra da tabela continua aberta.
+        var linha = tab.rows[Math.min(linhaAntes, tab.rows.length - 1)];
+        var vizinha = linha && linha.cells[Math.min(indice, linha.cells.length - 1)];
+        if (vizinha) { prenderCursor(vizinha); mostrarBarraTabela(vizinha); } else esconderBarraTabela();
+      }
       alterou();
     }
 
@@ -362,7 +368,7 @@ var Resumos = (function () {
       var c = e.target.closest && e.target.closest('td,th');
       if (!c || !doc.contains(c)) return null;
       var r = c.getBoundingClientRect();
-      return e.clientX > r.right - 6 && e.clientX <= r.right + 2 ? c : null;
+      return e.clientX > r.right - 9 && e.clientX <= r.right + 3 ? c : null;
     }
     doc.addEventListener('mousemove', function (e) {
       if (arrasto) return;
@@ -372,12 +378,13 @@ var Resumos = (function () {
       var c = naBorda(e);
       if (!c) return;
       e.preventDefault();
-      arrasto = { celulas: colunaDe(c), x: e.clientX, largura: c.getBoundingClientRect().width };
+      // Largura sem a redução da folha (offsetWidth); o movimento do mouse é dividido pela escala.
+      arrasto = { celulas: colunaDe(c), x: e.clientX, largura: c.offsetWidth };
       doc.classList.add('redimensionando');
     });
     document.addEventListener('mousemove', function (e) {
       if (!arrasto) return;
-      var w = Math.max(40, Math.round(arrasto.largura + e.clientX - arrasto.x));
+      var w = Math.max(40, Math.round(arrasto.largura + (e.clientX - arrasto.x) / (escala || 1)));
       arrasto.celulas.forEach(function (x) { x.style.width = w + 'px'; });
     });
     document.addEventListener('mouseup', function () {
@@ -632,7 +639,7 @@ var Resumos = (function () {
     }
 
     // ---------- Várias células: arrastar o mouse ou Shift+clique ----------
-    var selCel = { inicio: null, arrastando: false };
+    var selCel = { inicio: null, fim: null, arrastando: false };
     function limparSelecaoCelulas() {
       doc.querySelectorAll('.celula-sel').forEach(function (x) { x.classList.remove('celula-sel'); if (!x.className) x.removeAttribute('class'); });
     }
@@ -663,21 +670,44 @@ var Resumos = (function () {
       }
       limparSelecaoCelulas();
       selCel.inicio = c;
+      selCel.fim = c;
       selCel.arrastando = true;
+      mostrarBarraTabela(c);
+    });
+    // Enquanto marca várias células, mantém o cursor na célula atual: assim a seleção azul do texto
+    // não se espalha pelas linhas de cima (o navegador seleciona o texto na ordem do documento).
+    function prenderCursor(c) {
+      var s = window.getSelection(), r = document.createRange();
+      r.selectNodeContents(c);
+      r.collapse(false);
+      s.removeAllRanges();
+      s.addRange(r);
+    }
+    document.addEventListener('mousemove', function (e) {
+      if (!selCel.arrastando || !selCel.inicio || !doc.classList.contains('selecionando-celulas')) return;
+      e.preventDefault();
+      prenderCursor(selCel.fim || selCel.inicio);
     });
     doc.addEventListener('mouseover', function (e) {
       if (!selCel.arrastando || !selCel.inicio) return;
       var c = e.target.closest && e.target.closest('td,th');
       if (!c || c.closest('table') !== selCel.inicio.closest('table')) return;
       marcarRetangulo(selCel.inicio, c);
+      selCel.fim = c;
       if (doc.querySelector('.celula-sel')) {
-        // Com várias células marcadas, o texto não fica selecionado junto.
-        var s = window.getSelection(), r = document.createRange();
-        r.selectNodeContents(c); r.collapse(false);
-        s.removeAllRanges(); s.addRange(r);
+        doc.classList.add('selecionando-celulas');
+        prenderCursor(c);
+      }
+      mostrarBarraTabela(c);
+    });
+    document.addEventListener('mouseup', function () {
+      if (!selCel.arrastando) return;
+      selCel.arrastando = false;
+      if (doc.classList.contains('selecionando-celulas')) {
+        doc.classList.remove('selecionando-celulas');
+        prenderCursor(selCel.fim || selCel.inicio);
       }
     });
-    document.addEventListener('mouseup', function () { selCel.arrastando = false; });
     doc.addEventListener('input', limparSelecaoCelulas);
     document.addEventListener('selectionchange', function () {
       if (!pagina.isConnected || document.activeElement !== doc) return;
@@ -690,9 +720,14 @@ var Resumos = (function () {
         r.selectNode(e.target.closest('.resumo-video') || e.target);
         var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
       }
-      // Ao arrastar por várias células, o clique cai na linha ou na tabela: mantém as células marcadas.
-      if (doc.querySelector('.celula-sel') && !e.target.closest('td,th') && e.target.closest('table')) return;
-      atualizarBolha(e.target);
+      // Ao arrastar por várias células, o clique cai na linha ou na tabela, não numa célula:
+      // continua valendo a célula onde está o cursor (e a barra da tabela continua aberta).
+      var alvo = e.target;
+      if (!alvo.closest('td,th') && alvo.closest('table')) {
+        var naSelecao = elementoDaSelecao();
+        alvo = naSelecao && naSelecao.closest('td,th') ? naSelecao : (selCel.fim || selCel.inicio || alvo);
+      }
+      atualizarBolha(alvo);
     });
     document.addEventListener('mousedown', function (e) {
       if (!pagina.isConnected || bolha.hidden) return;

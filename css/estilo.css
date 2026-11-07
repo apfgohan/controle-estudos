@@ -1112,6 +1112,8 @@ a.rec-caderno:hover { text-decoration: underline; }
 .resumo-doc.redimensionando, .resumo-doc.redimensionando * { cursor: col-resize !important; }
 .resumo-doc table { table-layout: auto; }
 .resumo-doc td.celula-sel, .resumo-doc th.celula-sel { box-shadow: inset 0 0 0 2px #3b8cf0; }
+.resumo-doc.selecionando-celulas, .resumo-doc.selecionando-celulas * { user-select: none; }
+.resumo-doc.selecionando-celulas ::selection { background: transparent; }
 .rb-tabela { flex-basis: 100%; flex-wrap: wrap; align-items: center; gap: 2px; padding: 6px 0 0; border-right: 0; border-top: 1px solid var(--borda); }
 .rb-tabela[hidden] { display: none; }
 .rb-rotulo { padding: 0 8px 0 2px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--azul-escuro); }
