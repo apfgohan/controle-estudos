@@ -2,8 +2,17 @@
 var Backup = (function () {
   var el = UI.el;
 
+  // O arquivo leva também os resumos (guardados à parte), no campo "resumos".
   function exportar() {
-    var blob = new Blob([Dados.exportar()], { type: 'application/json' });
+    ResumosDados.exportarTodos().then(function (resumos) {
+      var dados = JSON.parse(Dados.exportar());
+      dados.resumos = resumos;
+      baixar(JSON.stringify(dados, null, 2));
+    });
+  }
+
+  function baixar(texto) {
+    var blob = new Blob([texto], { type: 'application/json' });
     var a = el('a', { href: URL.createObjectURL(blob), download: 'controle-estudos-backup-' + UI.hoje() + '.json' });
     document.body.appendChild(a);
     a.click();
@@ -16,9 +25,15 @@ var Backup = (function () {
     leitor.onload = function () {
       UI.confirmar('Importar "' + arquivo.name + '"? Os dados atuais serão substituídos pelos do arquivo.', function () {
         try {
-          Dados.importar(leitor.result);
-          UI.aviso('Backup importado');
-          App.atualizar();
+          var dados = JSON.parse(leitor.result);
+          var resumos = dados && Array.isArray(dados.resumos) ? dados.resumos : null;
+          if (dados) delete dados.resumos; // os resumos não entram nos dados principais
+          Dados.importar(JSON.stringify(dados));
+          // Backup antigo, sem o campo "resumos", mantém os resumos atuais.
+          (resumos ? ResumosDados.importarTodos(resumos) : Promise.resolve()).then(function () {
+            UI.aviso(resumos ? 'Backup importado, com ' + resumos.length + (resumos.length === 1 ? ' resumo' : ' resumos') : 'Backup importado');
+            App.atualizar();
+          }).catch(function (e) { alert('Os dados foram importados, mas os resumos não: ' + e.message); });
         } catch (e) {
           alert('Não foi possível importar: ' + e.message);
         }

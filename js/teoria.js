@@ -58,7 +58,7 @@ var Teoria = (function () {
 
     var botoes = [{ texto: 'Cancelar', classe: 'btn-secundario' }];
     if (d) botoes.unshift({ texto: 'Excluir', classe: 'btn-perigo btn-esquerda', acao: function () {
-      UI.confirmar('Excluir "' + d.nome + '"? Todos os blocos, tópicos, cadernos e sessões dessa disciplina serão apagados.', function () {
+      UI.confirmar('Excluir "' + d.nome + '"? Todos os blocos, tópicos, cadernos, sessões e o resumo dessa disciplina serão apagados.', function () {
         Dados.excluirDisciplina(d.id);
         location.hash = location.hash.split('/').slice(0, 2).join('/'); // volta para a lista da aba atual
         App.atualizar();

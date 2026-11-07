@@ -221,6 +221,7 @@ var Dados = (function () {
     db.ciclo.itens = db.ciclo.itens.filter(function (i) { return i.disciplinaId !== id; });
     if (db.ciclo.posicaoAtual >= db.ciclo.itens.length) db.ciclo.posicaoAtual = 0;
     remover('disciplinas', function (d) { return d.id === id; });
+    if (window.ResumosDados) ResumosDados.apagar(id).catch(function (e) { console.error(e); });
     salvar();
   }
 

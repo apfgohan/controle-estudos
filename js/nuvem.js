@@ -2,6 +2,7 @@
 //
 //   usuarios/{uid}/dados         <- todos os dados, em JSON (texto)
 //   usuarios/{uid}/atualizadoEm  <- quando foram alterados pela última vez (vale a versão mais recente)
+//   usuarios/{uid}/resumos/{id}  <- resumo de cada matéria, gravado à parte (ver resumos-dados.js)
 //
 // As regras do banco (ver regrasSugeridas) só deixam cada conta ler e gravar a própria área;
 // por enquanto, só a conta do dono. O localStorage continua como cópia rápida e permite usar sem internet.
@@ -85,8 +86,9 @@ var Nuvem = (function () {
     notificar();
     esconderTelaLogin();
     ref = firebase.database().ref('usuarios/' + u.uid);
-    ref.once('value').then(function (snap) {
-      var v = snap.val();
+    // Lê só os dados e a data: os resumos (que podem ser grandes) são baixados quando cada matéria é aberta.
+    Promise.all([ref.child('dados').once('value'), ref.child('atualizadoEm').once('value')]).then(function (snaps) {
+      var v = { dados: snaps[0].val(), atualizadoEm: snaps[1].val() };
       // Dados vazios nunca vencem dados preenchidos, seja qual for a data
       // (protege contra um aparelho novo ou vazio apagar o que já está na nuvem, e vice-versa).
       var remotoVazio = !v || !v.dados || vazioNoTexto(v.dados);
@@ -103,6 +105,7 @@ var Nuvem = (function () {
       comparado = true;
       estado = online ? 'sincronizado' : 'offline';
       notificar();
+      if (window.ResumosDados) ResumosDados.enviarPendentes();
       return embutirFotoPerfil().then(function () { if (pendente) return gravarAgora(); });
     }).then(function () {
       ref.child('atualizadoEm').on('value', function (snap) {
@@ -154,6 +157,12 @@ var Nuvem = (function () {
       img.src = p.foto;
     });
   }
+
+  // ---------- Resumos (um por matéria, fora dos dados principais) ----------
+  function podeGravar() { return !!(ref && comparado && estado !== 'negado'); }
+  function salvarResumo(id, rec) { return ref.child('resumos/' + id).set(rec); }
+  function buscarResumo(id) { return ref.child('resumos/' + id).once('value').then(function (s) { return s.val(); }); }
+  function apagarResumo(id) { return ref.child('resumos/' + id).remove(); }
 
   window.addEventListener('beforeunload', function (e) {
     if (pendente && ref) { gravarAgora(); e.preventDefault(); e.returnValue = ''; }
@@ -244,6 +253,7 @@ var Nuvem = (function () {
   return {
     iniciar: iniciar, agendar: agendar, gravarAgora: gravarAgora, entrar: entrar, sair: sair, aoMudar: aoMudar,
     regrasSugeridas: regrasSugeridas, VERSAO_SDK: VERSAO_SDK, pelaWeb: pelaWeb,
+    podeGravar: podeGravar, salvarResumo: salvarResumo, buscarResumo: buscarResumo, apagarResumo: apagarResumo,
     ativa: function () { return ativa; },
     info: function () {
       return { ativa: ativa, estado: estado, email: usuario ? usuario.email : null, uid: usuario ? usuario.uid : null,

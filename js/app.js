@@ -6,6 +6,7 @@ var App = (function () {
     questoes: Questoes.render,
     estatisticas: Estatisticas.render,
     historico: Historico.render,
+    resumos: Resumos.render,
     backup: Backup.render
   };
   var ROTA_INICIAL = 'dashboard';
