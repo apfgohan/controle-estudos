@@ -43,5 +43,28 @@ var App = (function () {
     }
   });
 
+  // ---------- Versão nova publicada ----------
+  // Uma aba aberta continua com os arquivos antigos até ser recarregada. O programa confere o arquivo versao.json
+  // ao voltar para a aba e a cada 10 minutos; se houver versão nova, mostra um aviso para recarregar.
+  var avisoVersao = null;
+  function conferirVersao() {
+    if (!window.VERSAO_APP || !/^https?:$/.test(location.protocol) || avisoVersao) return;
+    fetch('versao.json?_=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (v) {
+      if (!v || !v.versao || v.versao === window.VERSAO_APP || avisoVersao) return;
+      var el = UI.el;
+      avisoVersao = el('div', { class: 'aviso-versao' }, [
+        el('span', { text: 'Há uma versão nova do programa.' }),
+        UI.botao('Atualizar agora', function () {
+          if (window.Resumos && Resumos.salvarAgora) Resumos.salvarAgora();
+          setTimeout(function () { location.reload(); }, 300);
+        }, 'btn-primario')
+      ]);
+      document.body.appendChild(avisoVersao);
+    }).catch(function () { /* sem internet: confere depois */ });
+  }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') conferirVersao(); });
+  setInterval(conferirVersao, 10 * 60 * 1000);
+  setTimeout(conferirVersao, 5000);
+
   return { atualizar: render };
 })();

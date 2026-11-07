@@ -1216,5 +1216,5 @@ var Resumos = (function () {
     }
   }
 
-  return { render: render, htmlLimpo: htmlLimpo };
+  return { render: render, htmlLimpo: htmlLimpo, salvarAgora: function () { if (atual) atual.salvarJa(); } };
 })();
