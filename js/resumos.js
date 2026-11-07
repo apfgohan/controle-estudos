@@ -837,7 +837,27 @@ var Resumos = (function () {
       g.setAttribute('data-id', t.id);
       return g;
     }
+    // Ao apertar Enter num bloco com traços, o navegador copia o data-tinta para o bloco novo.
+    // Só o primeiro bloco com cada id vale; as cópias perdem o atributo.
+    function idsUnicos() {
+      var vistos = {};
+      doc.querySelectorAll('[data-tinta]').forEach(function (b) {
+        var id = b.getAttribute('data-tinta');
+        if (vistos[id] || b.parentNode !== doc) b.removeAttribute('data-tinta'); else vistos[id] = true;
+      });
+    }
+    // Conserta traços gravados com o primeiro ponto fora do lugar (ids repetidos, antes desta correção):
+    // um salto grande do 1º para o 2º ponto, num traço à mão livre, é esse defeito.
+    function consertarTracos() {
+      tinta.forEach(function (t) {
+        if (t.f || !t.p || t.p.length < 3) return;
+        var a = t.p[0], b = t.p[1], c = t.p[2];
+        var salto = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]), seguinte = Math.abs(b[0] - c[0]) + Math.abs(b[1] - c[1]);
+        if (salto > 30 && salto > seguinte * 6) t.p.shift();
+      });
+    }
     function desenharTinta() {
+      idsUnicos();
       tintaSvg.setAttribute('width', papel.offsetWidth);
       tintaSvg.setAttribute('height', papel.offsetHeight);
       while (tintaSvg.firstChild) tintaSvg.removeChild(tintaSvg.firstChild);
@@ -879,6 +899,7 @@ var Resumos = (function () {
       if (caneta.borracha) { apagou = false; riscando = { apagando: true }; apagarEm(e); return; }
       var p = local(e), b = blocoEm(p.y);
       if (!b) { inserirHtml('<p><br></p>'); b = doc.firstElementChild; }
+      idsUnicos();
       if (!b.getAttribute('data-tinta')) b.setAttribute('data-tinta', Dados.novoId());
       guardarTinta();
       var t = { id: Dados.novoId(), a: b.getAttribute('data-tinta'), x: b.offsetLeft, y: b.offsetTop,
@@ -886,17 +907,18 @@ var Resumos = (function () {
         p: [[r1(p.x - b.offsetLeft), r1(p.y - b.offsetTop)]] };
       if (caneta.forma) { t.f = caneta.forma; t.p.push(t.p[0].slice()); }
       tinta.push(t);
-      riscando = { traco: t, el: elementoTraco(t) };
+      riscando = { traco: t, el: elementoTraco(t), bloco: b };
       tintaSvg.appendChild(riscando.el);
     });
     tintaSvg.addEventListener('pointermove', function (e) {
       if (!riscando) return;
       if (riscando.apagando) { apagarEm(e); return; }
-      var t = riscando.traco, p = local(e), b = blocoDe(t.a);
+      // Usa o mesmo bloco do início do traço (nunca outro com o mesmo id).
+      var t = riscando.traco, p = local(e), b = riscando.bloco;
       var x = r1(p.x - (b ? b.offsetLeft : t.x)), y = r1(p.y - (b ? b.offsetTop : t.y)), u = t.p[t.p.length - 1];
       if (t.f) {
-        // Quadrado e círculo saem perfeitos; o Shift libera retângulo e elipse. Na linha, o Shift prende o ângulo.
-        var perfeito = t.f === 'linha' ? e.shiftKey : !e.shiftKey;
+        // Retângulo e elipse livres; com Shift, quadrado e círculo perfeitos. Na linha, o Shift prende o ângulo.
+        var perfeito = e.shiftKey;
         t.p[1] = ajustarForma(t.f, t.p[0], x, y, perfeito);
         riscando.el.setAttribute('d', desenhoDoTraco(t));
         return;
@@ -942,7 +964,7 @@ var Resumos = (function () {
     var botaoMarcaTinta = botao(el('span', { class: 'rb-marca' }, ['Marca-texto']), 'Marca-texto à mão', function () { caneta.marca = !caneta.marca; caneta.borracha = false; marcarCaneta(); });
     var botaoBorrachaTinta = botao('Borracha', 'Apagar traços (passe por cima)', function () { caneta.borracha = !caneta.borracha; marcarCaneta(); }, 'rb-texto');
     var FORMAS = [['', 'Mão livre', 'Desenhar à mão livre'], ['linha', 'Linha', 'Linha reta (segure Shift para 0°, 45° ou 90°)'],
-      ['ret', 'Quadrado', 'Quadrado (segure Shift para retângulo)'], ['elipse', 'Círculo', 'Círculo (segure Shift para elipse)']];
+      ['ret', 'Retângulo', 'Retângulo de lados retos (segure Shift para um quadrado perfeito)'], ['elipse', 'Elipse', 'Elipse ou círculo (segure Shift para um círculo perfeito)']];
     var botoesForma = FORMAS.map(function (f) {
       return botao(f[1], f[2], function () { caneta.forma = f[0]; caneta.borracha = false; marcarCaneta(); }, 'rb-texto');
     });
@@ -1159,6 +1181,7 @@ var Resumos = (function () {
       if (!doc.innerHTML.trim()) doc.innerHTML = '<p><br></p>';
       doc.dataset.salvo = '1';
       tinta = rec && Array.isArray(rec.tinta) ? rec.tinta : [];
+      consertarTracos();
       desfazerTinta = [];
       desenharNav();
       desenharTinta();
