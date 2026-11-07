@@ -443,6 +443,21 @@ a.perfil-nome:hover { color: var(--azul-escuro); }
 .patente-fontes > div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--borda); }
 .patente-fontes strong { color: var(--texto); font-variant-numeric: tabular-nums; }
 .patente-fontes .perda strong, .patente-eventos .perda { color: var(--vermelho); }
+/* XP do dia (janela Minha patente) */
+.xp-dia { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; border: 1px solid var(--borda); border-radius: 12px; background: var(--superficie-2); }
+.xp-dia-topo { display: flex; align-items: center; gap: 10px; }
+.xp-dia-data { flex: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.xp-dia-total { font-weight: 800; color: var(--verde-texto); }
+.xp-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.xp-linha { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-top: 1px solid var(--borda); font-size: 14px; }
+.xp-linha .bolinha { margin-top: 6px; flex: none; }
+.xp-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.xp-nome { font-weight: 600; color: var(--texto); }
+.xp-detalhe { font-size: 12px; color: var(--texto-2); }
+.xp-valor { white-space: nowrap; color: var(--verde-texto); font-variant-numeric: tabular-nums; }
+.xp-linha.bonus .xp-valor { color: var(--amarelo-texto); }
+.xp-linha.perda .xp-valor { color: var(--vermelho); }
+.xp-hoje { color: var(--verde-texto); font-weight: 700; }
 .patente-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .patente-lista li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 10px; opacity: .55; }
 .patente-lista li.alcancada { opacity: 1; }

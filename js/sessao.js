@@ -184,7 +184,7 @@ var Sessao = (function () {
       if (op.doCronometro) gravarCron(null);
       App.atualizar();
       var ganho = Patentes.aposLancar(patenteAntes);
-      var xpTexto = ganho > 0 ? ' · +' + UI.fmtNum(ganho) + ' XP' : '';
+      var xpTexto = ganho > 0 ? ' · +' + UI.fmtNum(ganho) + ' XP' : Patentes.calcular().travado ? ' · XP no limite da patente' : '';
       if (!existente && vezAntes && vezAntes !== vezDepois) {
         var prox = Dados.disciplina(vezDepois.disciplinaId);
         UI.aviso('Estudo lançado' + xpTexto + ' · ciclo avançou: agora é ' + (prox ? prox.nome : 'a próxima matéria'));

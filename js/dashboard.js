@@ -1178,7 +1178,7 @@ var Dashboard = (function () {
       el('span', { class: 'perfil-patente-corpo' }, [
         el('span', { class: 'perfil-patente-topo' }, [
           el('strong', { text: r.patente.nome }),
-          el('span', { class: 'data-fraca', text: UI.fmtNum(r.xp) + ' XP' })
+          el('span', { class: 'data-fraca' }, [UI.fmtNum(r.xp) + ' XP', r.xpHoje > 0 ? el('span', { class: 'xp-hoje', text: ' · +' + UI.fmtNum(r.xpHoje) + ' hoje' }) : null])
         ]),
         UI.barra(r.pct),
         el('span', { class: 'data-fraca', text: Patentes.textoProxima(r) }),

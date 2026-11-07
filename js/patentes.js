@@ -45,33 +45,50 @@ var Patentes = (function () {
   }
 
   // Agrupa por dia tudo o que rende XP: tempo, questões, tópicos concluídos e etapas concluídas.
+  // Guarda também o ganho de cada estudo lançado, para mostrar o XP do dia por atividade.
   function ganhosPorDia() {
     var db = Dados.db, dias = {}, acum = {};
-    function dia(d) { return dias[d] || (dias[d] = { sessoes: 0, segundos: 0, questoes: 0, acertos: 0, topicos: 0, etapas: 0, linhas: [] }); }
+    function dia(d) { return dias[d] || (dias[d] = { sessoes: 0, segundos: 0, minutos: 0, questoes: 0, acertos: 0, topicos: 0, etapas: 0, linhas: [], registros: [], topicosAvulsos: 0 }); }
     db.sessoes.slice().sort(function (a, b) {
       return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
     }).forEach(function (s) {
       var g = dia(s.data);
+      var reg = { sessao: s, minutos: Math.round((s.segundos || 0) / 60), questoes: 0, acertos: 0, etapas: 0, topicos: 0 };
       g.sessoes++;
       g.segundos += s.segundos || 0;
+      g.minutos += reg.minutos;
       (s.cadernos || []).forEach(function (l) {
         var a = Number(l.acertos) || 0, n = a + (Number(l.erros) || 0);
         g.questoes += n;
         g.acertos += a;
+        reg.questoes += n;
+        reg.acertos += a;
         if (n) g.linhas.push({ n: n, a: a });
         if (!l.cadernoId) return;
         // Cada rodada das favoritadas tem contagem própria.
         var chaveAcum = l.rodada ? l.cadernoId + '|' + l.rodada : l.cadernoId;
         var antes = acum[chaveAcum] || 0, depois = antes + n;
         acum[chaveAcum] = depois;
-        g.etapas += etapasConcluidas(s.disciplinaId, l, antes, depois);
+        var e = etapasConcluidas(s.disciplinaId, l, antes, depois);
+        g.etapas += e;
+        reg.etapas += e;
       });
+      g.registros.push(reg);
     });
     var primeira = Object.keys(dias).sort()[0];
     db.topicos.forEach(function (t) {
-      if (t.concluido) dia(t.dataConclusao || primeira || UI.hoje()).topicos++;
+      if (!t.concluido) return;
+      var g = dia(t.dataConclusao || primeira || UI.hoje());
+      g.topicos++;
+      // O tópico vai para o estudo de teoria do mesmo dia que o marcou; sem ele, aparece à parte.
+      var dono = g.registros.filter(function (x) { return (x.sessao.topicoIds || []).indexOf(t.id) >= 0; })[0];
+      if (dono) dono.topicos++; else g.topicosAvulsos++;
     });
     return dias;
+  }
+
+  function xpDoRegistro(x) {
+    return x.minutos + x.questoes * XP.QUESTAO + x.acertos * XP.ACERTO + x.etapas * XP.ETAPA + x.topicos * XP.TOPICO;
   }
 
   // Quantas etapas (baterias, simulado, erros, favoritadas) esta linha de sessão concluiu.
@@ -108,8 +125,9 @@ var Patentes = (function () {
     var datas = Object.keys(dias).sort();
     var r = {
       xp: 0, eventos: [], sequencia: 0, melhorSequencia: 0, estudouHoje: !!(dias[hoje] && dias[hoje].sessoes),
-      fontes: { tempo: 0, questoes: 0, acertos: 0, topicos: 0, etapas: 0, metas: 0, sequencia: 0, perdido: 0 },
-      faltasMes: 0, faltasSeguidas: 0, pausa: pausaEm(hoje)
+      fontes: { tempo: 0, questoes: 0, acertos: 0, topicos: 0, etapas: 0, metas: 0, sequencia: 0, perdido: 0, limite: 0 },
+      faltasMes: 0, faltasSeguidas: 0, pausa: pausaEm(hoje),
+      dias: {} // XP de cada dia: { registros, topicosAvulsos, meta, sequencia, limite, rebaixamento }
     };
     var metas = Dados.db.metas || {};
     var metaSeg = (Number(metas.horas) || 0) * 3600, metaQ = Number(metas.questoes) || 0;
@@ -131,18 +149,20 @@ var Patentes = (function () {
       if (!indice) return; // Tiro é o piso
       var novo = meioDaFaixa(indice - 1);
       r.fontes.perdido += r.xp - novo;
+      var dd = r.dias[data] || (r.dias[data] = { registros: [], topicosAvulsos: 0, meta: 0, sequencia: 0, limite: 0, rebaixamento: 0 });
+      dd.rebaixamento += r.xp - novo;
       r.xp = novo;
       evento(data, 'rebaixamento', indice, indice - 1, motivo);
       indice--;
     }
 
     for (var d = datas[0] || hoje; d <= hoje; d = UI.somarDias(d, 1)) {
-      var g = dias[d], estudou = !!(g && g.sessoes), pausado = !!pausaEm(d);
+      var g = dias[d], estudou = !!(g && g.sessoes), pausado = !!pausaEm(d), xpAntes = r.xp;
       if (d.slice(0, 7) !== mesAtual) { mesAtual = d.slice(0, 7); faltasMes = []; }
 
       if (g) {
         var f = r.fontes;
-        var tempo = Math.round(g.segundos / 60), questoes = g.questoes * XP.QUESTAO, acertos = g.acertos * XP.ACERTO;
+        var tempo = g.minutos, questoes = g.questoes * XP.QUESTAO, acertos = g.acertos * XP.ACERTO;
         var topicos = g.topicos * XP.TOPICO, etapas = g.etapas * XP.ETAPA, bonusMeta = 0, bonusSeq = 0;
         var chave = inicioSemana(d), sem = semanas[chave] || (semanas[chave] = { segundos: 0, questoes: 0 });
         if (metaSeg && sem.segundos < metaSeg && sem.segundos + g.segundos >= metaSeg) bonusMeta += XP.META;
@@ -159,6 +179,10 @@ var Patentes = (function () {
         r.xp += tempo + questoes + acertos + topicos + etapas + bonusMeta + bonusSeq;
         historico = historico.concat(g.linhas);
         promover(d);
+        // Sem o acerto exigido, a patente fica travada e o XP não passa do início da próxima: o excedente é perdido.
+        var teto = LISTA[indice + 1] ? LISTA[indice + 1].xp : Infinity, corte = 0;
+        if (r.xp > teto) { corte = r.xp - Math.max(teto, xpAntes); r.xp = Math.max(teto, xpAntes); f.limite += corte; }
+        r.dias[d] = { registros: g.registros, topicosAvulsos: g.topicosAvulsos, meta: bonusMeta, sequencia: bonusSeq, limite: corte, rebaixamento: 0 };
       }
 
       if (estudou || pausado) { seguidas = 0; continue; } // na pausa, a sequência fica congelada
@@ -192,6 +216,9 @@ var Patentes = (function () {
     var req = r.proxima && r.proxima.requisito;
     r.requisito = req ? Object.assign({ exigido: req.acerto, janela: req.questoes, ok: requisitoAtendido(req, historico) }, acertoNasUltimas(historico, req.questoes)) : null;
     // Falta só mais um dia para cair (considerando que hoje termine sem estudo).
+    r.travado = !!(r.requisito && !r.requisito.ok && r.xp >= r.proxima.xp);
+    var hojeXp = r.dias[hoje];
+    r.xpHoje = hojeXp ? totalDoDia(hojeXp) : 0;
     r.risco = !r.estudouHoje && !r.pausa && r.indice > 0 &&
       (r.faltasSeguidas === FALTAS_SEGUIDAS - 1 || r.faltasMes === FALTAS_NO_MES - 1);
     return r;
@@ -651,6 +678,69 @@ var Patentes = (function () {
     return r.xp - antes.xp;
   }
 
+  // ---------- XP do dia ----------
+  function brutoDoDia(dia) {
+    return dia.registros.reduce(function (s, x) { return s + xpDoRegistro(x); }, 0) + dia.topicosAvulsos * XP.TOPICO + dia.meta + dia.sequencia;
+  }
+  function totalDoDia(dia) { return brutoDoDia(dia) - dia.limite - dia.rebaixamento; }
+
+  var NOMES_TIPO = { teoria: 'Teoria', questoes: 'Questões', revisao: 'Revisão' };
+
+  function detalheRegistro(x) {
+    var partes = [];
+    if (x.minutos) partes.push((x.minutos >= 60 ? Math.floor(x.minutos / 60) + 'h' + (x.minutos % 60 ? String(x.minutos % 60).padStart(2, '0') : '') : x.minutos + 'min') + ' de estudo (+' + x.minutos + ')');
+    if (x.questoes) partes.push(x.questoes + (x.questoes === 1 ? ' questão' : ' questões') + ' (+' + x.questoes * XP.QUESTAO + ')');
+    if (x.acertos) partes.push(x.acertos + (x.acertos === 1 ? ' acerto' : ' acertos') + ' (+' + x.acertos * XP.ACERTO + ')');
+    if (x.topicos) partes.push(x.topicos + (x.topicos === 1 ? ' tópico concluído' : ' tópicos concluídos') + ' (+' + x.topicos * XP.TOPICO + ')');
+    if (x.etapas) partes.push(x.etapas + (x.etapas === 1 ? ' etapa concluída' : ' etapas concluídas') + ' (+' + x.etapas * XP.ETAPA + ')');
+    return partes.join(' · ');
+  }
+
+  function linhaXp(nome, detalhe, valor, cor, classe) {
+    return el('li', { class: 'xp-linha' + (classe ? ' ' + classe : '') }, [
+      el('span', { class: 'bolinha', style: { background: cor || 'var(--borda-forte)' } }),
+      el('span', { class: 'xp-texto' }, [el('span', { class: 'xp-nome', text: nome }), detalhe ? el('span', { class: 'xp-detalhe', text: detalhe }) : null]),
+      el('strong', { class: 'xp-valor', text: (valor < 0 ? '−' : '+') + UI.fmtNum(Math.abs(valor)) })
+    ]);
+  }
+
+  // Seção "XP do dia", com setas para os dias anteriores que tiveram XP.
+  function painelXpDoDia(r) {
+    var hoje = UI.hoje();
+    var datas = Object.keys(r.dias).filter(function (d) { return d <= hoje; }).sort();
+    if (datas.indexOf(hoje) < 0) datas.push(hoje);
+    var pos = datas.length - 1;
+    var caixa = el('div', { class: 'xp-dia' });
+    function desenhar() {
+      var d = datas[pos], dia = r.dias[d];
+      var nomeDia = d === hoje ? 'Hoje' : d === UI.somarDias(hoje, -1) ? 'Ontem' : new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long' });
+      var linhas = [];
+      if (dia) {
+        dia.registros.forEach(function (x) {
+          var disc = Dados.disciplina(x.sessao.disciplinaId);
+          linhas.push(linhaXp((disc ? disc.nome : 'Disciplina excluída') + ' · ' + (NOMES_TIPO[x.sessao.tipo] || 'Estudo'), detalheRegistro(x), xpDoRegistro(x), disc && disc.cor));
+        });
+        if (dia.topicosAvulsos) linhas.push(linhaXp('Tópicos marcados como concluídos', dia.topicosAvulsos + ' × ' + XP.TOPICO, dia.topicosAvulsos * XP.TOPICO));
+        if (dia.sequencia) linhas.push(linhaXp('Sequência de estudos', 'bônus pelos dias seguidos', dia.sequencia, null, 'bonus'));
+        if (dia.meta) linhas.push(linhaXp('Meta semanal batida', dia.meta / XP.META === 2 ? 'horas e questões' : 'horas ou questões', dia.meta, null, 'bonus'));
+        if (dia.limite) linhas.push(linhaXp('Acima do limite da patente', 'sem o acerto exigido, o XP não passa do início da próxima patente', -dia.limite, null, 'perda'));
+        if (dia.rebaixamento) linhas.push(linhaXp('Rebaixamento', 'XP volta ao meio da faixa da patente anterior', -dia.rebaixamento, null, 'perda'));
+      }
+      caixa.innerHTML = '';
+      caixa.appendChild(el('div', { class: 'xp-dia-topo' }, [
+        el('button', { type: 'button', class: 'btn-icone', text: '‹', title: 'Dia anterior', disabled: pos === 0, onclick: function () { pos--; desenhar(); } }),
+        el('div', { class: 'xp-dia-data' }, [
+          el('strong', { text: nomeDia.charAt(0).toUpperCase() + nomeDia.slice(1) + ', ' + UI.fmtData(d) }),
+          el('span', { class: 'xp-dia-total', text: (dia ? (totalDoDia(dia) < 0 ? '−' : '+') + UI.fmtNum(Math.abs(totalDoDia(dia))) : '+0') + ' XP no dia' })
+        ]),
+        el('button', { type: 'button', class: 'btn-icone', text: '›', title: 'Próximo dia', disabled: pos === datas.length - 1, onclick: function () { pos++; desenhar(); } })
+      ]));
+      caixa.appendChild(linhas.length ? el('ul', { class: 'xp-lista' }, linhas) : el('p', { class: 'data-fraca', text: 'Nenhum XP neste dia ainda.' }));
+    }
+    desenhar();
+    return caixa;
+  }
+
   // ---------- Janela "Minha patente" ----------
   function abrir() {
     var r = calcular();
@@ -674,11 +764,14 @@ var Patentes = (function () {
         el('strong', { text: 'Faltas: ' + r.faltasSeguidas + ' de ' + FALTAS_SEGUIDAS + ' seguidas · ' + r.faltasMes + ' de ' + FALTAS_NO_MES + ' neste mês' }),
         el('span', { text: r.risco ? 'Se hoje terminar sem estudo, você será rebaixado.' : 'Ao chegar em ' + FALTAS_SEGUIDAS + ' seguidas ou ' + FALTAS_NO_MES + ' no mês, você perde uma patente. Lançar um estudo com data passada apaga a falta daquele dia.' })
       ]),
+      el('h3', { class: 'patente-titulo', text: 'XP do dia' }),
+      painelXpDoDia(r),
       painelPausas(),
       el('h3', { class: 'patente-titulo', text: 'De onde veio seu XP' }),
       el('div', { class: 'patente-fontes' }, fontes.map(function (x) {
         return el('div', null, [el('span', { text: x[0] }), el('strong', { text: UI.fmtNum(x[1]) })]);
-      }).concat(f.perdido ? [el('div', { class: 'perda' }, [el('span', { text: 'Perdido em rebaixamentos' }), el('strong', { text: '−' + UI.fmtNum(f.perdido) })])] : [])),
+      }).concat(f.perdido ? [el('div', { class: 'perda' }, [el('span', { text: 'Perdido em rebaixamentos' }), el('strong', { text: '−' + UI.fmtNum(f.perdido) })])] : [])
+        .concat(f.limite ? [el('div', { class: 'perda' }, [el('span', { text: 'Acima do limite da patente' }), el('strong', { text: '−' + UI.fmtNum(f.limite) })])] : [])),
       el('h3', { class: 'patente-titulo', text: 'Patentes' }),
       el('ol', { class: 'patente-lista' }, LISTA.map(function (p) {
         return el('li', { class: p.indice === r.indice ? 'atual' : p.indice < r.indice ? 'alcancada' : '' }, [
