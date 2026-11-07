@@ -1077,7 +1077,7 @@ a.rec-caderno:hover { text-decoration: underline; }
 
 /* Folha de largura fixa (reduzida inteira em telas menores) com a camada de tinta por cima. */
 .resumo-casco { position: relative; overflow: hidden; }
-.resumo-papel { position: relative; width: 840px; margin: 0 auto; transform-origin: top left; }
+.resumo-papel { position: relative; width: 1000px; margin: 0 auto; transform-origin: top left; }
 .resumo-tinta { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
 .resumo-tinta path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .modo-caneta .resumo-tinta { pointer-events: all; cursor: crosshair; touch-action: none; }
@@ -1089,7 +1089,7 @@ a.rec-caderno:hover { text-decoration: underline; }
 .rb-cores-caneta .desenho-cor { width: 22px; height: 22px; }
 .rb-concluir { color: var(--azul-escuro); font-weight: 800; }
 /* O resumo é uma folha clara, como no Word: as cores e o marca-texto ficam legíveis. */
-.resumo-doc { box-sizing: border-box; width: 840px; min-height: 70vh; padding: 40px 48px; background: #fbfbfd; color: #1f2330; border-radius: 14px; border: 1px solid var(--borda); font-size: 16px; line-height: 1.6; outline: none; overflow-wrap: anywhere; counter-reset: t1; }
+.resumo-doc { box-sizing: border-box; width: 1000px; min-height: 70vh; padding: 40px 56px; background: #fbfbfd; color: #1f2330; border-radius: 14px; border: 1px solid var(--borda); font-size: 16px; line-height: 1.6; outline: none; overflow-wrap: anywhere; counter-reset: t1; }
 .resumo-doc:focus { box-shadow: 0 0 0 2px rgba(var(--destaque-rgb), .45); }
 .resumo-doc[contenteditable="false"] { opacity: .7; }
 .resumo-doc > :first-child { margin-top: 0; }

@@ -6,7 +6,7 @@ var Resumos = (function () {
   var LIMITE_AVISO = 8 * 1024 * 1024;
   var CHAVE_PAINEL = 'controle-estudos.resumo-painel-mini';
   var LADO_IMAGEM = 1200;
-  var LARGURA_PAPEL = 840; // a folha tem largura fixa; em telas menores ela é reduzida inteira
+  var LARGURA_PAPEL = 1000; // a folha tem largura fixa; em telas menores ela é reduzida inteira
 
   var atual = null; // editor aberto: { id, pagina, salvarJa }
 
@@ -794,6 +794,27 @@ var Resumos = (function () {
       Array.prototype.forEach.call(doc.children, function (b) { if (b.offsetTop <= y + 2) escolhido = b; });
       return escolhido || doc.firstElementChild;
     }
+    // Formas: f = 'linha' | 'ret' | 'elipse', com p = [ponto inicial, ponto final]. Sem f, é traço à mão livre.
+    function desenhoDoTraco(t) {
+      if (!t.f) return caminho(t.p);
+      var a = t.p[0], b = t.p[1] || t.p[0];
+      if (t.f === 'linha') return 'M' + a[0] + ' ' + a[1] + ' L' + b[0] + ' ' + b[1];
+      var x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]), x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]);
+      if (t.f === 'ret') return 'M' + x0 + ' ' + y0 + ' H' + x1 + ' V' + y1 + ' H' + x0 + ' Z';
+      var rx = r1((x1 - x0) / 2), ry = r1((y1 - y0) / 2), cx = r1(x0 + rx), cy = r1(y0 + ry);
+      return 'M' + r1(cx - rx) + ' ' + cy + ' a' + rx + ' ' + ry + ' 0 1 0 ' + r1(2 * rx) + ' 0 a' + rx + ' ' + ry + ' 0 1 0 ' + r1(-2 * rx) + ' 0 Z';
+    }
+    // Com Shift (ou quadrado/círculo perfeitos), lados iguais; na linha, prende em 0°, 45° ou 90°.
+    function ajustarForma(f, a, x, y, perfeito) {
+      if (!perfeito) return [x, y];
+      var dx = x - a[0], dy = y - a[1];
+      if (f === 'linha') {
+        var ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), d = Math.sqrt(dx * dx + dy * dy);
+        return [r1(a[0] + Math.cos(ang) * d), r1(a[1] + Math.sin(ang) * d)];
+      }
+      var lado = Math.max(Math.abs(dx), Math.abs(dy));
+      return [r1(a[0] + (dx < 0 ? -lado : lado)), r1(a[1] + (dy < 0 ? -lado : lado))];
+    }
     function caminho(p) {
       if (!p.length) return '';
       var d = 'M' + p[0][0] + ' ' + p[0][1];
@@ -808,7 +829,7 @@ var Resumos = (function () {
     function elementoTraco(t) {
       var b = blocoDe(t.a), bx = b ? b.offsetLeft : t.x, by = b ? b.offsetTop : t.y;
       var g = document.createElementNS(SVG_NS, 'path');
-      g.setAttribute('d', caminho(t.p));
+      g.setAttribute('d', desenhoDoTraco(t));
       g.setAttribute('transform', 'translate(' + bx + ' ' + by + ')');
       g.setAttribute('stroke', t.c);
       g.setAttribute('stroke-width', t.w);
@@ -827,7 +848,7 @@ var Resumos = (function () {
     doc.addEventListener('input', agendarTinta);
     doc.addEventListener('load', agendarTinta, true); // imagens que terminam de carregar mudam a altura
 
-    var caneta = { ligada: false, cor: '#1f2330', espessura: 3, marca: false, borracha: false };
+    var caneta = { ligada: false, cor: '#1f2330', espessura: 3, marca: false, borracha: false, forma: '', perfeito: true };
     var desfazerTinta = [];
     function guardarTinta() { desfazerTinta.push(JSON.stringify(tinta)); if (desfazerTinta.length > 60) desfazerTinta.shift(); }
     function local(e) {
@@ -863,6 +884,7 @@ var Resumos = (function () {
       var t = { id: Dados.novoId(), a: b.getAttribute('data-tinta'), x: b.offsetLeft, y: b.offsetTop,
         c: caneta.marca ? '#ffd600' : caneta.cor, w: caneta.marca ? 16 : caneta.espessura, o: caneta.marca ? 0.4 : 1,
         p: [[r1(p.x - b.offsetLeft), r1(p.y - b.offsetTop)]] };
+      if (caneta.forma) { t.f = caneta.forma; t.p.push(t.p[0].slice()); }
       tinta.push(t);
       riscando = { traco: t, el: elementoTraco(t) };
       tintaSvg.appendChild(riscando.el);
@@ -872,12 +894,28 @@ var Resumos = (function () {
       if (riscando.apagando) { apagarEm(e); return; }
       var t = riscando.traco, p = local(e), b = blocoDe(t.a);
       var x = r1(p.x - (b ? b.offsetLeft : t.x)), y = r1(p.y - (b ? b.offsetTop : t.y)), u = t.p[t.p.length - 1];
+      if (t.f) {
+        // Quadrado e círculo saem perfeitos; o Shift libera retângulo e elipse. Na linha, o Shift prende o ângulo.
+        var perfeito = t.f === 'linha' ? e.shiftKey : !e.shiftKey;
+        t.p[1] = ajustarForma(t.f, t.p[0], x, y, perfeito);
+        riscando.el.setAttribute('d', desenhoDoTraco(t));
+        return;
+      }
       if (Math.abs(x - u[0]) + Math.abs(y - u[1]) < 1.5) return;
       t.p.push([x, y]);
       riscando.el.setAttribute('d', caminho(t.p));
     });
     function fimTraco() {
       if (!riscando) return;
+      // Forma sem tamanho (só um clique) não fica no resumo.
+      var tr = riscando.traco;
+      if (tr && tr.f && Math.abs(tr.p[1][0] - tr.p[0][0]) + Math.abs(tr.p[1][1] - tr.p[0][1]) < 3) {
+        tinta = tinta.filter(function (x) { return x !== tr; });
+        riscando.el.remove();
+        desfazerTinta.pop();
+        riscando = null;
+        return;
+      }
       var mudou = !riscando.apagando || apagou;
       riscando = null;
       if (mudou) alterou();
@@ -903,18 +941,24 @@ var Resumos = (function () {
     });
     var botaoMarcaTinta = botao(el('span', { class: 'rb-marca' }, ['Marca-texto']), 'Marca-texto à mão', function () { caneta.marca = !caneta.marca; caneta.borracha = false; marcarCaneta(); });
     var botaoBorrachaTinta = botao('Borracha', 'Apagar traços (passe por cima)', function () { caneta.borracha = !caneta.borracha; marcarCaneta(); }, 'rb-texto');
+    var FORMAS = [['', 'Mão livre', 'Desenhar à mão livre'], ['linha', 'Linha', 'Linha reta (segure Shift para 0°, 45° ou 90°)'],
+      ['ret', 'Quadrado', 'Quadrado (segure Shift para retângulo)'], ['elipse', 'Círculo', 'Círculo (segure Shift para elipse)']];
+    var botoesForma = FORMAS.map(function (f) {
+      return botao(f[1], f[2], function () { caneta.forma = f[0]; caneta.borracha = false; marcarCaneta(); }, 'rb-texto');
+    });
     function marcarCaneta() {
       botoesCorTinta.forEach(function (b, i) { b.classList.toggle('ativo', !caneta.marca && !caneta.borracha && CORES_TINTA[i] === caneta.cor); });
       botoesEspTinta.forEach(function (b, i) { b.classList.toggle('ativo', !caneta.marca && !caneta.borracha && [2, 3, 6][i] === caneta.espessura); });
       botaoMarcaTinta.classList.toggle('ativo', caneta.marca && !caneta.borracha);
       botaoBorrachaTinta.classList.toggle('ativo', caneta.borracha);
+      botoesForma.forEach(function (b, i) { b.classList.toggle('ativo', !caneta.borracha && FORMAS[i][0] === caneta.forma); });
       pagina.classList.toggle('caneta-borracha', caneta.borracha);
     }
     var barraCaneta = el('div', { class: 'rb-grupo rb-tabela rb-caneta', hidden: true }, [
       el('span', { class: 'rb-rotulo', text: 'Caneta' }),
       el('span', { class: 'rb-cores-caneta' }, botoesCorTinta),
       el('span', { class: 'rbb-sep' })
-    ].concat(botoesEspTinta, [
+    ].concat(botoesForma, [el('span', { class: 'rbb-sep' })], botoesEspTinta, [
       el('span', { class: 'rbb-sep' }), botaoMarcaTinta, botaoBorrachaTinta, el('span', { class: 'rbb-sep' }),
       botao('Desfazer', 'Desfazer o último traço', function () { var u = desfazerTinta.pop(); if (u == null) return; tinta = JSON.parse(u); desenharTinta(); alterou(); }, 'rb-texto'),
       botao('Apagar tudo', 'Apagar todos os traços deste resumo', function () {
