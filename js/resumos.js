@@ -310,6 +310,97 @@ var Resumos = (function () {
     function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
     // ---------- Tabelas ----------
+    // As operações usam um mapa da grade (linha, coluna, quantas linhas e colunas cada célula ocupa),
+    // para funcionar também com células mescladas. Depois de mudar o mapa, a tabela é remontada.
+    function modeloTabela(tab) {
+      var celulas = [], grade = [];
+      Array.prototype.forEach.call(tab.rows, function (tr, r) {
+        grade[r] = grade[r] || [];
+        var c = 0;
+        Array.prototype.forEach.call(tr.cells, function (td) {
+          while (grade[r][c]) c++;
+          var cel = { el: td, r: r, c: c, rs: Math.max(1, td.rowSpan || 1), cs: Math.max(1, td.colSpan || 1) };
+          celulas.push(cel);
+          for (var i = 0; i < cel.rs; i++) {
+            grade[r + i] = grade[r + i] || [];
+            for (var j = 0; j < cel.cs; j++) grade[r + i][c + j] = cel;
+          }
+          c += cel.cs;
+        });
+      });
+      return {
+        tab: tab, celulas: celulas,
+        linhas: grade.length,
+        colunas: grade.reduce(function (m, l) { return Math.max(m, l.length); }, 0)
+      };
+    }
+    function noModelo(m, el) { return m.celulas.filter(function (x) { return x.el === el; })[0] || null; }
+    function novaCelula() { var n = document.createElement('td'); n.innerHTML = '<br>'; return n; }
+    function remontar(m) {
+      var tab = m.tab;
+      var corpo = tab.tBodies[0] || tab.appendChild(document.createElement('tbody'));
+      Array.prototype.slice.call(tab.rows).forEach(function (tr) { tr.remove(); });
+      Array.prototype.slice.call(tab.querySelectorAll('thead, tfoot')).forEach(function (x) { x.remove(); });
+      Array.prototype.slice.call(tab.tBodies).forEach(function (b) { if (b !== corpo) b.remove(); });
+      var total = m.celulas.reduce(function (n, x) { return Math.max(n, x.r + x.rs); }, 0);
+      for (var r = 0; r < total; r++) {
+        var tr = document.createElement('tr');
+        m.celulas.filter(function (x) { return x.r === r; }).sort(function (a, b) { return a.c - b.c; }).forEach(function (x) {
+          if (x.rs > 1) x.el.rowSpan = x.rs; else x.el.removeAttribute('rowspan');
+          if (x.cs > 1) x.el.colSpan = x.cs; else x.el.removeAttribute('colspan');
+          tr.appendChild(x.el);
+        });
+        corpo.appendChild(tr);
+      }
+    }
+    // Inserir na posição k: células que atravessam a posição crescem; as outras andam uma casa.
+    function inserirLinha(m, k) {
+      var cobertas = {};
+      m.celulas.forEach(function (x) {
+        if (x.r < k && x.r + x.rs > k) { x.rs++; for (var j = 0; j < x.cs; j++) cobertas[x.c + j] = true; }
+        else if (x.r >= k) x.r++;
+      });
+      for (var c = 0; c < m.colunas; c++) if (!cobertas[c]) m.celulas.push({ el: novaCelula(), r: k, c: c, rs: 1, cs: 1 });
+    }
+    function inserirColuna(m, k) {
+      var cobertas = {};
+      m.celulas.forEach(function (x) {
+        if (x.c < k && x.c + x.cs > k) { x.cs++; for (var i = 0; i < x.rs; i++) cobertas[x.r + i] = true; }
+        else if (x.c >= k) x.c++;
+      });
+      for (var r = 0; r < m.linhas; r++) if (!cobertas[r]) m.celulas.push({ el: novaCelula(), r: r, c: k, rs: 1, cs: 1 });
+    }
+    // Excluir linhas (ou colunas): células mescladas encolhem; as que ficam sem nenhuma linha somem.
+    function excluirFaixas(m, conjunto, eixo) {
+      var ini = eixo === 'r' ? 'r' : 'c', tam = eixo === 'r' ? 'rs' : 'cs';
+      function nova(pos) { var n = 0; for (var i = 0; i < pos; i++) if (conjunto[i]) n++; return pos - n; }
+      m.celulas = m.celulas.filter(function (x) {
+        var vivas = [];
+        for (var i = x[ini]; i < x[ini] + x[tam]; i++) if (!conjunto[i]) vivas.push(i);
+        if (!vivas.length) { x.el.remove(); return false; }
+        x[ini] = nova(vivas[0]);
+        x[tam] = vivas.length;
+        return true;
+      });
+    }
+    // Retângulo entre duas células, aumentado até conter inteiras as células mescladas que ele toca.
+    function retangulo(m, a, b) {
+      var r0 = Math.min(a.r, b.r), c0 = Math.min(a.c, b.c);
+      var r1 = Math.max(a.r + a.rs, b.r + b.rs) - 1, c1 = Math.max(a.c + a.cs, b.c + b.cs) - 1, mudou = true;
+      while (mudou) {
+        mudou = false;
+        m.celulas.forEach(function (x) {
+          if (x.r > r1 || x.r + x.rs - 1 < r0 || x.c > c1 || x.c + x.cs - 1 < c0) return;
+          if (x.r < r0) { r0 = x.r; mudou = true; }
+          if (x.c < c0) { c0 = x.c; mudou = true; }
+          if (x.r + x.rs - 1 > r1) { r1 = x.r + x.rs - 1; mudou = true; }
+          if (x.c + x.cs - 1 > c1) { c1 = x.c + x.cs - 1; mudou = true; }
+        });
+      }
+      return m.celulas.filter(function (x) { return x.r >= r0 && x.r + x.rs - 1 <= r1 && x.c >= c0 && x.c + x.cs - 1 <= c1; });
+    }
+    function temConteudo(el) { return !!(el.textContent.trim() || el.querySelector('img, table, hr')); }
+
     function tabela(acao, c) {
       if (acao === 'inserir') {
         var linhas = '';
@@ -318,48 +409,82 @@ var Resumos = (function () {
         return;
       }
       if (!c) return;
-      var tr = c.parentElement, tab = c.closest('table'), indice = Array.prototype.indexOf.call(tr.children, c), linhaAntes = tr.rowIndex;
-      function novaLinha() {
-        var nova = document.createElement('tr');
-        Array.prototype.forEach.call(tr.children, function (x) { var n = document.createElement('td'); n.innerHTML = '<br>'; if (x.style.width) n.style.width = x.style.width; nova.appendChild(n); });
-        return nova;
-      }
-      function novaColuna(antes) {
-        tab.querySelectorAll('tr').forEach(function (r) {
-          var ref = r.children[Math.min(indice, r.children.length - 1)];
-          var nova = document.createElement(ref && ref.tagName === 'TH' ? 'th' : 'td');
-          nova.innerHTML = '<br>';
-          if (!ref) r.appendChild(nova); else if (antes) ref.before(nova); else ref.after(nova);
+      var tab = c.closest('table');
+      if (acao === 'excluir') { tab.remove(); esconderBarraTabela(); alterou(); return; }
+      if (acao === 'larguras') { tab.querySelectorAll('td,th').forEach(function (x) { x.style.width = ''; }); alterou(); return; }
+
+      var m = modeloTabela(tab), x = noModelo(m, c);
+      if (!x) return;
+      var marcadas = celulasMarcadas(c).map(function (el) { return noModelo(m, el); }).filter(Boolean);
+      var linhaAntes = x.r, colunaAntes = x.c, foco = c;
+
+      if (acao === 'linha-acima') inserirLinha(m, x.r);
+      else if (acao === 'linha-abaixo') inserirLinha(m, x.r + x.rs);
+      else if (acao === 'coluna-esquerda') inserirColuna(m, x.c);
+      else if (acao === 'coluna-direita') inserirColuna(m, x.c + x.cs);
+      else if (acao === 'menos-linha' || acao === 'menos-coluna') {
+        var porLinha = acao === 'menos-linha', conjunto = {}, quantas = 0;
+        marcadas.forEach(function (y) {
+          var ini = porLinha ? y.r : y.c, tam = porLinha ? y.rs : y.cs;
+          for (var i = ini; i < ini + tam; i++) if (!conjunto[i]) { conjunto[i] = true; quantas++; }
+        });
+        if (quantas >= (porLinha ? m.linhas : m.colunas)) { tab.remove(); esconderBarraTabela(); alterou(); return; }
+        excluirFaixas(m, conjunto, porLinha ? 'r' : 'c');
+      } else if (acao === 'mesclar') {
+        if (marcadas.length < 2) { UI.aviso('Marque duas ou mais células (arraste o mouse ou use Shift+clique)'); return; }
+        var r0 = Math.min.apply(null, marcadas.map(function (y) { return y.r; }));
+        var c0 = Math.min.apply(null, marcadas.map(function (y) { return y.c; }));
+        var r1 = Math.max.apply(null, marcadas.map(function (y) { return y.r + y.rs; }));
+        var c1 = Math.max.apply(null, marcadas.map(function (y) { return y.c + y.cs; }));
+        var base = marcadas.filter(function (y) { return y.r === r0 && y.c === c0; })[0];
+        if (!base) return;
+        // O texto das outras células vai para a célula de cima à esquerda, uma linha para cada.
+        marcadas.sort(function (a, b) { return a.r - b.r || a.c - b.c; }).forEach(function (y) {
+          if (y === base) return;
+          if (temConteudo(y.el)) {
+            if (temConteudo(base.el)) base.el.appendChild(document.createElement('br'));
+            else base.el.innerHTML = '';
+            while (y.el.firstChild) base.el.appendChild(y.el.firstChild);
+          }
+          y.el.remove();
+        });
+        m.celulas = m.celulas.filter(function (y) { return y === base || marcadas.indexOf(y) < 0; });
+        base.rs = r1 - r0;
+        base.cs = c1 - c0;
+        foco = base.el;
+      } else if (acao === 'separar') {
+        var alvos = marcadas.filter(function (y) { return y.rs > 1 || y.cs > 1; });
+        if (!alvos.length) { UI.aviso('Clique numa célula mesclada para separá-la'); return; }
+        alvos.forEach(function (y) {
+          for (var i = 0; i < y.rs; i++) for (var j = 0; j < y.cs; j++) {
+            if (i || j) m.celulas.push({ el: novaCelula(), r: y.r + i, c: y.c + j, rs: 1, cs: 1 });
+          }
+          y.rs = 1;
+          y.cs = 1;
         });
       }
-      if (acao === 'linha-acima') tr.before(novaLinha());
-      else if (acao === 'linha-abaixo') tr.after(novaLinha());
-      else if (acao === 'coluna-esquerda') novaColuna(true);
-      else if (acao === 'coluna-direita') novaColuna(false);
-      else if (acao === 'menos-linha') {
-        var linhas = celulasMarcadas(c).map(function (x) { return x.parentElement; }).filter(function (x, i, l) { return l.indexOf(x) === i; });
-        if (linhas.length >= tab.rows.length) tab.remove(); else linhas.forEach(function (x) { x.remove(); });
-      } else if (acao === 'menos-coluna') {
-        var colunas = celulasMarcadas(c).map(function (x) { return x.cellIndex; }).filter(function (x, i, l) { return l.indexOf(x) === i; }).sort(function (a, b) { return b - a; });
-        var resta = 0;
-        Array.prototype.forEach.call(tab.rows, function (r) { colunas.forEach(function (j) { if (r.cells[j]) r.cells[j].remove(); }); resta = Math.max(resta, r.cells.length); });
-        if (!resta) tab.remove();
-      } else if (acao === 'excluir') tab.remove();
-      else if (acao === 'larguras') tab.querySelectorAll('td,th').forEach(function (x) { x.style.width = ''; });
+      remontar(m);
       limparSelecaoCelulas();
-      if (!tab.isConnected) esconderBarraTabela();
-      else if (!c.isConnected) {
+      if (!tab.isConnected) { esconderBarraTabela(); }
+      else if (!foco.isConnected) {
         // A célula do cursor foi excluída: o cursor vai para a vizinha e a barra da tabela continua aberta.
-        var linha = tab.rows[Math.min(linhaAntes, tab.rows.length - 1)];
-        var vizinha = linha && linha.cells[Math.min(indice, linha.cells.length - 1)];
-        if (vizinha) { prenderCursor(vizinha); mostrarBarraTabela(vizinha); } else esconderBarraTabela();
-      }
+        var depois = modeloTabela(tab), perto = null, melhor = Infinity;
+        depois.celulas.forEach(function (y) {
+          var d = Math.abs(y.r - linhaAntes) * 100 + Math.abs(y.c - colunaAntes);
+          if (d < melhor) { melhor = d; perto = y; }
+        });
+        if (perto) { prenderCursor(perto.el); mostrarBarraTabela(perto.el); } else esconderBarraTabela();
+      } else { prenderCursor(foco); mostrarBarraTabela(foco); }
       alterou();
     }
 
+    // Células cuja borda direita é a mesma da célula arrastada (as mescladas por cima ficam de fora).
     function colunaDe(c) {
-      var tab = c.closest('table'), i = Array.prototype.indexOf.call(c.parentElement.children, c);
-      return Array.prototype.map.call(tab.querySelectorAll('tr'), function (r) { return r.children[i]; }).filter(Boolean);
+      var m = modeloTabela(c.closest('table')), x = noModelo(m, c);
+      if (!x) return [c];
+      var fim = x.c + x.cs - 1;
+      var lista = m.celulas.filter(function (y) { return y.cs === 1 && y.c === fim; }).map(function (y) { return y.el; });
+      return lista.length ? lista : [c];
     }
 
     // Largura da coluna: arrastar a borda direita de qualquer célula.
@@ -647,14 +772,10 @@ var Resumos = (function () {
       limparSelecaoCelulas();
       var tab = a.closest('table');
       if (a === b || tab !== b.closest('table')) return;
-      var l0 = Math.min(a.parentElement.rowIndex, b.parentElement.rowIndex), l1 = Math.max(a.parentElement.rowIndex, b.parentElement.rowIndex);
-      var c0 = Math.min(a.cellIndex, b.cellIndex), c1 = Math.max(a.cellIndex, b.cellIndex);
-      Array.prototype.forEach.call(tab.rows, function (r, i) {
-        if (i < l0 || i > l1) return;
-        Array.prototype.forEach.call(r.cells, function (x, j) { if (j >= c0 && j <= c1) x.classList.add('celula-sel'); });
-      });
-    }
-    function celulasMarcadas(c) {
+      var m = modeloTabela(tab), x = noModelo(m, a), y = noModelo(m, b);
+      if (!x || !y) return;
+      retangulo(m, x, y).forEach(function (z) { z.el.classList.add('celula-sel'); });
+    }    function celulasMarcadas(c) {
       var m = Array.prototype.slice.call(c.closest('table').querySelectorAll('.celula-sel'));
       return m.length ? m : [c];
     }
@@ -1086,6 +1207,10 @@ var Resumos = (function () {
         celulasMarcadas(celulaBarra).forEach(function (x) { x.style.backgroundColor = cor; });
         alterou();
       }, el('span', { class: 'rb-preench' }, [el('i'), 'Preenchimento'])),
+      el('span', { class: 'rbb-sep' }),
+      opcaoTabela('Mesclar células', 'Juntar as células marcadas numa só', function (c) { tabela('mesclar', c); }),
+      opcaoTabela('Separar células', 'Separar a célula mesclada', function (c) { tabela('separar', c); }),
+      el('span', { class: 'rbb-sep' }),
       opcaoTabela('Larguras iguais', 'Voltar as colunas à largura automática', function (c) { tabela('larguras', c); }),
       opcaoTabela('Excluir tabela', 'Excluir a tabela inteira', function (c) { UI.confirmar('Excluir esta tabela inteira?', function () { tabela('excluir', c); }, 'Excluir'); }, 'rb-perigo'),
       el('span', { class: 'rb-dica', text: 'Para marcar várias células, arraste o mouse ou use Shift+clique. Para mudar a largura, arraste a borda da coluna.' })
