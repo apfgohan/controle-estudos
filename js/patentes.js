@@ -16,7 +16,18 @@ var Patentes = (function () {
   // Fica no código (e não nos dados) para gravar a ativação nunca fazer um aparelho desatualizado parecer mais novo que a nuvem.
   var ATIVACAO = '2026-11-06';
 
-  var XP = { QUESTAO: 1, ACERTO: 1, TOPICO: 20, ETAPA: 50, META: 200, SEQUENCIA_MAX: 100 };
+  var XP = { QUESTAO: 1, TOPICO: 20, ETAPA: 50, META: 200, SEQUENCIA_MAX: 100 };
+  // Bônus por desempenho: o acerto de cada bateria (caderno lançado num estudo) multiplica o XP das questões.
+  // Baterias com menos de BONUS_MINIMO questões valem sempre 1×.
+  var BONUS = [[90, 2], [85, 1.75], [80, 1.5]], BONUS_MINIMO = 10;
+
+  function multiplicador(n, acertos) {
+    if (n < BONUS_MINIMO) return 1;
+    var pct = acertos / n * 100;
+    for (var i = 0; i < BONUS.length; i++) if (pct >= BONUS[i][0]) return BONUS[i][1];
+    return 1;
+  }
+  function xpDaBateria(n, acertos) { return Math.round(n * XP.QUESTAO * multiplicador(n, acertos)); }
   var FALTAS_SEGUIDAS = 3, FALTAS_NO_MES = 5;
   var CHAVE_VISTA = 'controle-estudos.patente-vista';
 
@@ -48,12 +59,12 @@ var Patentes = (function () {
   // Guarda também o ganho de cada estudo lançado, para mostrar o XP do dia por atividade.
   function ganhosPorDia() {
     var db = Dados.db, dias = {}, acum = {};
-    function dia(d) { return dias[d] || (dias[d] = { sessoes: 0, segundos: 0, minutos: 0, questoes: 0, acertos: 0, topicos: 0, etapas: 0, linhas: [], registros: [], topicosAvulsos: 0 }); }
+    function dia(d) { return dias[d] || (dias[d] = { sessoes: 0, segundos: 0, minutos: 0, questoes: 0, acertos: 0, bonus: 0, topicos: 0, etapas: 0, linhas: [], registros: [], topicosAvulsos: 0 }); }
     db.sessoes.slice().sort(function (a, b) {
       return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
     }).forEach(function (s) {
       var g = dia(s.data);
-      var reg = { sessao: s, minutos: Math.round((s.segundos || 0) / 60), questoes: 0, acertos: 0, etapas: 0, topicos: 0 };
+      var reg = { sessao: s, minutos: Math.round((s.segundos || 0) / 60), questoes: 0, acertos: 0, bonus: 0, baterias: [], etapas: 0, topicos: 0 };
       g.sessoes++;
       g.segundos += s.segundos || 0;
       g.minutos += reg.minutos;
@@ -63,7 +74,13 @@ var Patentes = (function () {
         g.acertos += a;
         reg.questoes += n;
         reg.acertos += a;
-        if (n) g.linhas.push({ n: n, a: a });
+        if (n) {
+          g.linhas.push({ n: n, a: a });
+          var xpBat = xpDaBateria(n, a), extra = xpBat - n * XP.QUESTAO;
+          g.bonus += extra;
+          reg.bonus += extra;
+          reg.baterias.push({ n: n, a: a, mult: multiplicador(n, a), xp: xpBat });
+        }
         if (!l.cadernoId) return;
         // Cada rodada das favoritadas tem contagem própria.
         var chaveAcum = l.rodada ? l.cadernoId + '|' + l.rodada : l.cadernoId;
@@ -88,7 +105,7 @@ var Patentes = (function () {
   }
 
   function xpDoRegistro(x) {
-    return x.minutos + x.questoes * XP.QUESTAO + x.acertos * XP.ACERTO + x.etapas * XP.ETAPA + x.topicos * XP.TOPICO;
+    return x.minutos + x.questoes * XP.QUESTAO + x.bonus + x.etapas * XP.ETAPA + x.topicos * XP.TOPICO;
   }
 
   // Quantas etapas (baterias, simulado, erros, favoritadas) esta linha de sessão concluiu.
@@ -125,7 +142,7 @@ var Patentes = (function () {
     var datas = Object.keys(dias).sort();
     var r = {
       xp: 0, eventos: [], sequencia: 0, melhorSequencia: 0, estudouHoje: !!(dias[hoje] && dias[hoje].sessoes),
-      fontes: { tempo: 0, questoes: 0, acertos: 0, topicos: 0, etapas: 0, metas: 0, sequencia: 0, perdido: 0, limite: 0 },
+      fontes: { tempo: 0, questoes: 0, bonus: 0, topicos: 0, etapas: 0, metas: 0, sequencia: 0, perdido: 0, limite: 0 },
       faltasMes: 0, faltasSeguidas: 0, pausa: pausaEm(hoje),
       dias: {} // XP de cada dia: { registros, topicosAvulsos, meta, sequencia, limite, rebaixamento }
     };
@@ -162,7 +179,7 @@ var Patentes = (function () {
 
       if (g) {
         var f = r.fontes;
-        var tempo = g.minutos, questoes = g.questoes * XP.QUESTAO, acertos = g.acertos * XP.ACERTO;
+        var tempo = g.minutos, questoes = g.questoes * XP.QUESTAO, bonus = g.bonus;
         var topicos = g.topicos * XP.TOPICO, etapas = g.etapas * XP.ETAPA, bonusMeta = 0, bonusSeq = 0;
         var chave = inicioSemana(d), sem = semanas[chave] || (semanas[chave] = { segundos: 0, questoes: 0 });
         if (metaSeg && sem.segundos < metaSeg && sem.segundos + g.segundos >= metaSeg) bonusMeta += XP.META;
@@ -174,9 +191,9 @@ var Patentes = (function () {
           if (r.sequencia > r.melhorSequencia) r.melhorSequencia = r.sequencia;
           bonusSeq = Math.min(XP.SEQUENCIA_MAX, r.sequencia);
         }
-        f.tempo += tempo; f.questoes += questoes; f.acertos += acertos; f.topicos += topicos;
+        f.tempo += tempo; f.questoes += questoes; f.bonus += bonus; f.topicos += topicos;
         f.etapas += etapas; f.metas += bonusMeta; f.sequencia += bonusSeq;
-        r.xp += tempo + questoes + acertos + topicos + etapas + bonusMeta + bonusSeq;
+        r.xp += tempo + questoes + bonus + topicos + etapas + bonusMeta + bonusSeq;
         historico = historico.concat(g.linhas);
         promover(d);
         // Sem o acerto exigido, a patente fica travada e o XP não passa do início da próxima: o excedente é perdido.
@@ -689,8 +706,10 @@ var Patentes = (function () {
   function detalheRegistro(x) {
     var partes = [];
     if (x.minutos) partes.push((x.minutos >= 60 ? Math.floor(x.minutos / 60) + 'h' + (x.minutos % 60 ? String(x.minutos % 60).padStart(2, '0') : '') : x.minutos + 'min') + ' de estudo (+' + x.minutos + ')');
-    if (x.questoes) partes.push(x.questoes + (x.questoes === 1 ? ' questão' : ' questões') + ' (+' + x.questoes * XP.QUESTAO + ')');
-    if (x.acertos) partes.push(x.acertos + (x.acertos === 1 ? ' acerto' : ' acertos') + ' (+' + x.acertos * XP.ACERTO + ')');
+    x.baterias.forEach(function (b) {
+      var q = b.n + (b.n === 1 ? ' questão' : ' questões');
+      partes.push(b.mult > 1 ? q + ' a ' + Math.round(b.a / b.n * 100) + '% (×' + String(b.mult).replace('.', ',') + '): +' + b.xp : q + ' (+' + b.xp + ')');
+    });
     if (x.topicos) partes.push(x.topicos + (x.topicos === 1 ? ' tópico concluído' : ' tópicos concluídos') + ' (+' + x.topicos * XP.TOPICO + ')');
     if (x.etapas) partes.push(x.etapas + (x.etapas === 1 ? ' etapa concluída' : ' etapas concluídas') + ' (+' + x.etapas * XP.ETAPA + ')');
     return partes.join(' · ');
@@ -746,7 +765,7 @@ var Patentes = (function () {
     var r = calcular();
     var f = r.fontes;
     var fontes = [
-      ['Tempo de estudo', f.tempo], ['Questões resolvidas', f.questoes], ['Acertos', f.acertos],
+      ['Tempo de estudo', f.tempo], ['Questões resolvidas', f.questoes], ['Bônus por desempenho', f.bonus],
       ['Tópicos concluídos', f.topicos], ['Baterias e etapas concluídas', f.etapas],
       ['Metas semanais', f.metas], ['Sequência de estudos', f.sequencia]
     ];
