@@ -17,6 +17,9 @@
   --azul-claro: #16264a;
   --azul-borda: #26427a;
   --roxo: #6d7cf5;
+  --roxo-texto: #c7a8ff;
+  --roxo-claro: #2a1d48;
+  --roxo-borda: #4e3683;
   --destaque-rgb: 59, 140, 240;
   --gradiente: linear-gradient(135deg, #4a9af5, #2f6fe0);
   --gradiente-vertical: linear-gradient(180deg, #7db8ff, #3b8cf0);
@@ -152,6 +155,7 @@ h1, h2, p { margin: 0; }
 .selo-perigo { background: var(--vermelho); color: #fff; }
 .selo-aviso { background: var(--amarelo); color: #fff; }
 .selo-info { background: var(--azul-claro); color: var(--azul-escuro); }
+.selo-anki { background: var(--teal-claro); color: var(--teal); }
 .pilula { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--borda); color: var(--texto-2); font-weight: 600; font-size: 15px; white-space: nowrap; }
 .pilula.completo { background: var(--verde-claro); border-color: var(--verde-borda); color: var(--verde-texto); }
 .chip-cor { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--borda); border-radius: 10px; font-size: 12px; font-weight: 700; color: var(--texto-2); text-transform: uppercase; }
@@ -725,6 +729,7 @@ a.item-link:hover .chip-link.ativo { background: var(--teal); color: #fff; }
 /* A cor acompanha o tipo da tarefa: teoria azul, questões verde, favoritadas amarelo, erros vermelho. */
 .recomendacao, .etapa-teoria { --tipo-fundo: var(--azul-claro); --tipo-borda: var(--azul-borda); --tipo-texto: var(--azul-escuro); }
 .recomendacao.rec-questoes, .etapa-questoes { --tipo-fundo: var(--verde-claro); --tipo-borda: var(--verde-borda); --tipo-texto: var(--verde-texto); }
+.recomendacao.rec-simulado, .etapa-simulado { --tipo-fundo: var(--roxo-claro); --tipo-borda: var(--roxo-borda); --tipo-texto: var(--roxo-texto); }
 .recomendacao.rec-favoritas, .etapa-favoritas { --tipo-fundo: var(--amarelo-claro); --tipo-borda: var(--amarelo-borda); --tipo-texto: var(--amarelo-texto); }
 .recomendacao.rec-erros, .etapa-erros { --tipo-fundo: var(--vermelho-claro); --tipo-borda: var(--vermelho-borda); --tipo-texto: var(--vermelho); }
 .recomendacao { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--raio); background: var(--tipo-fundo); border: 1px solid var(--tipo-borda); }
@@ -1221,18 +1226,42 @@ a.rec-caderno:hover { text-decoration: underline; }
 .meta-materia .data-fraca { font-size: 13px; font-weight: 600; }
 .meta-titulo { font-weight: 700; color: var(--texto); }
 .meta-detalhe { font-size: 13px; color: var(--texto-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meta-tipo { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 5px 10px; border-radius: 999px; background: var(--tipo-fundo); border: 1px solid var(--tipo-borda); color: var(--tipo-texto); font-size: 12px; font-weight: 800; white-space: nowrap; }
+.meta-tipo { display: inline-flex; align-items: center; gap: 6px; justify-self: center; padding: 5px 10px; border-radius: 999px; background: var(--tipo-fundo); border: 1px solid var(--tipo-borda); color: var(--tipo-texto); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .meta-tipo .icone { width: 15px; height: 15px; }
 .meta-acerto { position: relative; width: 70px; }
 .meta-acerto svg { display: block; width: 100%; }
 .meta-acerto span { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.meta-estrelas { color: var(--ouro); font-size: 15px; letter-spacing: 1px; white-space: nowrap; text-align: right; }
+.meta-estrelas { justify-self: center; color: var(--ouro); font-size: 15px; letter-spacing: 1px; white-space: nowrap; }
 .meta-estrelas .vazia { color: var(--borda-forte); }
-.meta-estrelas.meta-sem { font-size: 11px; font-weight: 600; letter-spacing: 0; color: var(--texto-3); white-space: normal; }
+.meta-caneta { justify-self: center; width: 38px; line-height: 0; }
+.meta-caneta svg { display: block; width: 100%; overflow: visible; }
+.caneta-folha { fill: none; stroke: var(--texto-3); stroke-width: 1.5; stroke-linejoin: round; }
+.caneta-linha { fill: none; stroke: var(--texto-2); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.caneta-linha-1 { animation: caneta-linha-1 4.2s linear infinite; }
+.caneta-linha-2 { animation: caneta-linha-2 4.2s linear infinite; }
+.caneta-linha-3 { animation: caneta-linha-3 4.2s linear infinite; }
+.caneta-ponta { fill: var(--superficie-2); stroke: var(--texto); stroke-width: 1.5; stroke-linejoin: round; animation: caneta-ponta 4.2s linear infinite; }
+@keyframes caneta-ponta {
+  0% { transform: translate(17px, 6px); }
+  26% { transform: translate(31px, 6px); }
+  32% { transform: translate(17px, 12.5px); }
+  58% { transform: translate(31px, 12.5px); }
+  64% { transform: translate(17px, 19px); }
+  82%, 92% { transform: translate(26px, 19px); }
+  100% { transform: translate(17px, 6px); }
+}
+@keyframes caneta-linha-1 { 0% { stroke-dashoffset: 1; } 26%, 92% { stroke-dashoffset: 0; } 96%, 100% { stroke-dashoffset: 1; } }
+@keyframes caneta-linha-2 { 0%, 32% { stroke-dashoffset: 1; } 58%, 92% { stroke-dashoffset: 0; } 96%, 100% { stroke-dashoffset: 1; } }
+@keyframes caneta-linha-3 { 0%, 64% { stroke-dashoffset: 1; } 82%, 92% { stroke-dashoffset: 0; } 96%, 100% { stroke-dashoffset: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .caneta-linha, .caneta-ponta { animation: none; }
+  .caneta-linha { stroke-dashoffset: 0; }
+  .caneta-ponta { transform: translate(26px, 19px); }
+}
 @media (max-width: 1100px) {
   .meta-cartao { grid-template-columns: 52px minmax(0, 1fr) 70px; grid-template-areas: "num corpo acerto" "num tipo estrelas"; row-gap: 6px; }
   .meta-num { grid-area: num; } .meta-corpo { grid-area: corpo; } .meta-acerto { grid-area: acerto; }
-  .meta-tipo { grid-area: tipo; margin-left: 16px; } .meta-estrelas { grid-area: estrelas; }
+  .meta-tipo { grid-area: tipo; margin-left: 16px; justify-self: start; } .meta-estrelas, .meta-caneta { grid-area: estrelas; }
 }
 @media (max-width: 520px) {
   .meta-cartao { grid-template-columns: 40px minmax(0, 1fr) 60px; gap: 10px; padding: 10px; }

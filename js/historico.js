@@ -54,7 +54,7 @@ var Historico = (function () {
       return el('option', { value: d.id, text: d.nome, selected: filtros.disciplina === d.id });
     })));
 
-    var tipos = el('div', { class: 'segmentado' }, [['', 'Todos'], ['teoria', 'Teoria'], ['questoes', 'Questões'], ['revisao', 'Revisão']].map(function (t) {
+    var tipos = el('div', { class: 'segmentado' }, [['', 'Todos'], ['teoria', 'Teoria'], ['questoes', 'Questões'], ['revisao', 'Revisão'], ['anki', 'Anki']].map(function (t) {
       return el('button', { type: 'button', class: filtros.tipo === t[0] ? 'ativo' : '', text: t[1], onclick: function () { filtros.tipo = t[0]; aplicar(); } });
     }));
 
@@ -87,14 +87,15 @@ var Historico = (function () {
 
   // ---------- Lista por dia ----------
   function linhaSessao(s) {
-    var d = Dados.disciplina(s.disciplinaId);
+    var anki = s.tipo === 'anki';
+    var d = anki ? null : Dados.disciplina(s.disciplinaId);
     var q = resumir([s]);
     return el('div', { class: 'registro' }, [
       el('div', { class: 'registro-tipo' }, Sessao.seloTipo(s.tipo)),
       el('div', { class: 'registro-corpo' }, [
         el('div', { class: 'registro-disc' }, [
-          el('span', { class: 'bolinha', style: { background: d ? d.cor : '#ccc' } }),
-          el('span', { text: d ? d.nome : '(disciplina excluída)' })
+          el('span', { class: 'bolinha', style: { background: anki ? 'var(--teal)' : d ? d.cor : '#ccc' } }),
+          el('span', { text: anki ? 'Anki' : d ? d.nome : '(disciplina excluída)' })
         ]),
         el('div', { class: 'registro-detalhe', text: Sessao.descrever(s) }),
         s.anotacao ? el('div', { class: 'registro-anotacao' }, [UI.icone('nota'), el('span', { text: s.anotacao })]) : null
@@ -138,7 +139,7 @@ var Historico = (function () {
       el('div', null, [el('strong', { text: UI.fmtNum(sessoes.length) }), sessoes.length === 1 ? ' sessão' : ' sessões']),
       el('div', null, [el('strong', { text: fmtHoras(total.segundos) }), ' de estudo']),
       el('div', null, [el('strong', { text: UI.fmtNum(total.feitas) }), ' questões', total.feitas ? [' · ', UI.acerto(total.pct, total.feitas)] : null]),
-      el('div', { class: 'data-fraca', text: porTipo.teoria + ' teoria · ' + porTipo.questoes + ' questões · ' + porTipo.revisao + ' revisão' })
+      el('div', { class: 'data-fraca', text: porTipo.teoria + ' teoria · ' + porTipo.questoes + ' questões · ' + porTipo.revisao + ' revisão' + (porTipo.anki ? ' · ' + porTipo.anki + ' Anki' : '') })
     ]));
 
     if (!sessoes.length) {

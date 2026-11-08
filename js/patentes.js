@@ -60,7 +60,8 @@ var Patentes = (function () {
   function ganhosPorDia() {
     var db = Dados.db, dias = {}, acum = {};
     function dia(d) { return dias[d] || (dias[d] = { sessoes: 0, segundos: 0, minutos: 0, questoes: 0, acertos: 0, bonus: 0, topicos: 0, etapas: 0, linhas: [], registros: [], topicosAvulsos: 0 }); }
-    db.sessoes.slice().sort(function (a, b) {
+    // O tempo de Anki não rende XP nem conta como dia estudado.
+    db.sessoes.filter(function (s) { return s.tipo !== 'anki'; }).sort(function (a, b) {
       return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
     }).forEach(function (s) {
       var g = dia(s.data);

@@ -11,7 +11,7 @@ var Previsao = (function () {
   function medidas(disciplinaId) {
     var m = { segTeoria: 0, segQuestoes: 0, questoes: 0, erros: 0, topicos: 0 };
     Dados.db.sessoes.forEach(function (s) {
-      if (disciplinaId && s.disciplinaId !== disciplinaId) return;
+      if (s.tipo === 'anki' || (disciplinaId && s.disciplinaId !== disciplinaId)) return;
       if (s.tipo === 'teoria') { m.segTeoria += s.segundos || 0; return; }
       m.segQuestoes += s.segundos || 0;
       (s.cadernos || []).forEach(function (l) {
@@ -153,7 +153,7 @@ var Previsao = (function () {
   function ritmo() {
     var de = UI.somarDias(UI.hoje(), -(JANELA_DIAS - 1)), seg = 0, n = 0;
     Dados.db.sessoes.forEach(function (s) {
-      if (s.data < de) return;
+      if (s.data < de || s.tipo === 'anki') return; // o Anki não avança o edital
       seg += s.segundos || 0;
       n++;
     });

@@ -42,14 +42,19 @@ var Sessao = (function () {
     caixa.innerHTML = '';
     if (!cron) {
       caixa.appendChild(UI.botao('Cronômetro', function () { iniciarCron(null); }, 'btn-secundario btn-cron', 'relogio'));
+      var btnAnki = UI.botao('Anki', function () { abrirAnki({}); }, 'btn-secundario btn-cron', 'cartas');
+      btnAnki.title = 'Registrar o tempo gasto no Anki';
+      btnAnki.setAttribute('aria-label', 'Anki');
+      caixa.appendChild(btnAnki);
       caixa.appendChild(UI.botao('+ Estudo extra', function () { abrir({}); }, 'btn-primario', null));
       return;
     }
+    var anki = !!(cron.contexto && cron.contexto.tipo === 'anki');
     var d = cron.contexto && Dados.disciplina(cron.contexto.disciplinaId);
     caixa.appendChild(el('div', { class: 'cron-ativo' + (cron.inicio ? ' rodando' : '') }, [
       el('span', { class: 'cron-ponto' }),
       el('span', { class: 'cron-tempo', id: 'cron-tempo', text: UI.fmtDuracao(segundosCron()) }),
-      d ? el('span', { class: 'cron-disc', text: d.nome }) : null,
+      d || anki ? el('span', { class: 'cron-disc', text: anki ? 'Anki' : d.nome }) : null,
       cron.inicio ? botaoMini('Pausar', pausarCron) : botaoMini('Retomar', retomarCron),
       botaoMini('Finalizar', finalizarCron, 'principal', 'Finalizar e lançar o estudo'),
       botaoMini('✕', descartarCron, 'descartar', 'Descartar cronômetro')
@@ -68,6 +73,7 @@ var Sessao = (function () {
   function abrir(opcoes) {
     var op = opcoes || {};
     var existente = op.sessaoId ? Dados.sessao(op.sessaoId) : null;
+    if ((existente && existente.tipo === 'anki') || (!existente && op.tipo === 'anki')) return abrirAnki(op);
     var discs = Dados.disciplinas();
     if (!discs.length) {
       UI.aviso('Cadastre uma disciplina primeiro');
@@ -235,6 +241,54 @@ var Sessao = (function () {
       var lista = m.caixa.querySelector('.lista-topicos');
       lista.scrollTop = marcado.closest('.opcao-topico').offsetTop - lista.offsetTop - 40;
     }
+  }
+
+  // ---------- Anki: só o tempo gasto, sem matéria (opcoes: { sessaoId, segundos, doCronometro }) ----------
+  function abrirAnki(opcoes) {
+    var op = opcoes || {};
+    var existente = op.sessaoId ? Dados.sessao(op.sessaoId) : null;
+    var segundos = existente ? existente.segundos : (op.segundos || 0);
+    var data = el('input', { type: 'date', value: existente ? existente.data : UI.hoje(), max: UI.hoje() });
+    var horas = el('input', { type: 'number', min: 0, step: 1, value: Math.floor(segundos / 3600), oninput: atualizarTempo });
+    var minutos = el('input', { type: 'number', min: 0, max: 59, step: 1, value: Math.floor((segundos % 3600) / 60), oninput: atualizarTempo });
+    function atualizarTempo() { segundos = (Number(horas.value) || 0) * 3600 + (Number(minutos.value) || 0) * 60; }
+    var erro = el('div', { class: 'erro-form', hidden: true });
+    function mostrarErro(msg) { erro.textContent = msg; erro.hidden = false; return false; }
+
+    function registrar() {
+      erro.hidden = true;
+      if (!data.value) return mostrarErro('Informe a data.');
+      if (segundos <= 0) return mostrarErro('Informe o tempo gasto no Anki.');
+      var campos = { data: data.value, tipo: 'anki', segundos: segundos };
+      if (existente) Dados.atualizarSessao(existente.id, campos);
+      else Dados.criarSessao(campos);
+      if (op.doCronometro) gravarCron(null);
+      App.atualizar();
+      UI.aviso(existente ? 'Tempo de Anki atualizado' : 'Tempo de Anki registrado');
+    }
+
+    var botoes = [{ texto: 'Cancelar', classe: 'btn-secundario' }];
+    if (existente) {
+      botoes.unshift({ texto: 'Excluir', classe: 'btn-perigo btn-esquerda', acao: function () { confirmarExclusao(existente); } });
+    } else if (!op.doCronometro && !cron) {
+      botoes.unshift({ texto: 'Iniciar cronômetro', classe: 'btn-contorno btn-esquerda', acao: function () {
+        iniciarCron({ tipo: 'anki' });
+        UI.aviso('Cronômetro do Anki iniciado. Clique em "Finalizar" no topo quando terminar.');
+      } });
+    }
+    botoes.push({ texto: existente ? 'Salvar alterações' : 'Registrar tempo', classe: 'btn-primario', acao: registrar });
+
+    UI.modal(existente ? 'Editar tempo de Anki' : 'Anki', [
+      el('p', { class: 'modal-desc', text: 'Soma nas horas e na meta semanal, mas não dá XP nem conta como dia estudado.' }),
+      el('div', { class: 'campos-linha' }, [
+        UI.campo('Data', data),
+        el('div', { class: 'campo' }, [
+          el('span', { class: 'campo-rotulo', text: 'Tempo gasto' }),
+          el('div', { class: 'tempo' }, [horas, el('span', { text: 'h' }), minutos, el('span', { text: 'min' })])
+        ])
+      ]),
+      erro
+    ], botoes);
   }
 
   function areaTeoria(est) {
@@ -421,6 +475,7 @@ var Sessao = (function () {
 
   // ---------- Histórico ----------
   function descrever(s) {
+    if (s.tipo === 'anki') return 'Revisão no Anki';
     if (s.tipo === 'teoria') {
       return (s.topicoIds || []).map(function (id) { var t = Dados.topico(id); return t ? t.nome : ''; }).filter(Boolean).join('; ') || '—';
     }
@@ -437,7 +492,7 @@ var Sessao = (function () {
     return partes.join('; ') || '—';
   }
 
-  var TIPOS = { teoria: ['Teoria', 'info'], questoes: ['Questões', 'neutro'], revisao: ['Revisão', 'aviso'] };
+  var TIPOS = { teoria: ['Teoria', 'info'], questoes: ['Questões', 'neutro'], revisao: ['Revisão', 'aviso'], anki: ['Anki', 'anki'] };
   function seloTipo(tipo) { var t = TIPOS[tipo] || TIPOS.questoes; return UI.selo(t[0], t[1]); }
 
   function historico(d) {

@@ -830,12 +830,13 @@ var Dados = (function () {
   function sessao(id) { return buscar(db.sessoes, id); }
 
   // tipo: 'teoria' | 'questoes' | 'revisao' (revisão = questões dos pontos fracos; conta como questões normais)
+  //       | 'anki' (só tempo, sem matéria: soma nas horas e na meta semanal, mas não dá XP nem conta como dia estudado)
   function limparCamposSessao(campos) {
-    var tipo = ['teoria', 'questoes', 'revisao'].indexOf(campos.tipo) >= 0 ? campos.tipo : 'questoes';
+    var tipo = ['teoria', 'questoes', 'revisao', 'anki'].indexOf(campos.tipo) >= 0 ? campos.tipo : 'questoes';
     var teoria = tipo === 'teoria';
     return {
       data: campos.data,
-      disciplinaId: campos.disciplinaId,
+      disciplinaId: tipo === 'anki' ? null : campos.disciplinaId,
       segundos: Math.max(0, Math.round(Number(campos.segundos) || 0)),
       tipo: tipo,
       topicoIds: teoria ? (campos.topicoIds || []).slice() : [],

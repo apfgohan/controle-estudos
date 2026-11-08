@@ -12,7 +12,7 @@ var Metas = (function () {
     erros: ['erros', 'Bateria de erros', 'alerta']
   };
   var TIPOS_REVISAO = {
-    simulado: ['questoes', 'Simulado', 'caderno2'],
+    simulado: ['simulado', 'Simulado', 'caderno2'],
     duvidas: ['favoritas', 'Favoritadas', 'caderno2'],
     erros2x: ['favoritas', 'Favoritadas', 'caderno2'],
     fracos: ['erros', 'Pontos fracos', 'alerta']
@@ -135,8 +135,16 @@ var Metas = (function () {
         '<span>' + (pct == null ? '—' : Math.round(pct) + '%') + '</span>' });
   }
 
-  function estrelas(n) {
-    if (!n) return el('div', { class: 'meta-estrelas meta-sem', text: 'Revisão: todos os assuntos' });
+  // Etapas do Modo Revisão cobrem todos os assuntos, então não têm relevância: no lugar das estrelas, um lápis escrevendo numa folha.
+  var CANETA = '<svg viewBox="0 -5 48 34" aria-hidden="true">' +
+    '<rect class="caneta-folha" x="13" y="-2" width="22" height="30" rx="1.5"/>' +
+    '<path class="caneta-linha caneta-linha-1" pathLength="1" d="M17 6H31"/><path class="caneta-linha caneta-linha-2" pathLength="1" d="M17 12.5H31"/><path class="caneta-linha caneta-linha-3" pathLength="1" d="M17 19H26"/>' +
+    '<g class="caneta-ponta"><path d="M0 0L.7 -2.6L8 -10.5L10 -8.7L2.6 -.7Z"/></g></svg>';
+
+  function estrelas(n, x) {
+    if (!n) return x && x.modo === 'revisao'
+      ? el('div', { class: 'meta-caneta', title: 'Revisão: todos os assuntos', html: CANETA })
+      : el('div');
     return el('div', { class: 'meta-estrelas', title: 'Relevância do bloco: ' + n + ' de 5' }, [1, 2, 3, 4, 5].map(function (i) {
       return el('span', { class: i <= n ? '' : 'vazia', text: '★' });
     }));
@@ -156,7 +164,7 @@ var Metas = (function () {
       ]),
       el('div', { class: 'meta-tipo' }, [UI.icone(info.tipo[2]), el('span', { text: info.tipo[1] })]),
       medidor(a.pct, a.texto + (a.n ? ' · ' + UI.fmtNum(a.n) + ' questões' : '')),
-      estrelas(info.estrelas)
+      estrelas(info.estrelas, m.x)
     ]);
   }
 

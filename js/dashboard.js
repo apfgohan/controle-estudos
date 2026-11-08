@@ -18,13 +18,20 @@ var Dashboard = (function () {
 
   function fmtMinutos(min) { return min ? fmtHoras(min * 60) : ''; }
 
+  // Linhas da dica dos gráficos de horas.
+  function dicaHoras(s) {
+    return [s.nome, 'Total: ' + fmtHoras(s.segundos), 'Teoria: ' + fmtHoras(s.teoria), 'Questões: ' + fmtHoras(s.questoes)]
+      .concat(s.anki ? ['Anki: ' + fmtHoras(s.anki)] : []);
+  }
+
   function resumoPeriodo(de, ate, disciplinaId) {
-    var r = { segundos: 0, teoria: 0, questoes: 0, acertos: 0, erros: 0 };
+    var r = { segundos: 0, teoria: 0, questoes: 0, anki: 0, acertos: 0, erros: 0 };
     Dados.db.sessoes.forEach(function (s) {
       if (s.data < de || s.data > ate) return;
       if (disciplinaId && s.disciplinaId !== disciplinaId) return;
       r.segundos += s.segundos || 0;
       if (s.tipo === 'teoria') r.teoria += s.segundos || 0;
+      else if (s.tipo === 'anki') r.anki += s.segundos || 0;
       else r.questoes += s.segundos || 0;
       (s.cadernos || []).forEach(function (c) { r.acertos += c.acertos; r.erros += c.erros; });
     });
@@ -492,7 +499,7 @@ var Dashboard = (function () {
     } else {
       textoDepois = textoEtapaRevisao(depois, plano);
     }
-    return comMeta(op, d, el('div', { class: 'recomendacao rec-revisao rec-' + (etapa === 'simulado' ? 'questoes' : etapa === 'fracos' ? 'erros' : 'favoritas') }, [
+    return comMeta(op, d, el('div', { class: 'recomendacao rec-revisao rec-' + (etapa === 'simulado' ? 'simulado' : etapa === 'fracos' ? 'erros' : 'favoritas') }, [
       el('div', { class: 'rec-topo' }, [UI.icone(etapa === 'fracos' ? 'alerta' : 'caderno2'), el('span', { class: 'rec-rotulo', text: 'Recomendação' })]),
       el('div', { class: 'rec-principal' }, [el('strong', { class: 'rec-titulo', text: textoEtapaRevisao(etapa, plano) }), detalhe]),
       acao && [].concat(acao).some(Boolean) ? el('div', { class: 'rec-rodape' }, acao) : null,
@@ -570,7 +577,7 @@ var Dashboard = (function () {
   function bloquinhoRevisao(e, estado) {
     var nome, sub, cor = 'favoritas';
     if (e.tipo === 'simulado') {
-      cor = 'questoes';
+      cor = 'simulado';
       nome = 'Simulado';
       var c = e.caderno;
       sub = !c ? 'Cadastrar novo' : (e.feitas && c.totalQuestoes ? e.feitas + '/' + c.totalQuestoes + ' · ' : '') + c.nome;
@@ -611,7 +618,7 @@ var Dashboard = (function () {
         el('span', { class: 'data-fraca', text: p.simuladosConcluidos + ' de ' + p.simulados.length + (p.simulados.length === 1 ? ' simulado' : ' simulados') })
       ]),
       UI.barra(total ? dessaVolta.length / total * 100 : 0),
-      el('div', { class: 'processo-legenda' }, [['questoes', 'Simulado'], ['favoritas', 'Favoritadas'], ['erros', 'Pontos fracos']].map(function (x) {
+      el('div', { class: 'processo-legenda' }, [['simulado', 'Simulado'], ['favoritas', 'Favoritadas'], ['erros', 'Pontos fracos']].map(function (x) {
         return el('span', { class: 'etapa-' + x[0] }, [el('i'), x[1]]);
       })),
       voltas.reverse().map(function (n) {
@@ -828,7 +835,7 @@ var Dashboard = (function () {
         caixa('Tempo de estudo', UI.fmtDuracao(total.segundos), [
           [UI.fmtDuracao(mediaDia), 'média por dia'],
           [fmtHoras(dia.segundos), 'estudadas hoje']
-        ], semanaRodape(fmtHoras(semana.segundos) + ' · teoria ' + fmtHoras(semana.teoria) + ' · questões ' + fmtHoras(semana.questoes))),
+        ], semanaRodape(fmtHoras(semana.segundos) + ' · teoria ' + fmtHoras(semana.teoria) + ' · questões ' + fmtHoras(semana.questoes) + (semana.anki ? ' · Anki ' + fmtHoras(semana.anki) : ''))),
         caixa('Desempenho', total.feitas ? pct1(total.pct) : '—', [
           [UI.fmtNum(total.acertos), 'Acertos'],
           [UI.fmtNum(total.erros), 'Erros']
@@ -1088,7 +1095,7 @@ var Dashboard = (function () {
         total += s.segundos;
         return {
           rotulo: s.rotulo, valor: s.segundos, textoValor: fmtHoras(s.segundos),
-          dica: [s.nome, 'Total: ' + fmtHoras(s.segundos), 'Teoria: ' + fmtHoras(s.teoria), 'Questões: ' + fmtHoras(s.questoes)]
+          dica: dicaHoras(s)
         };
       });
       return {
@@ -1325,7 +1332,7 @@ var Dashboard = (function () {
 
   function diasEstudados(de, ate, disc) {
     var dias = {};
-    Dados.db.sessoes.forEach(function (s) { if (s.data >= de && s.data <= ate && (!disc || s.disciplinaId === disc)) dias[s.data] = true; });
+    Dados.db.sessoes.forEach(function (s) { if (s.tipo !== 'anki' && s.data >= de && s.data <= ate && (!disc || s.disciplinaId === disc)) dias[s.data] = true; });
     return Object.keys(dias).length;
   }
 
@@ -1422,8 +1429,7 @@ var Dashboard = (function () {
           el('div', { class: 'ritmo-barra' + (bateu ? ' bateu' : ''), style: { height: Math.max(2, h) + '%' } })
         ] : [el('span', { class: 'ritmo-folga', text: 'folga' }), el('div', { class: 'ritmo-vazio' })]),
         el('div', { class: 'ritmo-rotulo' }, [el('strong', { text: s.rotulo }), s.sub ? el('span', { text: s.sub }) : null])
-      ]), [s.nome, 'Total: ' + fmtHoras(s.segundos), 'Teoria: ' + fmtHoras(s.teoria), 'Questões: ' + fmtHoras(s.questoes)]
-        .concat(!disc && s.meta ? ['Meta: ' + fmtHoras(s.meta)] : []));
+      ]), dicaHoras(s).concat(!disc && s.meta ? ['Meta: ' + fmtHoras(s.meta)] : []));
     });
     var linha = !disc && metaRef ? el('div', { class: 'ritmo-guia' }, el('div', { class: 'ritmo-meta', style: { bottom: (metaRef / maximo * 100) + '%' } })) : null;
     var nome = porDia ? (iv.dias === 1 ? 'Seu ritmo hoje' : 'Seu ritmo nos ' + iv.dias + ' dias') : bk.tipo === 'semana' ? 'Seu ritmo por semana' : 'Seu ritmo por mês';
@@ -1516,6 +1522,7 @@ var Dashboard = (function () {
       fatias = [{ nome: 'Teoria', valor: r.teoria, cor: '#3b8cf0' }, { nome: 'Questões', valor: r.questoes, cor: '#3ecf7c' }];
     } else {
       fatias = Dados.disciplinas().map(function (d) { return { nome: d.nome, cor: d.cor, valor: resumoPeriodo(iv.de, iv.ate, d.id).segundos }; });
+      fatias.push({ nome: 'Anki', cor: '#45cdbd', valor: resumoPeriodo(iv.de, iv.ate).anki }); // sem matéria: fatia própria, para o total bater com as horas
     }
     var total = fatias.reduce(function (s, f) { return s + f.valor; }, 0);
     return cartaoGrafico(disc ? 'Teoria x questões' : 'Horas por matéria', 'No período escolhido',
