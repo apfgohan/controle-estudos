@@ -1,4 +1,4 @@
-// Dashboard: próxima matéria do ciclo, indicadores, ciclo de estudos, gráficos e revisões.
+// Dashboard: estatísticas com filtros. Também guarda as peças da página de Metas (meta atual, ciclo, caixas do topo).
 var Dashboard = (function () {
   var el = UI.el;
   var SEMANAS = 8;
@@ -18,10 +18,11 @@ var Dashboard = (function () {
 
   function fmtMinutos(min) { return min ? fmtHoras(min * 60) : ''; }
 
-  function resumoPeriodo(de, ate) {
+  function resumoPeriodo(de, ate, disciplinaId) {
     var r = { segundos: 0, teoria: 0, questoes: 0, acertos: 0, erros: 0 };
     Dados.db.sessoes.forEach(function (s) {
       if (s.data < de || s.data > ate) return;
+      if (disciplinaId && s.disciplinaId !== disciplinaId) return;
       r.segundos += s.segundos || 0;
       if (s.tipo === 'teoria') r.teoria += s.segundos || 0;
       else r.questoes += s.segundos || 0;
@@ -234,7 +235,7 @@ var Dashboard = (function () {
     var item = Dados.proximaDoCiclo();
     if (!item) {
       return el('section', { class: 'painel proxima vazia' }, [
-        el('div', { class: 'rotulo-secao', text: 'Próxima matéria' }),
+        el('div', { class: 'rotulo-secao', text: 'Meta atual' }),
         el('p', { class: 'vazio-destaque', text: 'Monte seu ciclo de estudos' }),
         el('p', { class: 'data-fraca', text: 'Defina a sequência de matérias (pode repetir) e o programa mostra aqui qual é a próxima. Cada estudo lançado da matéria da vez avança o ciclo.' }),
         Dados.disciplinas().length
@@ -248,10 +249,15 @@ var Dashboard = (function () {
     var anot = Dados.ultimaAnotacao(d.id);
     var revisoes = Dados.revisoesPendentes(d.id).filter(function (t) { return t.revisaoAgendada <= UI.hoje(); }).length;
     var modo = Dados.modoDeEstudo(d.id);
+    var rec = recomendacao(d, modo), opMeta = rec ? rec.opMeta : null;
+    var semMeta = 'Faça primeiro o cadastro indicado na recomendação';
+    var lancar = UI.botao('Lançar meta', function () { if (opMeta) Sessao.abrir(Object.assign({}, opMeta)); }, 'btn-primario', 'play');
+    var cronometro = UI.botao('Iniciar cronômetro', function () { if (opMeta) Sessao.iniciarCronometro(Object.assign({}, opMeta)); }, 'btn-contorno', 'relogio');
+    if (!opMeta) [lancar, cronometro].forEach(function (b) { b.disabled = true; b.title = semMeta; });
 
     return el('section', { class: 'painel proxima', style: { borderTopColor: d.cor } }, [
       el('div', { class: 'proxima-topo' }, [
-        el('div', { class: 'rotulo-secao', text: 'Próxima matéria' }),
+        el('div', { class: 'rotulo-secao', text: 'Meta atual' }),
         el('span', { class: 'data-fraca', text: (c.posicaoAtual + 1) + 'º de ' + c.itens.length + ' no ciclo · volta ' + ((c.voltas || 0) + 1) })
       ]),
       el('div', { class: 'proxima-nome' }, [
@@ -268,11 +274,11 @@ var Dashboard = (function () {
         UI.metrica('Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id))),
         UI.metrica('Revisões para hoje', revisoes ? String(revisoes) : '—', revisoes ? 'alerta' : '')
       ]),
-      recomendacao(d, modo),
+      rec,
       anot ? UI.blocoAnotacao(anot, { teoria: 'Teoria', questoes: 'Questões', revisao: 'Revisão' }[anot.tipo]) : el('div', { class: 'sem-anotacao', text: 'Nenhuma anotação deixada na última sessão desta matéria.' }),
       el('div', { class: 'proxima-acoes' }, [
-        UI.botao('Lançar estudo', function () { Sessao.abrir({ disciplinaId: d.id }); }, 'btn-primario', 'play'),
-        UI.botao('Iniciar cronômetro', function () { Sessao.iniciarCronometro({ disciplinaId: d.id, tipo: 'teoria' }); }, 'btn-contorno', 'relogio'),
+        lancar,
+        cronometro,
         UI.botao('Pular', function () { Dados.avancarCiclo(1); App.atualizar(); }, 'btn-secundario'),
         el('span', { class: 'proxima-links' }, [
           el('button', { type: 'button', class: 'link', text: 'Ver teoria', onclick: function () { verTeoria(d); } }), ' · ',
@@ -325,7 +331,7 @@ var Dashboard = (function () {
     var atual = plano.pendentes[0];
     var depois = plano.pendentes[1];
     var feitas = plano.itens.length - plano.pendentes.length;
-    var detalhe, acao;
+    var detalhe, acao, op = null;
 
     if (atual.tipo === 'favoritas') {
       var cf = atual.caderno;
@@ -344,9 +350,9 @@ var Dashboard = (function () {
             Dados.marcarRodadaVazia(cf.id, atual.bloco.id, true);
             App.atualizar();
             UI.aviso('Rodada pulada. Para desfazer, vá ao caderno na aba Questões.');
-          }, 'btn-secundario') : null,
-          UI.botao('Lançar questões', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [cf.id] }); }, 'btn-primario', 'play')
+          }, 'btn-secundario') : null
         ];
+        op = { tipo: 'questoes', cadernoIds: [cf.id] };
       }
     } else if (atual.tipo === 'erros') {
       var ce = atual.caderno;
@@ -362,9 +368,7 @@ var Dashboard = (function () {
           el('div', { class: 'rec-bateria-linha' }, [linkCaderno(ce), el('span', { class: 'rec-faltam', text: textoFaltam(atual.feitas, atual.qtd, 'de erros') })]),
           atual.feitas ? UI.barra(atual.feitas / atual.qtd * 100) : null
         ]);
-        acao = UI.botao('Lançar questões', function () {
-          Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [ce.id] });
-        }, 'btn-primario', 'play');
+        op = { tipo: 'questoes', cadernoIds: [ce.id] };
       }
     } else if (atual.tipo === 'teoria') {
       var faltam = atual.topicos.filter(function (t) { return !t.concluido; });
@@ -372,9 +376,7 @@ var Dashboard = (function () {
         ? el('ul', { class: 'rec-topicos' }, faltam.slice(0, 4).map(function (t) { return el('li', { text: t.nome }); })
             .concat(faltam.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (faltam.length - 4) + ' tópicos' })] : []))
         : el('p', { class: 'data-fraca', text: 'Este bloco ainda não tem tópicos. Cadastre-os no Controle de Teoria.' });
-      acao = UI.botao('Lançar teoria', function () {
-        Sessao.abrir({ disciplinaId: d.id, tipo: 'teoria', topicoIds: faltam.map(function (t) { return t.id; }) });
-      }, 'btn-primario', 'play');
+      op = { tipo: 'teoria', topicoIds: faltam.map(function (t) { return t.id; }) };
     } else if (!atual.caderno) {
       detalhe = el('p', { class: 'data-fraca' }, ['Este bloco ainda não tem caderno. ',
         el('a', { href: '#/questoes/' + d.id, text: 'Cadastre-o na pasta "' + Dados.NOME_PASTA_TEORIA + '"' }), '.']);
@@ -387,12 +389,10 @@ var Dashboard = (function () {
         el('div', { class: 'rec-bateria-linha' }, [linkCaderno(c), el('span', { class: 'rec-faltam', text: textoFaltam(b.feitas, b.qtd, 'desta bateria') })]),
         b.feitas ? UI.barra(b.feitas / b.qtd * 100) : null
       ]);
-      acao = UI.botao('Lançar questões', function () {
-        Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [c.id] });
-      }, 'btn-primario', 'play');
+      op = { tipo: 'questoes', cadernoIds: [c.id] };
     }
 
-    return el('div', { class: 'recomendacao rec-' + TIPO_COR[atual.tipo] }, [
+    return comMeta(op, d, el('div', { class: 'recomendacao rec-' + TIPO_COR[atual.tipo] }, [
       el('div', { class: 'rec-topo' }, [
         UI.icone(atual.tipo === 'teoria' ? 'lista' : 'caderno2'),
         el('span', { class: 'rec-rotulo', text: 'Recomendação' })
@@ -401,13 +401,19 @@ var Dashboard = (function () {
         el('strong', { class: 'rec-titulo', text: textoEtapa(atual) }),
         detalhe
       ]),
-      acao ? el('div', { class: 'rec-rodape' }, acao) : null,
+      acao && [].concat(acao).some(Boolean) ? el('div', { class: 'rec-rodape' }, acao) : null,
       el('div', { class: 'rec-depois' }, [
         el('span', { class: 'rec-depois-rotulo', text: 'Em seguida' }),
         el('span', { text: depois ? textoEtapa(depois) : 'Fim do Modo Leitura: a matéria passa para o Modo Revisão.' })
       ]),
       el('div', { class: 'rec-progresso data-fraca', text: feitas + ' de ' + plano.itens.length + ' etapas concluídas · ' + plano.numBaterias + ' baterias por bloco' })
-    ]);
+    ]));
+  }
+
+  // A recomendação guarda o que o botão "Lançar meta" deve abrir (null: falta cadastrar algo antes).
+  function comMeta(op, d, n) {
+    n.opMeta = op ? Object.assign({ daMeta: true, disciplinaId: d.id }, op) : null;
+    return n;
   }
 
   // ---------- Recomendação do Modo Revisão ----------
@@ -427,7 +433,7 @@ var Dashboard = (function () {
 
   function recomendacaoRevisao(d) {
     var plano = Dados.planoRevisao(d.id);
-    var etapa = plano.etapa, detalhe, acao;
+    var etapa = plano.etapa, detalhe, acao, op = null;
 
     if (etapa === 'simulado') {
       var c = plano.simulado;
@@ -445,7 +451,7 @@ var Dashboard = (function () {
                 (plano.somaSimulado + c.totalQuestoes < plano.minimoSimulado ? '. Depois deste caderno ainda virá outro simulado.' : '.') })
             : null
         ]);
-        acao = UI.botao('Lançar questões', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [c.id] }); }, 'btn-primario', 'play');
+        op = { tipo: 'questoes', cadernoIds: [c.id] };
       }
     } else if (etapa === 'duvidas' || etapa === 'erros2x') {
       var f = plano.favoritas[etapa];
@@ -457,7 +463,7 @@ var Dashboard = (function () {
           el('div', { class: 'rec-bateria-linha' }, [linkCaderno(f), el('span', { class: 'rec-faltam', text: 'Resolva todas as questões do caderno' })]),
           el('p', { class: 'data-fraca', text: 'Ao lançar a sessão, marque "Finalizei este caderno" quando terminar. Até lá, ele continua sendo recomendado.' })
         ]);
-        acao = UI.botao('Lançar questões', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'questoes', cadernoIds: [f.id] }); }, 'btn-primario', 'play');
+        op = { tipo: 'questoes', cadernoIds: [f.id] };
       }
     } else {
       var pendentes = plano.fracos.filter(function (t) { return !t.revisto; });
@@ -472,7 +478,7 @@ var Dashboard = (function () {
           plano.metaAssuntos + (plano.metaAssuntos === 1 ? ' assunto' : ' assuntos diferentes') + ' (' + nAssuntos + ' revisto' + (nAssuntos === 1 ? '' : 's') + ')' }),
         progresso ? UI.barra(Math.min(1, progresso) * 100) : null
       ]);
-      acao = UI.botao('Lançar revisão', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'revisao' }); }, 'btn-primario', 'play');
+      op = { tipo: 'revisao' };
     }
 
     var SEGUINTE = { simulado: 'duvidas', duvidas: 'erros2x', erros2x: 'fracos', fracos: 'simulado' };
@@ -486,17 +492,17 @@ var Dashboard = (function () {
     } else {
       textoDepois = textoEtapaRevisao(depois, plano);
     }
-    return el('div', { class: 'recomendacao rec-revisao rec-' + (etapa === 'simulado' ? 'questoes' : etapa === 'fracos' ? 'erros' : 'favoritas') }, [
+    return comMeta(op, d, el('div', { class: 'recomendacao rec-revisao rec-' + (etapa === 'simulado' ? 'questoes' : etapa === 'fracos' ? 'erros' : 'favoritas') }, [
       el('div', { class: 'rec-topo' }, [UI.icone(etapa === 'fracos' ? 'alerta' : 'caderno2'), el('span', { class: 'rec-rotulo', text: 'Recomendação' })]),
       el('div', { class: 'rec-principal' }, [el('strong', { class: 'rec-titulo', text: textoEtapaRevisao(etapa, plano) }), detalhe]),
-      acao ? el('div', { class: 'rec-rodape' }, acao) : null,
+      acao && [].concat(acao).some(Boolean) ? el('div', { class: 'rec-rodape' }, acao) : null,
       el('div', { class: 'rec-depois' }, [
         el('span', { class: 'rec-depois-rotulo', text: 'Em seguida' }),
         el('span', { text: textoDepois })
       ]),
       el('div', { class: 'rec-progresso data-fraca', text: 'Volta ' + plano.rodada + ' do Modo Revisão · ' + plano.simuladosConcluidos +
         (plano.simuladosConcluidos === 1 ? ' simulado concluído' : ' simulados concluídos') })
-    ]);
+    ]));
   }
 
   // ---------- Processo até o fim da teoria (bloquinhos) ----------
@@ -1252,6 +1258,7 @@ var Dashboard = (function () {
     var previa = el('div', { class: 'perfil-previa' });
     function desenharPrevia() { previa.innerHTML = ''; previa.appendChild(fotoPerfil({ nome: nome.value, foto: foto })); }
     var nome = el('input', { type: 'text', value: p.nome || '', placeholder: 'Seu nome' });
+    var cargo = el('input', { type: 'text', value: p.cargo || 'Auditor Fiscal - Área Fiscal', placeholder: 'Auditor Fiscal - Área Fiscal' });
     var arquivo = el('input', { type: 'file', accept: 'image/*', hidden: true, onchange: function () {
       if (arquivo.files[0]) lerFoto(arquivo.files[0], function (url) { foto = url; desenharPrevia(); });
     } });
@@ -1266,44 +1273,364 @@ var Dashboard = (function () {
           arquivo
         ])
       ]),
-      UI.campo('Nome', nome, 'A frase abaixo do nome é escolhida automaticamente e muda todo dia.')
+      UI.campo('Nome', nome, 'A frase abaixo do nome é escolhida automaticamente e muda todo dia.'),
+      UI.campo('Cargo', cargo, 'Aparece embaixo do título, no menu lateral.')
     ], [
       { texto: 'Cancelar', classe: 'btn-secundario' },
       { texto: 'Salvar', classe: 'btn-primario', acao: function () {
-        Dados.atualizarPerfil({ nome: nome.value.trim(), foto: foto });
+        Dados.atualizarPerfil({ nome: nome.value.trim(), foto: foto, cargo: cargo.value.trim() });
         App.atualizar();
         UI.aviso('Perfil atualizado');
       } }
     ]);
   }
 
-  function render(raiz) {
-    var hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
-    raiz.appendChild(el('div', { class: 'pagina-topo' }, el('div', null, [
-      el('h1', { class: 'pagina-titulo', text: 'Dashboard' }),
-      el('div', { class: 'pagina-subtitulo', text: hoje.charAt(0).toUpperCase() + hoje.slice(1) })
-    ])));
+  // ---------- Dashboard: estatísticas, com filtro de matéria e de período ----------
+  var CHAVE_FILTRO = 'controle-estudos.filtro-dashboard';
+  var OPCOES_PERIODO = [['hoje', 'Hoje'], ['7', '7 dias'], ['30', '30 dias'], ['tudo', 'Tudo'], ['pers', 'Personalizado']];
+  var ZONA_ATENCAO = 75;
+  var SVG_NS = 'http://www.w3.org/2000/svg';
 
-    if (Dados.estaVazio()) {
-      raiz.appendChild(el('div', { class: 'vazio' }, [
-        el('p', { class: 'vazio-destaque', text: 'Bem-vindo! Comece cadastrando suas disciplinas.' }),
-        el('p', { text: 'Depois monte o ciclo de estudos aqui e lance cada sessão de estudo.' }),
-        el('div', { class: 'vazio-acoes' }, [
-          el('a', { class: 'btn btn-primario', href: '#/teoria', text: 'Ir para o Controle de Teoria' }),
-          UI.botao('Carregar dados de exemplo', function () { Dados.carregarExemplo(); App.atualizar(); }, 'btn-secundario')
-        ])
-      ]));
-      return;
+  function filtroSalvo() {
+    var f = {};
+    try { f = JSON.parse(localStorage.getItem(CHAVE_FILTRO) || '{}') || {}; } catch (e) { f = {}; }
+    return {
+      materia: f.materia && Dados.disciplina(f.materia) ? f.materia : '',
+      periodo: OPCOES_PERIODO.some(function (o) { return o[0] === f.periodo; }) ? f.periodo : '30',
+      de: f.de || '', ate: f.ate || '', fonte: f.fonte === 'tec' ? 'tec' : 'programa'
+    };
+  }
+  function salvarFiltro(f) { try { localStorage.setItem(CHAVE_FILTRO, JSON.stringify(f)); } catch (e) { /* preferência */ } }
+
+  function primeiraData() { return Dados.db.sessoes.reduce(function (m, s) { return !m || s.data < m ? s.data : m; }, null); }
+  function intervalo(f) {
+    var hoje = UI.hoje(), de = hoje, ate = hoje;
+    if (f.periodo === '7') de = UI.somarDias(hoje, -6);
+    else if (f.periodo === '30') de = UI.somarDias(hoje, -29);
+    else if (f.periodo === 'tudo') de = primeiraData() || hoje;
+    else if (f.periodo === 'pers') {
+      var a = f.de || UI.somarDias(hoje, -29), b = f.ate || hoje;
+      de = a <= b ? a : b; ate = a <= b ? b : a;
     }
-
-    raiz.appendChild(linhaTopo());
-    raiz.appendChild(indicadores());
-    raiz.appendChild(el('div', { class: 'grade-topo' }, [
-      cartaoProxima(),
-      el('div', { class: 'coluna-lateral' }, [painelCiclo()])
-    ]));
-    raiz.appendChild(graficos());
+    return { de: de, ate: ate, dias: UI.diasEntre(de, ate) + 1, tudo: f.periodo === 'tudo' };
   }
 
-  return { render: render };
+  function diasEstudados(de, ate, disc) {
+    var dias = {};
+    Dados.db.sessoes.forEach(function (s) { if (s.data >= de && s.data <= ate && (!disc || s.disciplinaId === disc)) dias[s.data] = true; });
+    return Object.keys(dias).length;
+  }
+
+  function diferenca(v, fmt) {
+    if (v == null) return null;
+    return el('span', { class: classeDiferenca(v) }, (v > 0 ? '+' : v < 0 ? '−' : '') + (v ? fmt(Math.abs(v)) : 'igual') + ' vs. período anterior');
+  }
+
+  function kpisDashboard(iv, disc) {
+    var r = resumoPeriodo(iv.de, iv.ate, disc);
+    var ant = iv.tudo ? null : resumoPeriodo(UI.somarDias(iv.de, -iv.dias), UI.somarDias(iv.de, -1), disc);
+    var dias = diasEstudados(iv.de, iv.ate, disc), diasAnt = ant ? diasEstudados(UI.somarDias(iv.de, -iv.dias), UI.somarDias(iv.de, -1), disc) : null;
+    function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
+    function bloco(titulo, valor, linhas, dif) {
+      return el('div', { class: 'caixa-kpi caixa-topo' }, [
+        el('div', { class: 'caixa-titulo', text: titulo }),
+        el('div', { class: 'previsao-valor', text: valor }),
+        el('div', { class: 'caixa-linhas' }, linhas.map(function (l) { return el('div', null, [el('strong', { text: l[0] }), ' ' + l[1]]); })),
+        dif
+      ]);
+    }
+    return el('div', { class: 'dash-kpis' }, [
+      bloco('Horas estudadas', fmtHoras(r.segundos), [[fmtHoras(r.teoria), 'de teoria'], [fmtHoras(r.questoes), 'de questões']],
+        ant ? diferenca(r.segundos - ant.segundos, fmtHoras) : null),
+      bloco('Questões', UI.fmtNum(r.feitas), [[UI.fmtNum(r.acertos), 'acertos'], [UI.fmtNum(r.erros), 'erros']],
+        ant ? diferenca(r.feitas - ant.feitas, UI.fmtNum) : null),
+      bloco('Acerto', r.feitas ? pct1(r.pct) : '—', [[r.feitas ? UI.fmtNum(r.acertos) : '0', 'de ' + UI.fmtNum(r.feitas) + ' questões']],
+        ant && r.feitas && ant.feitas ? el('span', { class: classeDiferenca(r.pct - ant.pct) }, (r.pct - ant.pct > 0 ? '+' : r.pct - ant.pct < 0 ? '−' : '') +
+          UI.fmtPct(Math.abs(Math.round((r.pct - ant.pct) * 10) / 10)).replace('%', '') + ' p.p. vs. período anterior') : null),
+      bloco('Dias estudados', dias + ' de ' + iv.dias, [[iv.dias ? Math.round(dias / iv.dias * 100) + '%' : '—', 'dos dias do período']],
+        diasAnt != null ? diferenca(dias - diasAnt, String) : null)
+    ]);
+  }
+
+  // Períodos do gráfico: por dia até 14 dias, por semana até 120 dias e por mês acima disso.
+  function baldes(iv, disc) {
+    var lista = [], tipo = iv.dias <= 14 ? 'dia' : iv.dias <= 120 ? 'semana' : 'mes', r, d;
+    if (tipo === 'dia') {
+      for (d = iv.de; d <= iv.ate; d = UI.somarDias(d, 1)) {
+        r = resumoPeriodo(d, d, disc);
+        var dt = new Date(d + 'T00:00:00');
+        r.rotulo = iv.dias <= 7 ? semPonto(dt.toLocaleDateString('pt-BR', { weekday: 'short' })) : UI.fmtData(d).slice(0, 5);
+        r.nome = semPonto(dt.toLocaleDateString('pt-BR', { weekday: 'long' })) + ', ' + UI.fmtData(d);
+        lista.push(r);
+      }
+    } else if (tipo === 'semana') {
+      for (d = inicioSemana(iv.de); d <= iv.ate; d = UI.somarDias(d, 7)) {
+        var a = d < iv.de ? iv.de : d, b = UI.somarDias(d, 6) > iv.ate ? iv.ate : UI.somarDias(d, 6);
+        r = resumoPeriodo(a, b, disc);
+        r.rotulo = UI.fmtData(a).slice(0, 5);
+        r.nome = 'De ' + UI.fmtData(a) + ' a ' + UI.fmtData(b);
+        lista.push(r);
+      }
+    } else {
+      var ini = new Date(iv.de + 'T00:00:00');
+      for (var m = new Date(ini.getFullYear(), ini.getMonth(), 1); iso(m) <= iv.ate; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+        var fim = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+        var a2 = iso(m) < iv.de ? iv.de : iso(m), b2 = iso(fim) > iv.ate ? iv.ate : iso(fim);
+        r = resumoPeriodo(a2, b2, disc);
+        r.rotulo = semPonto(m.toLocaleDateString('pt-BR', { month: 'short' }));
+        r.nome = semPonto(m.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }));
+        lista.push(r);
+      }
+    }
+    return { tipo: tipo, lista: lista };
+  }
+
+  function graficosPeriodo(iv, disc) {
+    function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
+    var bk = baldes(iv, disc), nomeTipo = { dia: 'por dia', semana: 'por semana', mes: 'por mês' }[bk.tipo];
+    var totalSeg = 0, feitas = 0, acertos = 0;
+    var horas = bk.lista.map(function (s) {
+      totalSeg += s.segundos;
+      return { rotulo: s.rotulo, valor: s.segundos, textoValor: fmtHoras(s.segundos), dica: [s.nome, 'Total: ' + fmtHoras(s.segundos), 'Teoria: ' + fmtHoras(s.teoria), 'Questões: ' + fmtHoras(s.questoes)] };
+    });
+    var quest = bk.lista.map(function (s) {
+      feitas += s.feitas; acertos += s.acertos;
+      return { rotulo: s.rotulo, valor: s.feitas, textoValor: UI.fmtNum(s.feitas), pct: s.feitas ? s.pct : null,
+        dica: [s.nome, UI.fmtNum(s.feitas) + ' questões', s.feitas ? 'Acerto: ' + pct1(s.pct) : 'Sem questões'] };
+    });
+    function cartaoComLegenda(titulo, legenda, conteudo) {
+      return el('section', { class: 'painel cartao-grafico' }, [
+        el('div', { class: 'grafico-topo' }, [el('h2', { class: 'secao-titulo', text: titulo }), el('span', { class: 'data-fraca', text: 'Agrupado ' + nomeTipo })]),
+        el('div', { class: 'legenda' }, legenda), conteudo
+      ]);
+    }
+    return el('div', { class: 'grade-graficos' }, [
+      cartaoComLegenda('Horas de estudo', [itemLegenda('barra', 'Horas', fmtHoras(totalSeg))], graficoColunas(horas, 'Sem estudos neste período.')),
+      cartaoComLegenda('Questões', [itemLegenda('barra', 'Questões', UI.fmtNum(feitas)), itemLegenda('linha', 'Média de acertos', feitas ? pct1(acertos / feitas * 100) : '—')],
+        graficoColunas(quest, 'Sem questões neste período.', true))
+    ]);
+  }
+
+  // Rosca de horas por matéria (ou teoria x questões, quando uma matéria está filtrada).
+  function rosca(fatias, centro, sub) {
+    var total = fatias.reduce(function (s, f) { return s + f.valor; }, 0), R = 60, C = 2 * Math.PI * R, ini = 0;
+    var svg = '<svg viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="60" fill="none" stroke="var(--superficie-3)" stroke-width="22"/>';
+    fatias.forEach(function (f) {
+      if (!f.valor) return;
+      var len = f.valor / total * C;
+      svg += '<circle cx="80" cy="80" r="60" fill="none" stroke="' + f.cor + '" stroke-width="22" stroke-dasharray="' + len.toFixed(2) + ' ' + C.toFixed(2) + '" stroke-dashoffset="' + (-ini).toFixed(2) + '" transform="rotate(-90 80 80)"/>';
+      ini += len;
+    });
+    svg += '</svg>';
+    return el('div', { class: 'rosca' }, [
+      el('div', { class: 'rosca-grafico' }, [el('div', { html: svg }), el('div', { class: 'rosca-centro' }, [el('strong', { text: centro }), el('span', { text: sub })])]),
+      el('ul', { class: 'rosca-legenda' }, fatias.filter(function (f) { return f.valor; }).sort(function (a, b) { return b.valor - a.valor; }).map(function (f) {
+        return el('li', null, [el('span', { class: 'bolinha', style: { background: f.cor } }), el('span', { class: 'rosca-nome', text: f.nome }),
+          el('strong', { text: fmtHoras(f.valor) }), el('span', { class: 'data-fraca', text: Math.round(f.valor / total * 100) + '%' })]);
+      }))
+    ]);
+  }
+
+  function horasPorMateria(iv, disc) {
+    var fatias;
+    if (disc) {
+      var r = resumoPeriodo(iv.de, iv.ate, disc);
+      fatias = [{ nome: 'Teoria', valor: r.teoria, cor: '#3b8cf0' }, { nome: 'Questões', valor: r.questoes, cor: '#3ecf7c' }];
+    } else {
+      fatias = Dados.disciplinas().map(function (d) { return { nome: d.nome, cor: d.cor, valor: resumoPeriodo(iv.de, iv.ate, d.id).segundos }; });
+    }
+    var total = fatias.reduce(function (s, f) { return s + f.valor; }, 0);
+    return cartaoGrafico(disc ? 'Teoria x questões' : 'Horas por matéria', 'No período escolhido',
+      total ? rosca(fatias, fmtHoras(total), 'no período') : el('div', { class: 'grafico-vazio', text: 'Sem estudos neste período.' }));
+  }
+
+  // Progresso no edital: assuntos de teoria concluídos e baterias de questões concluídas, por matéria.
+  function progressoEdital(disc) {
+    var linhas = Dados.disciplinas().filter(function (d) { return !disc || d.id === disc; }).map(function (d) {
+      var t = Dados.progressoTeoria(d.id), itens = Dados.planoTeoria(d.id).itens.filter(function (it) { return it.tipo === 'bateria'; });
+      var bat = itens.length ? itens.filter(function (it) { return it.concluido; }).length / itens.length * 100 : 0;
+      return { d: d, teoria: t.total ? t.pct : 0, bat: bat, temTeoria: !!t.total, temBat: !!itens.length };
+    }).filter(function (x) { return x.temTeoria || x.temBat; });
+    var conteudo = linhas.length ? el('div', { class: 'progresso-edital' }, linhas.map(function (x) {
+      return comDica(el('div', { class: 'progresso-linha' }, [
+        el('span', { class: 'progresso-nome' }, [el('span', { class: 'bolinha', style: { background: x.d.cor } }), x.d.nome]),
+        el('div', { class: 'progresso-barras' }, [
+          el('div', { class: 'progresso-trilho' }, el('div', { class: 'progresso-teoria', style: { width: x.teoria + '%' } })),
+          el('div', { class: 'progresso-trilho' }, el('div', { class: 'progresso-questoes', style: { width: x.bat + '%' } }))
+        ]),
+        el('span', { class: 'progresso-num' }, [el('strong', { text: Math.round(x.teoria) + '%' }), ' / ' + Math.round(x.bat) + '%'])
+      ]), [x.d.nome, 'Teoria: ' + Math.round(x.teoria) + '% dos assuntos', 'Questões: ' + Math.round(x.bat) + '% das baterias']);
+    })) : el('div', { class: 'grafico-vazio', text: 'Cadastre os blocos de teoria para ver o progresso.' });
+    return el('section', { class: 'painel cartao-grafico' }, [
+      el('div', { class: 'grafico-topo' }, [
+        el('h2', { class: 'secao-titulo', text: 'Progresso no edital' }),
+        el('div', { class: 'legenda' }, [itemLegenda('teoria', 'Teoria'), itemLegenda('questoes', 'Baterias de questões')])
+      ]),
+      conteudo
+    ]);
+  }
+
+  function acertoPorMateria(iv, disc) {
+    var itens = Dados.disciplinas().filter(function (d) { return !disc || d.id === disc; }).map(function (d) {
+      var r = resumoPeriodo(iv.de, iv.ate, d.id);
+      return r.feitas ? { nome: d.nome, cor: d.cor, pct: r.pct, texto: UI.fmtPct(Math.round(r.pct * 10) / 10),
+        dica: [d.nome, UI.fmtNum(r.feitas) + ' questões no período', r.acertos + ' acertos · ' + r.erros + ' erros'] } : null;
+    }).filter(Boolean).sort(function (a, b) { return a.pct - b.pct; });
+    return cartaoGrafico('Taxa de acerto por matéria', 'No período escolhido, da menor para a maior', graficoBarras(itens, 'Sem questões neste período.'));
+  }
+
+  // ---------- Mapa de dificuldades ----------
+  // Programa: cada ponto é um bloco de teoria, com as questões dos cadernos de teoria lançadas no período (tamanho = relevância).
+  // TEC: cada ponto é um assunto das planilhas importadas (tamanho = quantidade de questões).
+  function pontosPrograma(iv, disc) {
+    var porCaderno = {}, pontos = [];
+    Dados.db.sessoes.forEach(function (s) {
+      if (s.data < iv.de || s.data > iv.ate || (disc && s.disciplinaId !== disc)) return;
+      (s.cadernos || []).forEach(function (l) {
+        if (!l.cadernoId) return;
+        var x = porCaderno[l.cadernoId] || (porCaderno[l.cadernoId] = { n: 0, a: 0 }), a = Number(l.acertos) || 0;
+        x.a += a; x.n += a + (Number(l.erros) || 0);
+      });
+    });
+    Dados.disciplinas().forEach(function (d) {
+      if (disc && d.id !== disc) return;
+      Dados.blocosDe(d.id).forEach(function (b) {
+        var c = Dados.cadernoDoBloco(b.id), x = c && porCaderno[c.id];
+        if (!x || !x.n) return;
+        var rel = Dados.relevancia(b);
+        pontos.push({ nome: b.nome, materia: d.nome, cor: d.cor, n: x.n, pct: x.a / x.n * 100, peso: rel, extra: 'Relevância: ' + rel + ' de 5' });
+      });
+    });
+    return pontos;
+  }
+  function pontosTec(disc) {
+    var pontos = [];
+    if (!window.Estatisticas || !Estatisticas.agregar) return pontos;
+    Estatisticas.agregar({ importacao: '', disciplina: disc || '' }).forEach(function (d) {
+      d.topicos.forEach(function (t) {
+        if (!t.folha || t.feitas < MINIMO_TEC) return;
+        pontos.push({ nome: t.nome, materia: d.disciplina.nome, cor: d.disciplina.cor, n: t.feitas, pct: t.acertos / t.feitas * 100, peso: t.feitas,
+          extra: (t.caminho && t.caminho.length ? t.caminho.join(' › ') : '') });
+      });
+    });
+    return pontos;
+  }
+
+  var MINIMO_TEC = 5;
+  function corAcerto(p) { return p >= 85 ? '#3ecf7c' : p >= ZONA_ATENCAO ? '#f2b33d' : '#f2607a'; }
+
+  function graficoDispersao(pontos, fonte) {
+    var estreito = window.innerWidth < 700; // no celular, desenho mais estreito para o texto não ficar minúsculo
+    var L = estreito ? 400 : 760, A = estreito ? 340 : 380, esq = 42, dir = 12, topo = 14, base = 40;
+    var maxN = Math.max.apply(null, pontos.map(function (p) { return p.n; }).concat([10]));
+    var alvo = maxN * 1.1, passo = Math.pow(10, Math.floor(Math.log10(alvo))) / 2, teto = Math.ceil(alvo / passo) * passo;
+    var minPct = Math.min.apply(null, pontos.map(function (p) { return p.pct; }).concat([60]));
+    var piso = Math.max(0, Math.floor((minPct - 5) / 10) * 10);
+    // Escala de raiz no eixo das questões: espalha os assuntos com poucas questões, que são a maioria.
+    function x(n) { return esq + Math.sqrt(n / teto) * (L - esq - dir); }
+    function y(p) { return topo + (100 - p) / (100 - piso) * (A - topo - base); }
+    var maxPeso = Math.max.apply(null, pontos.map(function (p) { return p.peso; }).concat([1]));
+    function raio(p) { return fonte === 'programa' ? 4 + p.peso * 2.2 : 3.5 + 9 * Math.sqrt(p.peso / maxPeso); }
+    function no(tag, attrs) { var n = document.createElementNS(SVG_NS, tag); for (var k in attrs) n.setAttribute(k, attrs[k]); return n; }
+    var svg = no('svg', { viewBox: '0 0 ' + L + ' ' + A, class: 'mapa-dif-svg', role: 'img', 'aria-label': 'Mapa de dificuldades' });
+    svg.appendChild(no('rect', { x: esq, y: y(ZONA_ATENCAO), width: L - esq - dir, height: y(piso) - y(ZONA_ATENCAO), class: 'mapa-zona' }));
+    for (var p = piso; p <= 100; p += 10) {
+      svg.appendChild(no('line', { x1: esq, x2: L - dir, y1: y(p), y2: y(p), class: 'mapa-grade' }));
+      var t = no('text', { x: esq - 8, y: y(p) + 4, class: 'mapa-eixo', 'text-anchor': 'end' }); t.textContent = p + '%'; svg.appendChild(t);
+    }
+    for (var i = 0; i <= 4; i++) {
+      var v = Math.round(teto * i * i / 16), tx = no('text', { x: x(v), y: A - base + 18, class: 'mapa-eixo', 'text-anchor': 'middle' });
+      tx.textContent = UI.fmtNum(v); svg.appendChild(tx);
+    }
+    svg.appendChild(no('line', { x1: esq, x2: L - dir, y1: y(ZONA_ATENCAO), y2: y(ZONA_ATENCAO), class: 'mapa-limite' }));
+    if (ZONA_ATENCAO % 10) { var rot = no('text', { x: esq - 8, y: y(ZONA_ATENCAO) + 4, class: 'mapa-rotulo zona', 'text-anchor': 'end' }); rot.textContent = ZONA_ATENCAO + '%'; svg.appendChild(rot); }
+    var rz = no('text', { x: esq + 8, y: y(piso) - 8, class: 'mapa-rotulo zona' }); rz.textContent = 'zona de atenção · abaixo de ' + ZONA_ATENCAO + '%'; svg.appendChild(rz);
+    var eixoX = no('text', { x: L - dir, y: A - 4, class: 'mapa-eixo', 'text-anchor': 'end' }); eixoX.textContent = 'questões resolvidas →'; svg.appendChild(eixoX);
+    pontos.slice().sort(function (a, b) { return b.peso - a.peso; }).forEach(function (pt) {
+      var c = no('circle', { cx: x(pt.n), cy: y(pt.pct), r: raio(pt), fill: corAcerto(pt.pct), class: 'mapa-ponto' });
+      comDica(c, [pt.nome, pt.materia, 'Acerto: ' + UI.fmtPct(Math.round(pt.pct * 10) / 10) + ' em ' + UI.fmtNum(pt.n) + ' questões'].concat(pt.extra ? [pt.extra] : []));
+      svg.appendChild(c);
+    });
+    return svg;
+  }
+
+  function mapaDificuldades(iv, disc, f) {
+    var fonte = f.fonte;
+    var pontos = fonte === 'tec' ? pontosTec(disc) : pontosPrograma(iv, disc);
+    var seletor = el('div', { class: 'alternar', role: 'group', 'aria-label': 'Fonte' }, [['programa', 'Programa (Modo Leitura)'], ['tec', 'TEC (planilhas)']].map(function (o) {
+      return el('button', { type: 'button', class: o[0] === fonte ? 'ativo' : '', text: o[1], 'aria-pressed': String(o[0] === fonte),
+        onclick: function () { if (o[0] === fonte) return; f.fonte = o[0]; salvarFiltro(f); App.atualizar(); } });
+    }));
+    var revisar = pontos.filter(function (p) { return p.pct < ZONA_ATENCAO; })
+      .sort(function (a, b) { return b.n - a.n || a.pct - b.pct; }).slice(0, 8);
+    var explica = fonte === 'tec'
+      ? 'Cada ponto é um assunto das planilhas do TEC (todas as importadas) com ' + MINIMO_TEC + ' questões ou mais. O tamanho é a quantidade de questões.'
+      : 'Cada ponto é um bloco de teoria, com as questões dos cadernos de teoria no período. O tamanho é a relevância do bloco.';
+    return el('section', { class: 'painel cartao-grafico' }, [
+      el('div', { class: 'grafico-topo' }, [el('h2', { class: 'secao-titulo', text: 'Mapa de dificuldades' }), seletor]),
+      el('p', { class: 'data-fraca mapa-explica', text: explica }),
+      el('div', { class: 'mapa-dif' }, [
+        pontos.length ? el('div', { class: 'mapa-dif-grafico' }, graficoDispersao(pontos, fonte))
+          : el('div', { class: 'grafico-vazio', text: fonte === 'tec' ? 'Nenhuma planilha do TEC importada para esta seleção.' : 'Sem questões de cadernos de teoria neste período.' }),
+        el('div', { class: 'mapa-revisar' }, [
+          el('div', { class: 'caixa-titulo', text: 'Revise primeiro' }),
+          revisar.length ? el('ol', { class: 'mapa-revisar-lista' }, revisar.map(function (p) {
+            return el('li', null, [
+              el('span', { class: 'mapa-revisar-nome', text: p.nome }),
+              el('span', { class: 'data-fraca', text: p.materia + ' · ' + UI.fmtPct(Math.round(p.pct * 10) / 10) + ' em ' + UI.fmtNum(p.n) })
+            ]);
+          })) : el('p', { class: 'data-fraca', text: pontos.length ? 'Nada abaixo de ' + ZONA_ATENCAO + '%. Dificuldades vencidas!' : '—' }),
+          el('div', { class: 'mapa-legenda' }, [
+            el('span', null, [el('i', { style: { background: '#3ecf7c' } }), '85% ou mais']),
+            el('span', null, [el('i', { style: { background: '#f2b33d' } }), ZONA_ATENCAO + '% a 85%']),
+            el('span', null, [el('i', { style: { background: '#f2607a' } }), 'abaixo de ' + ZONA_ATENCAO + '%'])
+          ])
+        ])
+      ])
+    ]);
+  }
+
+  function filtrosDashboard(f, iv) {
+    function mudar() { salvarFiltro(f); App.atualizar(); }
+    var materia = el('select', { class: 'dash-materia', onchange: function () { f.materia = materia.value; mudar(); } },
+      [el('option', { value: '', text: 'Todas as matérias', selected: !f.materia })].concat(Dados.disciplinas().map(function (d) {
+        return el('option', { value: d.id, text: d.nome, selected: d.id === f.materia });
+      })));
+    var periodo = el('div', { class: 'alternar', role: 'group', 'aria-label': 'Período' }, OPCOES_PERIODO.map(function (o) {
+      return el('button', { type: 'button', class: o[0] === f.periodo ? 'ativo' : '', text: o[1], 'aria-pressed': String(o[0] === f.periodo),
+        onclick: function () { if (o[0] === f.periodo) return; f.periodo = o[0]; if (o[0] === 'pers' && !f.de) { f.de = iv.de; f.ate = iv.ate; } mudar(); } });
+    }));
+    var datas = f.periodo === 'pers' ? el('div', { class: 'dash-datas' }, [
+      el('input', { type: 'date', value: iv.de, max: UI.hoje(), onchange: function (e) { f.de = e.target.value; mudar(); } }),
+      el('span', { text: 'até' }),
+      el('input', { type: 'date', value: iv.ate, max: UI.hoje(), onchange: function (e) { f.ate = e.target.value; mudar(); } })
+    ]) : null;
+    return el('div', { class: 'dash-filtros' }, [materia, periodo, datas]);
+  }
+
+  function render(raiz) {
+    var f = filtroSalvo(), iv = intervalo(f), disc = f.materia;
+    var d = disc ? Dados.disciplina(disc) : null;
+    raiz.appendChild(el('div', { class: 'pagina-topo' }, el('div', null, [
+      el('h1', { class: 'pagina-titulo', text: 'Dashboard' }),
+      el('div', { class: 'pagina-subtitulo', text: (iv.dias === 1 ? UI.fmtData(iv.de) : UI.fmtData(iv.de) + ' a ' + UI.fmtData(iv.ate) + ' · ' + iv.dias + ' dias') + (d ? ' · ' + d.nome : ' · todas as matérias') })
+    ])));
+    if (Dados.estaVazio()) {
+      raiz.appendChild(el('div', { class: 'vazio' }, [el('p', { class: 'vazio-destaque', text: 'Ainda não há estudos para mostrar.' }),
+        el('div', { class: 'vazio-acoes' }, el('a', { class: 'btn btn-primario', href: '#/teoria', text: 'Ir para o Controle de Teoria' }))]));
+      return;
+    }
+    raiz.appendChild(filtrosDashboard(f, iv));
+    raiz.appendChild(kpisDashboard(iv, disc));
+    raiz.appendChild(graficosPeriodo(iv, disc));
+    raiz.appendChild(el('div', { class: 'grade-dois' }, [progressoEdital(disc), horasPorMateria(iv, disc)]));
+    raiz.appendChild(mapaDificuldades(iv, disc, f));
+    raiz.appendChild(acertoPorMateria(iv, disc));
+  }
+
+  return {
+    render: render,
+    linhaTopo: linhaTopo, indicadores: indicadores, cartaoProxima: cartaoProxima, painelCiclo: painelCiclo,
+    detalheCiclo: detalheCiclo, textoEtapa: textoEtapa, fotoPerfil: fotoPerfil, editarPerfil: editarPerfil, fmtHoras: fmtHoras
+  };
 })();

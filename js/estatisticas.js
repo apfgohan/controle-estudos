@@ -1,5 +1,5 @@
 // Aba "Estatísticas": importa o histórico do TecConcursos e mostra os pontos fracos.
-// Os dados importados ficam separados: não entram no Dashboard, nas sessões nem nos cadernos.
+// Os dados importados ficam separados: não entram nas sessões nem nos cadernos (no Dashboard, só no Mapa de dificuldades).
 var Estatisticas = (function () {
   var el = UI.el;
   var MINIMO = 10;          // só são classificados assuntos com MAIS de 10 questões
@@ -458,7 +458,7 @@ var Estatisticas = (function () {
   function render(raiz) {
     raiz.appendChild(el('div', { class: 'pagina-topo' }, el('div', null, [
       el('h1', { class: 'pagina-titulo', text: 'Estatísticas' }),
-      el('div', { class: 'pagina-subtitulo', text: 'Pontos fracos a partir do histórico do TecConcursos. Estes dados não entram no Dashboard nem no Controle de Questões.' })
+      el('div', { class: 'pagina-subtitulo', text: 'Pontos fracos a partir do histórico do TecConcursos. Estes dados não entram nas horas, no XP nem no Controle de Questões; no Dashboard, aparecem só no Mapa de dificuldades (fonte TEC).' })
     ])));
 
     if (!Dados.disciplinas().length) {
@@ -509,5 +509,5 @@ var Estatisticas = (function () {
     return lista.sort(function (a, b) { return b.pctErro - a.pctErro || b.erros - a.erros; });
   }
 
-  return { render: render, pontosFracos: pontosFracos, seloErro: seloErro, _corresponder: corresponder };
+  return { render: render, pontosFracos: pontosFracos, seloErro: seloErro, agregar: agregar, _corresponder: corresponder };
 })();

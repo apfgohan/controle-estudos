@@ -172,6 +172,15 @@ var Teoria = (function () {
     ].concat(Dados.blocosDe(d.id).map(function (b) { return cartaoBloco(d, b); }))));
   }
 
+  // Relevância do bloco: 1 a 5 estrelas (padrão 3). Aparece nas metas e no mapa de dificuldades.
+  function estrelasBloco(b) {
+    var n = Dados.relevancia(b);
+    return el('span', { class: 'estrelas', title: 'Relevância deste bloco: ' + n + ' de 5', role: 'group', 'aria-label': 'Relevância' }, [1, 2, 3, 4, 5].map(function (i) {
+      return el('button', { type: 'button', class: 'estrela' + (i <= n ? ' cheia' : ''), text: '★', title: i + (i === 1 ? ' estrela' : ' estrelas'),
+        onclick: function () { Dados.definirRelevancia(b.id, i); App.atualizar(); } });
+    }));
+  }
+
   function cartaoBloco(d, b) {
     var pb = Dados.progressoBloco(b.id);
     var topicos = Dados.topicosDe(b.id);
@@ -179,6 +188,7 @@ var Teoria = (function () {
       el('div', { class: 'bloco-topo' }, [
         el('div', { class: 'bloco-nome', text: b.nome }),
         el('div', { class: 'bloco-direita' }, [
+          estrelasBloco(b),
           el('span', { class: 'pilula' + (pb.pct >= 100 ? ' completo' : ''), text: '(' + pb.feitos + '/' + pb.total + ' • ' + UI.fmtPct(pb.pct) + ')' }),
           UI.botaoEngrenagem(function () { editarBloco(d, b); }, 'Editar bloco')
         ])

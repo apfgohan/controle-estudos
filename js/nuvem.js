@@ -150,7 +150,7 @@ var Nuvem = (function () {
         var c = document.createElement('canvas');
         c.width = c.height = tam;
         c.getContext('2d').drawImage(img, (img.width - lado) / 2, (img.height - lado) / 2, lado, lado, 0, 0, tam, tam);
-        Dados.atualizarPerfil({ nome: p.nome, foto: c.toDataURL('image/jpeg', 0.88) });
+        Dados.atualizarPerfil({ nome: p.nome, cargo: p.cargo, foto: c.toDataURL('image/jpeg', 0.88) });
         ok();
       };
       img.onerror = function () { ok(); };

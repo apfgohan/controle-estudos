@@ -42,7 +42,7 @@ var Sessao = (function () {
     caixa.innerHTML = '';
     if (!cron) {
       caixa.appendChild(UI.botao('Cronômetro', function () { iniciarCron(null); }, 'btn-secundario btn-cron', 'relogio'));
-      caixa.appendChild(UI.botao('+ Lançar estudo', function () { abrir({}); }, 'btn-primario'));
+      caixa.appendChild(UI.botao('+ Estudo extra', function () { abrir({}); }, 'btn-primario', null));
       return;
     }
     var d = cron.contexto && Dados.disciplina(cron.contexto.disciplinaId);
@@ -63,7 +63,8 @@ var Sessao = (function () {
   }, 1000);
 
   // ---------- Formulário ----------
-  // opcoes: { sessaoId, disciplinaId, tipo, topicoIds, cadernoIds, segundos, doCronometro }
+  // opcoes: { sessaoId, disciplinaId, tipo, topicoIds, cadernoIds, segundos, doCronometro, daMeta }
+  // daMeta: lançamento da meta do ciclo (matéria, tipo e cadernos ou tópicos ficam travados; só este avança o ciclo).
   function abrir(opcoes) {
     var op = opcoes || {};
     var existente = op.sessaoId ? Dados.sessao(op.sessaoId) : null;
@@ -75,7 +76,10 @@ var Sessao = (function () {
     }
     var proxima = Dados.proximaDoCiclo ? Dados.proximaDoCiclo() : null;
 
+    var travado = !!op.daMeta && !existente;
     var est = {
+      travado: travado,
+      topicosMeta: travado && op.topicoIds ? op.topicoIds.slice() : null,
       disciplinaId: existente ? existente.disciplinaId : (op.disciplinaId || (proxima && proxima.disciplinaId) || discs[0].id),
       tipo: existente ? existente.tipo : (op.tipo || 'teoria'),
       sessaoId: existente ? existente.id : null,
@@ -101,11 +105,13 @@ var Sessao = (function () {
       est.assuntos = {};
       desenharArea();
     } }, discs.map(function (d) { return el('option', { value: d.id, text: d.nome, selected: d.id === est.disciplinaId }); }));
+    if (travado) disciplina.disabled = true;
 
     var tipoBotoes = el('div', { class: 'segmentado' });
     function desenharTipo() {
       tipoBotoes.innerHTML = '';
       [['teoria', 'Teoria'], ['questoes', 'Questões'], ['revisao', 'Revisão']].forEach(function (t) {
+        if (travado && t[0] !== est.tipo) return; // na meta, o tipo é o da meta
         tipoBotoes.appendChild(el('button', { type: 'button', class: est.tipo === t[0] ? 'ativo' : '', text: t[1], onclick: function () {
           est.tipo = t[0];
           desenharTipo();
@@ -138,7 +144,7 @@ var Sessao = (function () {
       erro.hidden = true;
       if (!data.value) return mostrarErro('Informe a data.');
       if (est.segundos <= 0) return mostrarErro('Informe o tempo de estudo.');
-      var campos = { data: data.value, disciplinaId: est.disciplinaId, tipo: est.tipo, segundos: est.segundos, anotacao: anotacao.value };
+      var campos = { data: data.value, disciplinaId: est.disciplinaId, tipo: est.tipo, segundos: est.segundos, anotacao: anotacao.value, daMeta: travado };
       if (est.tipo === 'teoria') {
         if (Dados.topicosDaDisciplina(est.disciplinaId).length && !est.topicoIds.length) return mostrarErro('Marque o(s) tópico(s) estudado(s).');
         campos.topicoIds = est.topicoIds;
@@ -199,7 +205,7 @@ var Sessao = (function () {
     } else if (!op.doCronometro && !cron) {
       botoes.unshift({ texto: 'Iniciar cronômetro', classe: 'btn-contorno btn-esquerda', acao: function () {
         iniciarCron({
-          disciplinaId: est.disciplinaId, tipo: est.tipo, topicoIds: est.topicoIds,
+          disciplinaId: est.disciplinaId, tipo: est.tipo, topicoIds: est.topicoIds, daMeta: travado,
           cadernoIds: est.linhas.map(function (l) { return l.cadernoId; }).filter(Boolean)
         });
         UI.aviso('Cronômetro iniciado. Clique em "Finalizar" no topo quando terminar.');
@@ -209,7 +215,7 @@ var Sessao = (function () {
 
     desenharTipo();
     desenharArea();
-    var m = UI.modal(existente ? 'Editar sessão de estudo' : 'Lançar estudo', [
+    var m = UI.modal(existente ? 'Editar sessão de estudo' : travado ? 'Lançar meta' : 'Estudo extra', [
       el('div', { class: 'campos-linha' }, [UI.campo('Data', data), UI.campo('Disciplina', disciplina)]),
       el('div', { class: 'campos-linha' }, [
         UI.campo('O que você estudou?', tipoBotoes),
@@ -233,6 +239,10 @@ var Sessao = (function () {
 
   function areaTeoria(est) {
     var blocos = Dados.blocosDe(est.disciplinaId).filter(function (b) { return Dados.topicosDe(b.id).length; });
+    // Meta de teoria: só o bloco da meta aparece.
+    if (est.topicosMeta && est.topicosMeta.length) {
+      blocos = blocos.filter(function (b) { return Dados.topicosDe(b.id).some(function (t) { return est.topicosMeta.indexOf(t.id) >= 0; }); });
+    }
     if (!blocos.length) {
       return el('p', { class: 'aviso-suave', text: 'Esta disciplina ainda não tem tópicos. Cadastre-os no Controle de Teoria para registrar o que foi estudado.' });
     }
@@ -313,8 +323,8 @@ var Sessao = (function () {
         lista,
         fracos.length ? el('span', { class: 'campo-ajuda', text: 'Lance quantas questões resolveu de cada assunto. Assunto com questões lançadas fica como revisto e sai das recomendações; se continuar fraco na próxima planilha, volta.' }) : null
       ]),
-      el('div', { class: 'campo-rotulo rotulo-cadernos', text: 'Outras questões desta revisão (opcional)' })
-    ].concat(areaQuestoes(est, redesenhar));
+      est.travado ? null : el('div', { class: 'campo-rotulo rotulo-cadernos', text: 'Outras questões desta revisão (opcional)' })
+    ].concat(est.travado ? [] : areaQuestoes(est, redesenhar));
   }
 
   function areaQuestoes(est, redesenhar) {
@@ -345,6 +355,7 @@ var Sessao = (function () {
           return el('option', { value: c.id, text: c.nome + (c.assunto ? ' — ' + c.assunto : '') + info, selected: c.id === l.cadernoId });
         }));
       })));
+      if (est.travado && l.cadernoId) sel.disabled = true; // na meta, o caderno é o da meta
       function numero(campo, rotulo) {
         return el('label', { class: 'campo-num' }, [
           el('span', { class: 'campo-rotulo', text: rotulo }),
@@ -355,7 +366,7 @@ var Sessao = (function () {
         el('label', { class: 'campo' }, [el('span', { class: 'campo-rotulo', text: 'Caderno' }), sel]),
         numero('acertos', 'Acertos'),
         numero('erros', 'Erros'),
-        est.linhas.length > 1 ? el('button', { type: 'button', class: 'btn-icone btn-remover', title: 'Remover', text: '✕', onclick: function () {
+        est.linhas.length > 1 && !est.travado ? el('button', { type: 'button', class: 'btn-icone btn-remover', title: 'Remover', text: '✕', onclick: function () {
           est.linhas.splice(i, 1);
           redesenhar();
         } }) : null
@@ -391,7 +402,7 @@ var Sessao = (function () {
       !pastas.length ? el('p', { class: 'aviso-suave', text: 'Esta disciplina ainda não tem cadernos. Você pode lançar como questões avulsas ou cadastrar cadernos no Controle de Questões.' }) : null,
       el('div', { class: 'linhas-caderno' }, linhas),
       el('div', { class: 'questoes-rodape' }, [
-        el('button', { type: 'button', class: 'link', text: '+ Outro caderno', onclick: function () {
+        est.travado ? el('span') : el('button', { type: 'button', class: 'link', text: '+ Outro caderno', onclick: function () {
           est.linhas.push({ cadernoId: '', acertos: '', erros: '' });
           redesenhar();
         } }),

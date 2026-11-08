@@ -1,6 +1,7 @@
 // Navegação entre abas (rotas no endereço: #/teoria, #/teoria/<id>, ...).
 var App = (function () {
   var rotas = {
+    metas: Metas.render,
     dashboard: Dashboard.render,
     teoria: Teoria.render,
     questoes: Questoes.render,
@@ -9,7 +10,7 @@ var App = (function () {
     resumos: Resumos.render,
     backup: Backup.render
   };
-  var ROTA_INICIAL = 'dashboard';
+  var ROTA_INICIAL = 'metas';
 
   var ultimaRota = null;
 
@@ -24,6 +25,7 @@ var App = (function () {
       a.classList.toggle('ativo', a.getAttribute('data-rota') === nome);
     });
 
+    desenharLateral();
     var raiz = document.getElementById('conteudo');
     raiz.innerHTML = '';
     rotas[nome](raiz, partes.slice(1));
@@ -31,8 +33,35 @@ var App = (function () {
     Patentes.conferirAvisos();
   }
 
-  window.addEventListener('hashchange', render);
+  // ---------- Menu lateral ----------
+  // Perfil com a patente (abre "Minha patente"); é redesenhado a cada atualização da tela.
+  function desenharLateral() {
+    var el = UI.el, p = Dados.db.perfil || {};
+    var sub = document.getElementById('lateral-sub');
+    if (sub) sub.textContent = p.cargo || 'Auditor Fiscal - Área Fiscal';
+    var caixa = document.getElementById('lateral-perfil');
+    if (!caixa) return;
+    var r = Patentes.calcular();
+    caixa.innerHTML = '';
+    caixa.appendChild(el('button', { type: 'button', class: 'lateral-perfil' + (r.risco ? ' risco' : ''), title: 'Ver minha patente', onclick: Patentes.abrir }, [
+      el('span', { class: 'lateral-perfil-topo' }, [
+        Dashboard.fotoPerfil(p),
+        el('span', { class: 'lateral-perfil-texto' }, [
+          el('strong', { class: 'lateral-nome', text: p.nome || 'Meu perfil' }),
+          el('span', { class: 'lateral-patente' }, [Patentes.insignia(r.indice, 'mini'), el('span', { text: r.patente.nome })])
+        ])
+      ]),
+      UI.barra(r.pct),
+      el('span', { class: 'lateral-xp' }, [UI.fmtNum(r.xp) + ' XP', r.xpHoje > 0 ? el('span', { class: 'xp-hoje', text: ' · +' + UI.fmtNum(r.xpHoje) + ' hoje' }) : null])
+    ]));
+  }
+  function fecharMenu() { document.body.classList.remove('menu-aberto'); }
+
+  window.addEventListener('hashchange', function () { fecharMenu(); render(); });
   document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('#menu a[data-icone]').forEach(function (a) { a.insertBefore(UI.icone(a.getAttribute('data-icone')), a.firstChild); });
+    document.getElementById('abrir-menu').addEventListener('click', function () { document.body.classList.toggle('menu-aberto'); });
+    document.getElementById('lateral-fundo').addEventListener('click', fecharMenu);
     render();
     Nuvem.aoMudar(Patentes.conferirAvisos);
     Nuvem.iniciar();         // login e sincronização entre aparelhos (se o Firebase estiver configurado)

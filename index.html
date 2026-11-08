@@ -10,49 +10,65 @@
   <link rel="apple-touch-icon" href="img/icone-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/estilo.css?v=2026-11-07e">
+  <link rel="stylesheet" href="css/estilo.css?v=2026-11-07f">
 </head>
 <body>
-  <header class="topo">
-    <div class="topo-marca">Controle de Estudos</div>
-    <nav class="topo-menu" id="menu">
-      <a href="#/dashboard" data-rota="dashboard">Dashboard</a>
-      <a href="#/teoria" data-rota="teoria">Teoria</a>
-      <a href="#/questoes" data-rota="questoes">Questões</a>
-      <a href="#/estatisticas" data-rota="estatisticas">Estatísticas</a>
-      <a href="#/resumos" data-rota="resumos">Resumos</a>
-      <a href="#/historico" data-rota="historico">Histórico</a>
-      <a href="#/backup" data-rota="backup">Backup</a>
+  <aside class="lateral" id="lateral">
+    <div class="lateral-marca">
+      <div class="lateral-titulo">Controle de Estudos</div>
+      <div class="lateral-sub" id="lateral-sub">Auditor Fiscal - Área Fiscal</div>
+    </div>
+    <div id="lateral-perfil"></div>
+    <nav class="lateral-menu" id="menu">
+      <a href="#/metas" data-rota="metas" data-icone="alvo">Metas</a>
+      <a href="#/dashboard" data-rota="dashboard" data-icone="grafico">Dashboard</a>
+      <a href="#/teoria" data-rota="teoria" data-icone="lista">Teoria</a>
+      <a href="#/questoes" data-rota="questoes" data-icone="caderno2">Questões</a>
+      <a href="#/resumos" data-rota="resumos" data-icone="livro">Resumos</a>
+      <a href="#/estatisticas" data-rota="estatisticas" data-icone="progresso">Estatísticas</a>
+      <a href="#/historico" data-rota="historico" data-icone="historico">Histórico</a>
+      <a href="#/backup" data-rota="backup" data-icone="pasta">Backup</a>
     </nav>
-    <div class="status-topo" id="status-dados"></div>
-    <div class="acoes-topo" id="acoes-topo"></div>
-  </header>
+    <div class="lateral-rodape"><div class="status-topo" id="status-dados"></div></div>
+  </aside>
+  <div class="lateral-fundo" id="lateral-fundo"></div>
 
-  <div id="aviso-dados" class="aviso-dados-area"></div>
-  <main id="conteudo" class="conteudo"></main>
+  <div class="principal">
+    <header class="topo">
+      <button type="button" class="btn-menu" id="abrir-menu" aria-label="Abrir o menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+      </button>
+      <div class="topo-marca">Controle de Estudos</div>
+      <div class="acoes-topo" id="acoes-topo"></div>
+    </header>
+
+    <div id="aviso-dados" class="aviso-dados-area"></div>
+    <main id="conteudo" class="conteudo"></main>
+  </div>
 
   <!-- Firebase (login e nuvem). Sem internet ou sem configuração, o programa funciona só neste aparelho. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-  <script>window.VERSAO_APP = '2026-11-07e';</script>
-  <script src="js/firebase-config.js?v=2026-11-07e"></script>
-  <script src="js/dados.js?v=2026-11-07e"></script>
-  <script src="js/ui.js?v=2026-11-07e"></script>
-  <script src="js/patentes.js?v=2026-11-07e"></script>
-  <script src="js/nuvem.js?v=2026-11-07e"></script>
-  <script src="js/armazenamento.js?v=2026-11-07e"></script>
-  <script src="js/teoria.js?v=2026-11-07e"></script>
-  <script src="js/questoes.js?v=2026-11-07e"></script>
-  <script src="js/sessao.js?v=2026-11-07e"></script>
-  <script src="js/previsao.js?v=2026-11-07e"></script>
-  <script src="js/dashboard.js?v=2026-11-07e"></script>
-  <script src="js/planilha.js?v=2026-11-07e"></script>
-  <script src="js/estatisticas.js?v=2026-11-07e"></script>
-  <script src="js/historico.js?v=2026-11-07e"></script>
-  <script src="js/resumos-dados.js?v=2026-11-07e"></script>
-  <script src="js/resumos.js?v=2026-11-07e"></script>
-  <script src="js/backup.js?v=2026-11-07e"></script>
-  <script src="js/app.js?v=2026-11-07e"></script>
+  <script>window.VERSAO_APP = '2026-11-07f';</script>
+  <script src="js/firebase-config.js?v=2026-11-07f"></script>
+  <script src="js/dados.js?v=2026-11-07f"></script>
+  <script src="js/ui.js?v=2026-11-07f"></script>
+  <script src="js/patentes.js?v=2026-11-07f"></script>
+  <script src="js/nuvem.js?v=2026-11-07f"></script>
+  <script src="js/armazenamento.js?v=2026-11-07f"></script>
+  <script src="js/teoria.js?v=2026-11-07f"></script>
+  <script src="js/questoes.js?v=2026-11-07f"></script>
+  <script src="js/sessao.js?v=2026-11-07f"></script>
+  <script src="js/previsao.js?v=2026-11-07f"></script>
+  <script src="js/dashboard.js?v=2026-11-07f"></script>
+  <script src="js/metas.js?v=2026-11-07f"></script>
+  <script src="js/planilha.js?v=2026-11-07f"></script>
+  <script src="js/estatisticas.js?v=2026-11-07f"></script>
+  <script src="js/historico.js?v=2026-11-07f"></script>
+  <script src="js/resumos-dados.js?v=2026-11-07f"></script>
+  <script src="js/resumos.js?v=2026-11-07f"></script>
+  <script src="js/backup.js?v=2026-11-07f"></script>
+  <script src="js/app.js?v=2026-11-07f"></script>
 </body>
 </html>

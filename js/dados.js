@@ -45,7 +45,7 @@ var Dados = (function () {
   }
 
   function atualizarPerfil(campos) {
-    db.perfil = { nome: campos.nome, foto: campos.foto };
+    db.perfil = { nome: campos.nome, foto: campos.foto, cargo: campos.cargo || '' };
     salvar();
   }
 
@@ -243,6 +243,15 @@ var Dados = (function () {
     if (!b) return;
     if (nome) b.nome = nome;
     if (posicao) reposicionar(blocosDe(b.disciplinaId), b, posicao);
+    salvar();
+  }
+
+  // Relevância do bloco de teoria (1 a 5 estrelas); sem valor gravado, vale 3.
+  function relevancia(b) { var n = b && Number(b.relevancia); return n >= 1 && n <= 5 ? n : 3; }
+  function definirRelevancia(id, n) {
+    var b = bloco(id);
+    if (!b) return;
+    b.relevancia = Math.max(1, Math.min(5, Math.round(Number(n) || 3)));
     salvar();
   }
 
@@ -867,7 +876,8 @@ var Dados = (function () {
     s.criadoEm = Date.now();
     db.sessoes.push(s);
     igualarTotaisRodada(s);
-    var atual = itemAtualCiclo();
+    // Só o lançamento feito pela meta avança o ciclo; o "+ Estudo extra" e os botões das abas não.
+    var atual = campos.daMeta ? itemAtualCiclo() : null;
     if (atual && atual.disciplinaId === s.disciplinaId) {
       // Guarda em que posição do ciclo a sessão foi lançada (para mostrar o que foi feito em cada matéria do ciclo).
       s.ciclo = { itemId: atual.id, volta: db.ciclo.voltas || 0, posicao: db.ciclo.posicaoAtual };
@@ -1147,6 +1157,7 @@ var Dados = (function () {
     criarDisciplina: criarDisciplina, atualizarDisciplina: atualizarDisciplina, excluirDisciplina: excluirDisciplina,
     modoDeEstudo: modoDeEstudo,
     blocosDe: blocosDe, bloco: bloco, criarBloco: criarBloco, atualizarBloco: atualizarBloco, excluirBloco: excluirBloco,
+    relevancia: relevancia, definirRelevancia: definirRelevancia,
     topicosDe: topicosDe, topico: topico, topicosDaDisciplina: topicosDaDisciplina,
     criarTopicos: criarTopicos, atualizarTopico: atualizarTopico, excluirTopico: excluirTopico,
     definirConcluido: definirConcluido, agendarRevisao: agendarRevisao, concluirRevisao: concluirRevisao,
