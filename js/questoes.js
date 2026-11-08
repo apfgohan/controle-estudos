@@ -229,10 +229,11 @@ var Questoes = (function () {
       var semTotal = cadernos.filter(function (c) { return !c.totalQuestoes; });
       if (semTotal.length) avisos.push('Informe o total de questões de: ' + semTotal.map(function (c) { return c.nome; }).join(', ') + '.');
     } else {
-      texto = Dados.modoDeEstudo(d.id).modo === 'leitura'
-        ? 'Antes de cada novo bloco de teoria (do 2º em diante) vem uma rodada: primeiro o caderno de dúvidas, depois o de erradas 2x ou mais. Ao lançar, informe quantas questões o caderno tem naquele momento. A contagem aqui recomeça a cada rodada; o histórico não é apagado.'
+      var leitura = Dados.modoDeEstudo(d.id).modo === 'leitura';
+      texto = leitura
+        ? 'Antes de cada novo bloco de teoria (do 2º em diante) vem uma rodada do caderno de dúvidas. Ao lançar, informe quantas questões o caderno tem naquele momento. A contagem aqui recomeça a cada rodada; o histórico não é apagado. O caderno de erradas 2x ou mais fica para o Modo Revisão.'
         : 'Depois do simulado, vêm as favoritadas: primeiro o caderno de dúvidas, depois o de erradas 2x ou mais. Como esses cadernos mudam sempre, não há total: ao lançar a sessão, marque "Finalizei este caderno" quando terminar.';
-      var faltam = Dados.ORDEM_FAVORITAS.filter(function (g) { return !Dados.cadernoFavorito(d.id, g); });
+      var faltam = (leitura ? [Dados.GRUPO_FAVORITAS_LEITURA] : Dados.ORDEM_FAVORITAS).filter(function (g) { return !Dados.cadernoFavorito(d.id, g); });
       if (faltam.length) avisos.push('Falta cadastrar: ' + faltam.map(function (g) { return Dados.GRUPOS_FAVORITAS[g].toLowerCase(); }).join(' e ') + '.');
       var semGrupo = cadernos.filter(function (c) { return !c.grupo; });
       if (semGrupo.length) avisos.push('Cadernos sem grupo: ' + semGrupo.map(function (c) { return c.nome; }).join(', ') + ' (escolha na engrenagem).');
@@ -258,6 +259,7 @@ var Questoes = (function () {
     });
     return el('div', null, [
       el('div', { class: 'caderno-bloco', text: c.grupo === 'duvidas' ? 'Dúvidas' : c.grupo === 'erros2x' ? 'Errei 2x ou mais' : 'Sem grupo' }),
+      c.grupo === 'erros2x' && Dados.modoDeEstudo(d.id).modo === 'leitura' ? el('span', { class: 'data-fraca', text: 'Entra só no Modo Revisão' }) : null,
       it && it.rodada ? el('span', { class: 'data-fraca', text: 'Rodada antes da teoria do ' + it.bloco.nome }) : null,
       it && it.rodada && it.rodada.vazia ? el('div', { class: 'data-fraca' }, ['Sem questões nesta rodada · ',
         el('button', { type: 'button', class: 'link', text: 'Desfazer', onclick: function () { Dados.marcarRodadaVazia(c.id, it.rodada.blocoId, false); App.atualizar(); } })]) : null,

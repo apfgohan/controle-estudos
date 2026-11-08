@@ -47,12 +47,15 @@ var Previsao = (function () {
     return partes;
   }
 
-  // Tamanho médio de uma rodada de favoritadas, pelos totais já informados.
+  // Tamanho médio de uma rodada de favoritadas de dúvida, pelos totais já informados.
   function mediaRodadas(disciplinaId) {
     var totais = {};
     Dados.db.sessoes.forEach(function (s) {
       if (s.disciplinaId !== disciplinaId) return;
-      (s.cadernos || []).forEach(function (l) { if (l.rodada && l.totalRodada) totais[l.cadernoId + '|' + l.rodada] = l.totalRodada; });
+      (s.cadernos || []).forEach(function (l) {
+        var c = l.rodada && l.totalRodada ? Dados.caderno(l.cadernoId) : null;
+        if (c && c.grupo === Dados.GRUPO_FAVORITAS_LEITURA) totais[l.cadernoId + '|' + l.rodada] = l.totalRodada;
+      });
     });
     var lista = Object.keys(totais).map(function (k) { return totais[k]; });
     return lista.length ? media(lista) : FAVORITAS_PADRAO;

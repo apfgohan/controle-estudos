@@ -580,12 +580,13 @@ var Dados = (function () {
     for (var passo = 1; passo <= N + atrasos[atrasos.length - 1]; passo++) {
       if (passo <= N) {
         var pb = progresso[passo - 1];
-        // Antes de iniciar um novo bloco (do 2º em diante), uma rodada das favoritadas. Se a teoria do bloco já começou,
-        // a rodada não é mais recomendada (mas continua aparecendo se foi concluída).
+        // Antes de iniciar um novo bloco (do 2º em diante), uma rodada das favoritadas de dúvida. Se a teoria do bloco já
+        // começou, a rodada não é mais recomendada (mas continua aparecendo se foi concluída). As erradas 2x+ ficam para o
+        // Modo Revisão: no Modo Leitura só aparecem as rodadas concluídas antes dessa regra, para não apagar o que foi feito.
         if (passo > 1) ORDEM_FAVORITAS.forEach(function (g) {
           var cf = cadernoFavorito(disciplinaId, g);
           var rod = cf ? rodadaFavorita(cf.id, pb.bloco.id) : null;
-          if (teoriaIniciada(pb.topicos) && !(rod && rod.concluida)) return;
+          if ((g !== GRUPO_FAVORITAS_LEITURA || teoriaIniciada(pb.topicos)) && !(rod && rod.concluida)) return;
           itens.push({
             tipo: 'favoritas', passo: passo, indice: passo, bloco: pb.bloco, grupo: g, caderno: cf, rodada: rod,
             feitas: rod ? rod.feitas : 0, qtd: rod ? rod.total : null, concluido: !!(rod && rod.concluida)
@@ -671,7 +672,7 @@ var Dados = (function () {
 
   function itensFavoritos(cadernoId) {
     var c = caderno(cadernoId), p = c && pasta(c.pastaId);
-    if (!p || p.tipo !== 'favoritas' || !c.grupo) return null;
+    if (!p || p.tipo !== 'favoritas' || c.grupo !== GRUPO_FAVORITAS_LEITURA) return null;
     var m = modoDeEstudo(p.disciplinaId);
     if (m.modo !== 'leitura') return null;
     return { plano: m.plano, itens: m.plano.itens.filter(function (it) { return it.tipo === 'favoritas' && it.grupo === c.grupo; }) };
@@ -721,6 +722,7 @@ var Dados = (function () {
   // ---------- Modo Revisão: ciclo simulado → favoritadas (dúvidas, erradas 2x+) → pontos fracos ----------
   var GRUPOS_FAVORITAS = { duvidas: 'Questões em que fiquei em dúvida', erros2x: 'Questões que errei 2x ou mais' };
   var ORDEM_FAVORITAS = ['duvidas', 'erros2x'];
+  var GRUPO_FAVORITAS_LEITURA = 'duvidas'; // no Modo Leitura as rodadas são só de dúvidas; os dois grupos valem no Modo Revisão
   var FRACOS_QUESTOES = 50, FRACOS_ASSUNTOS = 3;
   var SIMULADO_MINIMO = 50; // por volta: soma mínima de questões de simulado antes das favoritadas
 
@@ -1165,7 +1167,7 @@ var Dados = (function () {
     pastaSimulado: pastaSimulado, pastaFavoritas: pastaFavoritas,
     NOME_PASTA_TEORIA: NOME_PASTA_TEORIA, NOME_PASTA_ERROS: NOME_PASTA_ERROS,
     NOME_PASTA_SIMULADO: NOME_PASTA_SIMULADO, NOME_PASTA_FAVORITAS: NOME_PASTA_FAVORITAS, criarPasta: criarPasta,
-    GRUPOS_FAVORITAS: GRUPOS_FAVORITAS, ORDEM_FAVORITAS: ORDEM_FAVORITAS, cadernoFavorito: cadernoFavorito, grupoLivre: grupoLivre,
+    GRUPOS_FAVORITAS: GRUPOS_FAVORITAS, ORDEM_FAVORITAS: ORDEM_FAVORITAS, GRUPO_FAVORITAS_LEITURA: GRUPO_FAVORITAS_LEITURA, cadernoFavorito: cadernoFavorito, grupoLivre: grupoLivre,
     planoRevisao: planoRevisao,
     rodadaFavorita: rodadaFavorita, rodadaAberta: rodadaAberta, rodadaExibida: rodadaExibida, marcarRodadaVazia: marcarRodadaVazia,
     paresDeBlocos: paresDeBlocos, nomePar: nomePar, cadernoDoPar: cadernoDoPar, parSemCaderno: parSemCaderno,
