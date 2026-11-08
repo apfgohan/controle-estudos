@@ -1287,17 +1287,25 @@ var Dashboard = (function () {
 
   // ---------- Dashboard: estatísticas, com filtro de matéria e de período ----------
   var CHAVE_FILTRO = 'controle-estudos.filtro-dashboard';
-  var OPCOES_PERIODO = [['hoje', 'Hoje'], ['7', '7 dias'], ['30', '30 dias'], ['tudo', 'Tudo'], ['pers', 'Personalizado']];
+  var OPCOES_PERIODO = [['hoje', 'Hoje'], ['7', 'Últimos 7 dias'], ['30', 'Últimos 30 dias'], ['tudo', 'Histórico completo'], ['pers', 'Personalizar…']];
+  var OPCOES_MAPA = [['7', '7 dias'], ['30', '30 dias'], ['tudo', 'Tudo']];
   var ZONA_ATENCAO = 75;
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   function filtroSalvo() {
     var f = {};
     try { f = JSON.parse(localStorage.getItem(CHAVE_FILTRO) || '{}') || {}; } catch (e) { f = {}; }
+    var m = f.mapa || {};
     return {
       materia: f.materia && Dados.disciplina(f.materia) ? f.materia : '',
-      periodo: OPCOES_PERIODO.some(function (o) { return o[0] === f.periodo; }) ? f.periodo : '30',
-      de: f.de || '', ate: f.ate || '', fonte: f.fonte === 'tec' ? 'tec' : 'programa'
+      periodo: OPCOES_PERIODO.some(function (o) { return o[0] === f.periodo; }) ? f.periodo : '7',
+      de: f.de || '', ate: f.ate || '',
+      // O mapa de dificuldades tem filtros próprios, independentes dos de cima.
+      mapa: {
+        fonte: (m.fonte || f.fonte) === 'tec' ? 'tec' : 'programa',
+        materia: m.materia && Dados.disciplina(m.materia) ? m.materia : '',
+        periodo: OPCOES_MAPA.some(function (o) { return o[0] === m.periodo; }) ? m.periodo : 'tudo'
+      }
     };
   }
   function salvarFiltro(f) { try { localStorage.setItem(CHAVE_FILTRO, JSON.stringify(f)); } catch (e) { /* preferência */ } }
@@ -1326,29 +1334,104 @@ var Dashboard = (function () {
     return el('span', { class: classeDiferenca(v) }, (v > 0 ? '+' : v < 0 ? '−' : '') + (v ? fmt(Math.abs(v)) : 'igual') + ' vs. período anterior');
   }
 
-  function kpisDashboard(iv, disc) {
+  // Título do relatório: "1 a 7 de novembro", "9 de outubro a 7 de novembro"...
+  function tituloPeriodo(iv) {
+    function txt(d, comAno, comMes) {
+      var o = { day: 'numeric' };
+      if (comMes) o.month = 'long';
+      if (comAno) o.year = 'numeric';
+      return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', o);
+    }
+    if (iv.de === iv.ate) return txt(iv.de, iv.de.slice(0, 4) !== UI.hoje().slice(0, 4), true);
+    var mesmoAno = iv.de.slice(0, 4) === iv.ate.slice(0, 4), mesmoMes = mesmoAno && iv.de.slice(0, 7) === iv.ate.slice(0, 7);
+    var anoFim = iv.ate.slice(0, 4) !== UI.hoje().slice(0, 4) || !mesmoAno;
+    return txt(iv.de, !mesmoAno, !mesmoMes) + ' a ' + txt(iv.ate, anoFim, true);
+  }
+
+  var ROTULO_RELATORIO = { hoje: 'Relatório de hoje', '7': 'Relatório dos últimos 7 dias', '30': 'Relatório dos últimos 30 dias', tudo: 'Relatório de todo o histórico', pers: 'Relatório do período escolhido' };
+  var ROTULO_ANTERIOR = { hoje: 'vs ontem', '7': 'vs semana anterior', '30': 'vs 30 dias anteriores', pers: 'vs período anterior' };
+
+  // Quadro com horas, questões e acurácia do período, comparados com o período anterior de mesmo tamanho.
+  function resumoDashboard(iv, disc, f) {
     var r = resumoPeriodo(iv.de, iv.ate, disc);
     var ant = iv.tudo ? null : resumoPeriodo(UI.somarDias(iv.de, -iv.dias), UI.somarDias(iv.de, -1), disc);
-    var dias = diasEstudados(iv.de, iv.ate, disc), diasAnt = ant ? diasEstudados(UI.somarDias(iv.de, -iv.dias), UI.somarDias(iv.de, -1), disc) : null;
-    function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
-    function bloco(titulo, valor, linhas, dif) {
-      return el('div', { class: 'caixa-kpi caixa-topo' }, [
-        el('div', { class: 'caixa-titulo', text: titulo }),
-        el('div', { class: 'previsao-valor', text: valor }),
-        el('div', { class: 'caixa-linhas' }, linhas.map(function (l) { return el('div', null, [el('strong', { text: l[0] }), ' ' + l[1]]); })),
-        dif
+    var rotuloAnt = ROTULO_ANTERIOR[f.periodo];
+    function comparacao(v, fmt) {
+      if (!ant) return el('div', { class: 'dash-num-sub', text: 'Desde o primeiro estudo lançado' });
+      return el('div', { class: 'dash-num-sub' }, [
+        el('strong', { class: classeDiferenca(v), text: v ? (v > 0 ? '+' : '−') + fmt(Math.abs(v)) : '=' }), ' ' + rotuloAnt
       ]);
     }
-    return el('div', { class: 'dash-kpis' }, [
-      bloco('Horas estudadas', fmtHoras(r.segundos), [[fmtHoras(r.teoria), 'de teoria'], [fmtHoras(r.questoes), 'de questões']],
-        ant ? diferenca(r.segundos - ant.segundos, fmtHoras) : null),
-      bloco('Questões', UI.fmtNum(r.feitas), [[UI.fmtNum(r.acertos), 'acertos'], [UI.fmtNum(r.erros), 'erros']],
-        ant ? diferenca(r.feitas - ant.feitas, UI.fmtNum) : null),
-      bloco('Acerto', r.feitas ? pct1(r.pct) : '—', [[r.feitas ? UI.fmtNum(r.acertos) : '0', 'de ' + UI.fmtNum(r.feitas) + ' questões']],
-        ant && r.feitas && ant.feitas ? el('span', { class: classeDiferenca(r.pct - ant.pct) }, (r.pct - ant.pct > 0 ? '+' : r.pct - ant.pct < 0 ? '−' : '') +
-          UI.fmtPct(Math.abs(Math.round((r.pct - ant.pct) * 10) / 10)).replace('%', '') + ' p.p. vs. período anterior') : null),
-      bloco('Dias estudados', dias + ' de ' + iv.dias, [[iv.dias ? Math.round(dias / iv.dias * 100) + '%' : '—', 'dos dias do período']],
-        diasAnt != null ? diferenca(dias - diasAnt, String) : null)
+    function numero(rotulo, valor, sufixo, sub, classe) {
+      return el('div', { class: 'dash-num' }, [
+        el('div', { class: 'dash-num-rotulo', text: rotulo }),
+        el('div', { class: 'dash-num-valor' + (classe ? ' ' + classe : '') }, [valor, sufixo ? el('small', { text: sufixo }) : null]),
+        sub
+      ]);
+    }
+    var classeAcerto = !r.feitas ? '' : r.pct >= 80 ? 'bom' : r.pct >= ZONA_ATENCAO ? 'medio' : 'ruim';
+    return el('section', { class: 'painel dash-resumo' }, [
+      numero('Horas estudadas', fmtHoras(r.segundos), '', comparacao(r.segundos - (ant ? ant.segundos : 0), fmtHoras)),
+      numero('Questões', UI.fmtNum(r.feitas), '', comparacao(r.feitas - (ant ? ant.feitas : 0), UI.fmtNum)),
+      numero('Acurácia', r.feitas ? UI.fmtNum(Math.round(r.pct)) : '—', r.feitas ? '%' : '',
+        el('div', { class: 'dash-num-sub' }, [el('strong', { text: UI.fmtNum(r.acertos) }), r.acertos === 1 ? ' certa' : ' certas',
+          ant && r.feitas && ant.feitas ? el('span', { class: classeDiferenca(r.pct - ant.pct), text: ' · ' + (r.pct >= ant.pct ? '+' : '−') +
+            fmtDecimal(Math.abs(r.pct - ant.pct)) + ' p.p.' }) : null]), classeAcerto)
+    ]);
+  }
+
+  // Meta de horas: a meta semanal (de todas as matérias), proporcional ao tamanho do período.
+  function caixaMetaPeriodo(iv, f) {
+    var metaSeg = (Number((Dados.db.metas || {}).horas) || 0) * 3600;
+    var feito = resumoPeriodo(iv.de, iv.ate).segundos;
+    var semanal = f.periodo === '7';
+    var plano = metaSeg * iv.dias / 7;
+    var pct = plano ? feito / plano * 100 : 0;
+    var C = 2 * Math.PI * 52, len = Math.min(100, pct) / 100 * C;
+    var anel = el('div', { class: 'dash-anel', html: '<svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="52" fill="none" stroke="var(--superficie-3)" stroke-width="12"/>' +
+      (len ? '<circle cx="60" cy="60" r="52" fill="none" stroke="var(--verde)" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + len.toFixed(1) + ' ' + C.toFixed(1) + '" transform="rotate(-90 60 60)"/>' : '') +
+      '</svg><span>' + (plano ? Math.floor(pct) + '%' : '—') + '</span>' });
+    var corpo = plano ? [
+      el('div', { class: 'dash-num-rotulo', text: semanal ? 'Meta semanal' : 'Meta do período' }),
+      el('strong', { class: 'dash-meta-valor', text: fmtHoras(feito) + ' de ' + fmtHoras(plano) }),
+      el('span', { class: 'data-fraca', text: semanal ? 'Planejado: ' + fmtHoras(plano) : 'Meta semanal de ' + fmtHoras(metaSeg) + ', proporcional a ' + qtdDias(iv.dias) }),
+      f.materia ? el('span', { class: 'data-fraca', text: 'Horas de todas as matérias' }) : null
+    ] : [
+      el('div', { class: 'dash-num-rotulo', text: 'Meta semanal' }),
+      el('span', { class: 'data-fraca', text: 'Nenhuma meta de horas definida.' }),
+      UI.botao('Definir meta', editarMetas, 'btn-secundario')
+    ];
+    return el('section', { class: 'painel dash-meta' }, [anel, el('div', { class: 'dash-meta-corpo' }, corpo)]);
+  }
+
+  // "Seu ritmo": horas por dia (até 14 dias) ou por semana/mês, com a linha da meta e "folga" nos dias sem estudo.
+  function graficoRitmo(iv, disc) {
+    var bk = baldes(iv, disc);
+    var metaDia = (Number((Dados.db.metas || {}).horas) || 0) * 3600 / 7;
+    var porDia = bk.tipo === 'dia';
+    bk.lista.forEach(function (s) { s.meta = metaDia * s.dias; });
+    var metaRef = porDia ? metaDia : bk.tipo === 'semana' ? metaDia * 7 : metaDia * 30;
+    // Folga no topo para o rótulo das horas caber acima da barra mais alta.
+    var maximo = Math.max.apply(null, bk.lista.map(function (s) { return s.segundos; }).concat([disc ? 0 : metaRef, 1])) * 1.15;
+    var colunas = bk.lista.map(function (s) {
+      var h = s.segundos / maximo * 100;
+      var bateu = !disc && s.meta && s.segundos >= s.meta;
+      return comDica(el('div', { class: 'ritmo-col' }, [
+        el('div', { class: 'ritmo-area' }, s.segundos ? [
+          el('span', { class: 'ritmo-valor', text: fmtHoras(s.segundos) }),
+          el('div', { class: 'ritmo-barra' + (bateu ? ' bateu' : ''), style: { height: Math.max(2, h) + '%' } })
+        ] : [el('span', { class: 'ritmo-folga', text: 'folga' }), el('div', { class: 'ritmo-vazio' })]),
+        el('div', { class: 'ritmo-rotulo' }, [el('strong', { text: s.rotulo }), s.sub ? el('span', { text: s.sub }) : null])
+      ]), [s.nome, 'Total: ' + fmtHoras(s.segundos), 'Teoria: ' + fmtHoras(s.teoria), 'Questões: ' + fmtHoras(s.questoes)]
+        .concat(!disc && s.meta ? ['Meta: ' + fmtHoras(s.meta)] : []));
+    });
+    var linha = !disc && metaRef ? el('div', { class: 'ritmo-guia' }, el('div', { class: 'ritmo-meta', style: { bottom: (metaRef / maximo * 100) + '%' } })) : null;
+    var nome = porDia ? (iv.dias === 1 ? 'Seu ritmo hoje' : 'Seu ritmo nos ' + iv.dias + ' dias') : bk.tipo === 'semana' ? 'Seu ritmo por semana' : 'Seu ritmo por mês';
+    var legenda = !disc && metaRef ? el('span', { class: 'ritmo-legenda' }, [el('i'), (porDia ? 'meta diária ' : bk.tipo === 'semana' ? 'meta semanal ' : 'meta mensal ≈ ') + fmtHoras(metaRef)])
+      : disc ? el('span', { class: 'data-fraca', text: 'A meta vale para todas as matérias' }) : null;
+    return el('section', { class: 'painel cartao-grafico' }, [
+      el('div', { class: 'grafico-topo' }, [el('h2', { class: 'secao-titulo', text: nome }), legenda]),
+      el('div', { class: 'ritmo' + (bk.lista.length > 8 ? ' ritmo-denso' : '') }, [el('div', { class: 'ritmo-colunas' }, colunas), linha])
     ]);
   }
 
@@ -1359,7 +1442,9 @@ var Dashboard = (function () {
       for (d = iv.de; d <= iv.ate; d = UI.somarDias(d, 1)) {
         r = resumoPeriodo(d, d, disc);
         var dt = new Date(d + 'T00:00:00');
-        r.rotulo = iv.dias <= 7 ? semPonto(dt.toLocaleDateString('pt-BR', { weekday: 'short' })) : UI.fmtData(d).slice(0, 5);
+        r.rotulo = semPonto(dt.toLocaleDateString('pt-BR', { weekday: 'short' })).slice(0, 3);
+        r.sub = UI.fmtData(d).slice(0, 5);
+        r.dias = 1;
         r.nome = semPonto(dt.toLocaleDateString('pt-BR', { weekday: 'long' })) + ', ' + UI.fmtData(d);
         lista.push(r);
       }
@@ -1369,6 +1454,7 @@ var Dashboard = (function () {
         r = resumoPeriodo(a, b, disc);
         r.rotulo = UI.fmtData(a).slice(0, 5);
         r.nome = 'De ' + UI.fmtData(a) + ' a ' + UI.fmtData(b);
+        r.dias = UI.diasEntre(a, b) + 1;
         lista.push(r);
       }
     } else {
@@ -1378,6 +1464,8 @@ var Dashboard = (function () {
         var a2 = iso(m) < iv.de ? iv.de : iso(m), b2 = iso(fim) > iv.ate ? iv.ate : iso(fim);
         r = resumoPeriodo(a2, b2, disc);
         r.rotulo = semPonto(m.toLocaleDateString('pt-BR', { month: 'short' }));
+        r.sub = String(m.getFullYear());
+        r.dias = UI.diasEntre(a2, b2) + 1;
         r.nome = semPonto(m.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }));
         lista.push(r);
       }
@@ -1385,29 +1473,19 @@ var Dashboard = (function () {
     return { tipo: tipo, lista: lista };
   }
 
-  function graficosPeriodo(iv, disc) {
+  function graficoQuestoes(iv, disc) {
     function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
     var bk = baldes(iv, disc), nomeTipo = { dia: 'por dia', semana: 'por semana', mes: 'por mês' }[bk.tipo];
-    var totalSeg = 0, feitas = 0, acertos = 0;
-    var horas = bk.lista.map(function (s) {
-      totalSeg += s.segundos;
-      return { rotulo: s.rotulo, valor: s.segundos, textoValor: fmtHoras(s.segundos), dica: [s.nome, 'Total: ' + fmtHoras(s.segundos), 'Teoria: ' + fmtHoras(s.teoria), 'Questões: ' + fmtHoras(s.questoes)] };
-    });
+    var feitas = 0, acertos = 0;
     var quest = bk.lista.map(function (s) {
       feitas += s.feitas; acertos += s.acertos;
-      return { rotulo: s.rotulo, valor: s.feitas, textoValor: UI.fmtNum(s.feitas), pct: s.feitas ? s.pct : null,
+      return { rotulo: bk.tipo === 'dia' && bk.lista.length > 7 ? s.sub : s.rotulo, valor: s.feitas, textoValor: UI.fmtNum(s.feitas), pct: s.feitas ? s.pct : null,
         dica: [s.nome, UI.fmtNum(s.feitas) + ' questões', s.feitas ? 'Acerto: ' + pct1(s.pct) : 'Sem questões'] };
     });
-    function cartaoComLegenda(titulo, legenda, conteudo) {
-      return el('section', { class: 'painel cartao-grafico' }, [
-        el('div', { class: 'grafico-topo' }, [el('h2', { class: 'secao-titulo', text: titulo }), el('span', { class: 'data-fraca', text: 'Agrupado ' + nomeTipo })]),
-        el('div', { class: 'legenda' }, legenda), conteudo
-      ]);
-    }
-    return el('div', { class: 'grade-graficos' }, [
-      cartaoComLegenda('Horas de estudo', [itemLegenda('barra', 'Horas', fmtHoras(totalSeg))], graficoColunas(horas, 'Sem estudos neste período.')),
-      cartaoComLegenda('Questões', [itemLegenda('barra', 'Questões', UI.fmtNum(feitas)), itemLegenda('linha', 'Média de acertos', feitas ? pct1(acertos / feitas * 100) : '—')],
-        graficoColunas(quest, 'Sem questões neste período.', true))
+    return el('section', { class: 'painel cartao-grafico' }, [
+      el('div', { class: 'grafico-topo' }, [el('h2', { class: 'secao-titulo', text: 'Questões e acerto' }), el('span', { class: 'data-fraca', text: 'Agrupado ' + nomeTipo })]),
+      el('div', { class: 'legenda' }, [itemLegenda('barra', 'Questões', UI.fmtNum(feitas)), itemLegenda('linha', 'Média de acertos', feitas ? pct1(acertos / feitas * 100) : '—')]),
+      graficoColunas(quest, 'Sem questões neste período.', true)
     ]);
   }
 
@@ -1554,20 +1632,31 @@ var Dashboard = (function () {
     return svg;
   }
 
-  function mapaDificuldades(iv, disc, f) {
-    var fonte = f.fonte;
+  function mapaDificuldades(f) {
+    var fm = f.mapa, fonte = fm.fonte, disc = fm.materia;
+    var iv = intervalo({ periodo: fm.periodo });
     var pontos = fonte === 'tec' ? pontosTec(disc) : pontosPrograma(iv, disc);
+    function mudar() { salvarFiltro(f); App.atualizar(); }
     var seletor = el('div', { class: 'alternar', role: 'group', 'aria-label': 'Fonte' }, [['programa', 'Programa (Modo Leitura)'], ['tec', 'TEC (planilhas)']].map(function (o) {
       return el('button', { type: 'button', class: o[0] === fonte ? 'ativo' : '', text: o[1], 'aria-pressed': String(o[0] === fonte),
-        onclick: function () { if (o[0] === fonte) return; f.fonte = o[0]; salvarFiltro(f); App.atualizar(); } });
+        onclick: function () { if (o[0] === fonte) return; fm.fonte = o[0]; mudar(); } });
     }));
+    var materia = el('select', { class: 'dash-materia', 'aria-label': 'Matéria do mapa', onchange: function () { fm.materia = materia.value; mudar(); } },
+      [el('option', { value: '', text: 'Todas as matérias', selected: !disc })].concat(Dados.disciplinas().map(function (d) {
+        return el('option', { value: d.id, text: d.nome, selected: d.id === disc });
+      })));
+    var periodo = fonte === 'programa' ? el('div', { class: 'alternar', role: 'group', 'aria-label': 'Período do mapa' }, OPCOES_MAPA.map(function (o) {
+      return el('button', { type: 'button', class: o[0] === fm.periodo ? 'ativo' : '', text: o[1], 'aria-pressed': String(o[0] === fm.periodo),
+        onclick: function () { if (o[0] === fm.periodo) return; fm.periodo = o[0]; mudar(); } });
+    })) : el('span', { class: 'data-fraca', text: 'Todas as planilhas importadas' });
     var revisar = pontos.filter(function (p) { return p.pct < ZONA_ATENCAO; })
       .sort(function (a, b) { return b.n - a.n || a.pct - b.pct; }).slice(0, 8);
     var explica = fonte === 'tec'
-      ? 'Cada ponto é um assunto das planilhas do TEC (todas as importadas) com ' + MINIMO_TEC + ' questões ou mais. O tamanho é a quantidade de questões.'
-      : 'Cada ponto é um bloco de teoria, com as questões dos cadernos de teoria no período. O tamanho é a relevância do bloco.';
+      ? 'Cada ponto é um assunto das planilhas do TEC com ' + MINIMO_TEC + ' questões ou mais. O tamanho é a quantidade de questões.'
+      : 'Cada ponto é um bloco de teoria, com as questões do caderno de teoria dele. O tamanho é a relevância do bloco.';
     return el('section', { class: 'painel cartao-grafico' }, [
       el('div', { class: 'grafico-topo' }, [el('h2', { class: 'secao-titulo', text: 'Mapa de dificuldades' }), seletor]),
+      el('div', { class: 'dash-filtros mapa-filtros' }, [materia, periodo]),
       el('p', { class: 'data-fraca mapa-explica', text: explica }),
       el('div', { class: 'mapa-dif' }, [
         pontos.length ? el('div', { class: 'mapa-dif-grafico' }, graficoDispersao(pontos, fonte))
@@ -1592,40 +1681,46 @@ var Dashboard = (function () {
 
   function filtrosDashboard(f, iv) {
     function mudar() { salvarFiltro(f); App.atualizar(); }
-    var materia = el('select', { class: 'dash-materia', onchange: function () { f.materia = materia.value; mudar(); } },
+    var materia = el('select', { class: 'dash-materia', 'aria-label': 'Matéria', onchange: function () { f.materia = materia.value; mudar(); } },
       [el('option', { value: '', text: 'Todas as matérias', selected: !f.materia })].concat(Dados.disciplinas().map(function (d) {
         return el('option', { value: d.id, text: d.nome, selected: d.id === f.materia });
       })));
-    var periodo = el('div', { class: 'alternar', role: 'group', 'aria-label': 'Período' }, OPCOES_PERIODO.map(function (o) {
+    var periodo = el('div', { class: 'dash-periodos', role: 'group', 'aria-label': 'Período' }, OPCOES_PERIODO.map(function (o) {
       return el('button', { type: 'button', class: o[0] === f.periodo ? 'ativo' : '', text: o[1], 'aria-pressed': String(o[0] === f.periodo),
         onclick: function () { if (o[0] === f.periodo) return; f.periodo = o[0]; if (o[0] === 'pers' && !f.de) { f.de = iv.de; f.ate = iv.ate; } mudar(); } });
     }));
+    var imprimir = el('button', { type: 'button', class: 'btn-imprimir', title: 'Imprimir o relatório', 'aria-label': 'Imprimir o relatório', onclick: function () { window.print(); } }, UI.icone('imprimir'));
     var datas = f.periodo === 'pers' ? el('div', { class: 'dash-datas' }, [
       el('input', { type: 'date', value: iv.de, max: UI.hoje(), onchange: function (e) { f.de = e.target.value; mudar(); } }),
       el('span', { text: 'até' }),
       el('input', { type: 'date', value: iv.ate, max: UI.hoje(), onchange: function (e) { f.ate = e.target.value; mudar(); } })
     ]) : null;
-    return el('div', { class: 'dash-filtros' }, [materia, periodo, datas]);
+    return el('div', { class: 'dash-controles' }, [el('div', { class: 'dash-controles-linha' }, [periodo, imprimir]), el('div', { class: 'dash-controles-linha' }, [datas, materia])]);
   }
 
   function render(raiz) {
     var f = filtroSalvo(), iv = intervalo(f), disc = f.materia;
     var d = disc ? Dados.disciplina(disc) : null;
-    raiz.appendChild(el('div', { class: 'pagina-topo' }, el('div', null, [
-      el('h1', { class: 'pagina-titulo', text: 'Dashboard' }),
-      el('div', { class: 'pagina-subtitulo', text: (iv.dias === 1 ? UI.fmtData(iv.de) : UI.fmtData(iv.de) + ' a ' + UI.fmtData(iv.ate) + ' · ' + iv.dias + ' dias') + (d ? ' · ' + d.nome : ' · todas as matérias') })
-    ])));
     if (Dados.estaVazio()) {
+      raiz.appendChild(el('div', { class: 'pagina-topo' }, el('h1', { class: 'pagina-titulo', text: 'Dashboard' })));
       raiz.appendChild(el('div', { class: 'vazio' }, [el('p', { class: 'vazio-destaque', text: 'Ainda não há estudos para mostrar.' }),
         el('div', { class: 'vazio-acoes' }, el('a', { class: 'btn btn-primario', href: '#/teoria', text: 'Ir para o Controle de Teoria' }))]));
       return;
     }
-    raiz.appendChild(filtrosDashboard(f, iv));
-    raiz.appendChild(kpisDashboard(iv, disc));
-    raiz.appendChild(graficosPeriodo(iv, disc));
-    raiz.appendChild(el('div', { class: 'grade-dois' }, [progressoEdital(disc), horasPorMateria(iv, disc)]));
-    raiz.appendChild(mapaDificuldades(iv, disc, f));
-    raiz.appendChild(acertoPorMateria(iv, disc));
+    var dias = diasEstudados(iv.de, iv.ate, disc);
+    raiz.appendChild(el('div', { class: 'dash-cabeca' }, [
+      el('div', { class: 'dash-titulos' }, [
+        el('div', { class: 'dash-chamada' }, [el('span', { class: 'dash-ponto' }), ROTULO_RELATORIO[f.periodo] + (d ? ' · ' + d.nome : '')]),
+        el('h1', { class: 'dash-titulo', text: tituloPeriodo(iv) }),
+        el('div', { class: 'dash-sub', text: dias + ' de ' + qtdDias(iv.dias) + ' estudados.' })
+      ]),
+      filtrosDashboard(f, iv)
+    ]));
+    raiz.appendChild(el('div', { class: 'dash-topo' }, [resumoDashboard(iv, disc, f), caixaMetaPeriodo(iv, f)]));
+    raiz.appendChild(graficoRitmo(iv, disc));
+    raiz.appendChild(el('div', { class: 'grade-dois' }, [graficoQuestoes(iv, disc), horasPorMateria(iv, disc)]));
+    raiz.appendChild(el('div', { class: 'grade-dois' }, [progressoEdital(disc), acertoPorMateria(iv, disc)]));
+    raiz.appendChild(mapaDificuldades(f));
   }
 
   return {

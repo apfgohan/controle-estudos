@@ -68,15 +68,39 @@ var Metas = (function () {
     return { tipo: tl, titulo: Dashboard.textoEtapa(it), detalhe: det, estrelas: estrelas };
   }
 
-  // Acerto de cada matéria nas últimas 4 semanas.
+  // Acertos de todo o histórico, por caderno.
   function acertos() {
-    var de = UI.somarDias(UI.hoje(), -27), r = {};
+    var r = {};
     Dados.db.sessoes.forEach(function (s) {
-      if (s.data < de) return;
-      var x = r[s.disciplinaId] || (r[s.disciplinaId] = { n: 0, a: 0 });
-      (s.cadernos || []).forEach(function (l) { var a = Number(l.acertos) || 0; x.a += a; x.n += a + (Number(l.erros) || 0); });
+      (s.cadernos || []).forEach(function (l) {
+        if (!l.cadernoId) return;
+        var x = r[l.cadernoId] || (r[l.cadernoId] = { n: 0, a: 0 }), a = Number(l.acertos) || 0;
+        x.a += a; x.n += a + (Number(l.erros) || 0);
+      });
     });
     return r;
+  }
+
+  // Acerto do que a meta recomenda: no Modo Leitura, as questões do caderno de teoria do bloco (ou dos blocos, na bateria de erros);
+  // no Modo Revisão, o caderno da etapa (simulado ou favoritadas) ou os pontos fracos das Estatísticas.
+  function acertoDaEtapa(d, x, ac) {
+    if (!x) return { pct: null, texto: '' };
+    var cadernos = [], nome = '';
+    if (x.modo === 'leitura') {
+      var blocos = x.it.tipo === 'erros' && x.it.par ? x.it.par.blocos : x.it.bloco ? [x.it.bloco] : [];
+      blocos.forEach(function (b) { var c = Dados.cadernoDoBloco(b.id); if (c) cadernos.push(c.id); });
+      nome = blocos.length === 1 ? 'do ' + blocos[0].nome : blocos.length ? 'dos ' + Dados.nomePar(x.it.par) : '';
+    } else if (x.e.tipo === 'fracos') {
+      var f = Dados.planoRevisao(d.id).fracos || [], n = 0, erros = 0;
+      f.forEach(function (t) { n += t.feitas || 0; erros += t.erros || 0; });
+      return { pct: n ? (n - erros) / n * 100 : null, texto: 'Acerto nos pontos fracos (TEC)' };
+    } else if (x.e.caderno) {
+      cadernos.push(x.e.caderno.id);
+      nome = 'do caderno "' + x.e.caderno.nome + '"';
+    }
+    var tot = { n: 0, a: 0 };
+    cadernos.forEach(function (id) { var y = ac[id]; if (y) { tot.n += y.n; tot.a += y.a; } });
+    return { pct: tot.n ? tot.a / tot.n * 100 : null, n: tot.n, texto: nome ? 'Acerto nas questões ' + nome : '' };
   }
 
   // Próximas metas: do lugar seguinte ao atual até o fim da volta; se forem poucas, entra a volta seguinte até somar 10.
@@ -100,11 +124,11 @@ var Metas = (function () {
     return lista;
   }
 
-  function medidor(pct) {
+  function medidor(pct, dica) {
     var comp = 125.66, feito = pct == null ? 0 : Math.max(0, Math.min(100, pct)) / 100 * comp;
     var cor = pct == null ? 'var(--borda-forte)' : pct >= META_ACERTO ? 'var(--verde)' : pct >= 75 ? 'var(--amarelo)' : 'var(--vermelho)';
     var marca = Math.PI * (1 - META_ACERTO / 100), mx = (50 + 40 * Math.cos(marca)).toFixed(1), my = (50 - 40 * Math.sin(marca)).toFixed(1);
-    return el('div', { class: 'meta-acerto', title: pct == null ? 'Sem questões nas últimas 4 semanas' : 'Acerto da matéria nas últimas 4 semanas (meta: ' + META_ACERTO + '%)',
+    return el('div', { class: 'meta-acerto', title: (dica || 'Acerto') + (pct == null ? ': ainda sem questões resolvidas' : ' (meta: ' + META_ACERTO + '%)'),
       html: '<svg viewBox="0 0 100 58" aria-hidden="true"><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="var(--superficie-3)" stroke-width="9" stroke-linecap="round"/>' +
         (feito ? '<path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="' + cor + '" stroke-width="9" stroke-linecap="round" stroke-dasharray="' + feito.toFixed(1) + ' 200"/>' : '') +
         '<circle cx="' + mx + '" cy="' + my + '" r="4" fill="var(--texto)"/></svg>' +
@@ -120,7 +144,7 @@ var Metas = (function () {
 
   function cartao(m, ac) {
     var info = descrever(m.d, m.x);
-    var a = ac[m.d.id];
+    var a = acertoDaEtapa(m.d, m.x, ac);
     return el('div', { class: 'meta-cartao etapa-' + info.tipo[0], role: 'button', tabindex: '0', title: 'Ver os detalhes desta matéria',
       onclick: function () { Dashboard.detalheCiclo(m.pos); },
       onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); Dashboard.detalheCiclo(m.pos); } } }, [
@@ -131,7 +155,7 @@ var Metas = (function () {
         info.detalhe ? el('div', { class: 'meta-detalhe', text: info.detalhe }) : null
       ]),
       el('div', { class: 'meta-tipo' }, [UI.icone(info.tipo[2]), el('span', { text: info.tipo[1] })]),
-      medidor(a && a.n ? a.a / a.n * 100 : null),
+      medidor(a.pct, a.texto + (a.n ? ' · ' + UI.fmtNum(a.n) + ' questões' : '')),
       estrelas(info.estrelas)
     ]);
   }

@@ -1302,3 +1302,111 @@ a.rec-caderno:hover { text-decoration: underline; }
   .progresso-linha { grid-template-columns: minmax(0, 1fr) 76px; }
   .progresso-barras { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* ---------- Menu recolhido (só ícones) ---------- */
+.lateral-marca { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.lateral-marca-texto { min-width: 0; }
+.lateral-marca { padding: 0 2px 0 6px; }
+.lateral-titulo { font-size: 16.5px; white-space: nowrap; }
+.btn-recolher { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border-radius: 9px; border: 1px solid var(--borda); background: var(--superficie-2); color: var(--texto-2); cursor: pointer; transition: color .15s, border-color .15s, transform .2s; }
+.btn-recolher:hover { color: var(--texto); border-color: var(--borda-forte); }
+.btn-recolher svg { width: 16px; height: 16px; }
+.lateral, .principal { transition: width .2s ease, margin-left .2s ease, padding .2s ease; }
+@media (min-width: 901px) {
+  body.lateral-mini { --largura-lateral: 76px; }
+  .lateral-mini .lateral { padding: 18px 10px 14px; align-items: center; overflow-x: hidden; }
+  .lateral-mini .lateral-marca { padding: 0; justify-content: center; width: 100%; }
+  .lateral-mini .lateral-marca-texto { display: none; }
+  .lateral-mini .btn-recolher { transform: rotate(180deg); width: 40px; height: 40px; }
+  .lateral-mini #lateral-perfil { width: 100%; }
+  .lateral-mini .lateral-perfil { padding: 6px; align-items: center; gap: 6px; }
+  .lateral-mini .lateral-perfil-topo { flex-direction: column; gap: 6px; }
+  .lateral-mini .lateral-perfil-texto { align-items: center; }
+  .lateral-mini .lateral-nome, .lateral-mini .lateral-patente > span:not(.insignia), .lateral-mini .lateral-xp, .lateral-mini .lateral-perfil .barra { display: none; }
+  .lateral-mini .lateral-perfil .perfil-foto { width: 40px; height: 40px; }
+  .lateral-mini .lateral-menu { width: 100%; }
+  .lateral-mini .lateral-menu a { justify-content: center; padding: 11px 0; }
+  .lateral-mini .lateral-menu a .icone { width: 20px; height: 20px; }
+  .lateral-mini .lateral-texto { display: none; }
+  .lateral-mini .lateral-rodape { width: 100%; }
+  .lateral-mini .lateral-rodape .status-dados { font-size: 0; gap: 0; padding: 9px; }
+}
+@media (max-width: 900px) { .btn-recolher { display: none; } }
+
+/* ---------- Dashboard: cabeçalho do relatório ---------- */
+.dash-cabeca { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px 24px; flex-wrap: wrap; margin-bottom: 20px; }
+.dash-chamada { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--verde-texto); }
+.dash-ponto { width: 7px; height: 7px; border-radius: 50%; background: var(--verde); }
+.dash-titulo { font-size: 34px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; margin-top: 6px; }
+.dash-sub { color: var(--texto-2); margin-top: 4px; }
+.dash-controles { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.dash-controles-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.dash-periodos { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; border-radius: 14px; border: 1px solid var(--borda); background: var(--superficie); }
+.dash-periodos button { border: 0; background: none; padding: 8px 16px; border-radius: 10px; font-weight: 700; font-size: 14px; color: var(--texto-2); cursor: pointer; white-space: nowrap; }
+.dash-periodos button:hover { color: var(--texto); background: var(--superficie-3); }
+.dash-periodos button.ativo { background: var(--verde); color: #0b1f15; }
+.dash-periodos button:last-child { color: var(--texto-3); border-left: 1px solid var(--borda); border-radius: 0 10px 10px 0; }
+.dash-periodos button:last-child.ativo { color: #0b1f15; border-radius: 10px; }
+.btn-imprimir { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px; border-radius: 12px; border: 1px solid var(--borda); background: var(--superficie); color: var(--texto); cursor: pointer; }
+.btn-imprimir:hover { border-color: var(--borda-forte); }
+.btn-imprimir .icone { width: 20px; height: 20px; }
+.dash-topo { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; margin-bottom: 20px; }
+.dash-topo > .painel { margin-bottom: 0; }
+.dash-resumo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding: 28px 32px; }
+.dash-num-rotulo { font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--texto-2); }
+.dash-num-valor { font-size: 50px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin: 10px 0 6px; font-variant-numeric: tabular-nums; }
+.dash-num-valor small { font-size: 20px; font-weight: 700; margin-left: 4px; color: var(--texto-2); }
+.dash-num-valor.bom { color: var(--verde); } .dash-num-valor.medio { color: var(--amarelo); } .dash-num-valor.ruim { color: var(--vermelho); }
+.dash-num-sub { font-size: 14px; color: var(--texto-2); }
+.dash-num-sub strong { color: var(--texto); }
+.dash-num-sub strong.dif-mais { color: var(--verde-texto); } .dash-num-sub strong.dif-menos { color: var(--vermelho); }
+.dash-num-sub .dif { font-size: 13px; }
+.dash-meta { display: flex; align-items: center; gap: 20px; padding: 24px; }
+.dash-anel { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+.dash-anel svg { width: 100%; height: 100%; display: block; }
+.dash-anel span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; }
+.dash-meta-corpo { display: flex; flex-direction: column; gap: 6px; min-width: 0; align-items: flex-start; }
+.dash-meta-valor { font-size: 16px; }
+.dash-meta-corpo .data-fraca { font-size: 13px; }
+/* Ritmo */
+.ritmo { --ritmo-h: 220px; position: relative; padding-top: 8px; }
+.ritmo-guia { position: absolute; left: 0; right: 0; top: 8px; height: var(--ritmo-h); pointer-events: none; }
+.ritmo-colunas { display: flex; gap: 14px; align-items: stretch; }
+.ritmo-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.ritmo-area { height: var(--ritmo-h); display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 8px; text-align: center; }
+.ritmo-valor { font-size: 13px; font-weight: 800; }
+.ritmo-folga { font-size: 13px; font-weight: 700; color: var(--texto-3); }
+.ritmo-barra { border-radius: 8px 8px 4px 4px; background: linear-gradient(180deg, #3d7ad6, #2c5ba8); transition: filter .15s; }
+.ritmo-barra.bateu { background: linear-gradient(180deg, #33a874, #24764f); }
+.ritmo-col:hover .ritmo-barra { filter: brightness(1.15); }
+.ritmo-vazio { height: 0; border-top: 2px dotted var(--borda-forte); }
+.ritmo-rotulo { display: flex; flex-direction: column; align-items: center; font-size: 13px; }
+.ritmo-rotulo span { font-size: 11px; color: var(--texto-3); }
+.ritmo-meta { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed rgba(233, 237, 246, .28); }
+.ritmo-legenda { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--texto-2); }
+.ritmo-legenda i { width: 18px; border-top: 2px dashed rgba(233, 237, 246, .45); }
+.ritmo-denso .ritmo-colunas { gap: 6px; }
+.ritmo-denso .ritmo-valor { font-size: 11px; }
+.mapa-filtros { margin: -4px 0 0; }
+@media (max-width: 1250px) {
+  .dash-topo { grid-template-columns: 1fr; }
+  .dash-controles { align-items: flex-start; }
+  .dash-controles-linha { justify-content: flex-start; }
+}
+@media (max-width: 700px) {
+  .dash-titulo { font-size: 26px; }
+  .dash-resumo { grid-template-columns: 1fr 1fr; padding: 18px; }
+  .dash-resumo .dash-num:last-child { grid-column: 1 / -1; }
+  .dash-num-valor { font-size: 36px; }
+  .dash-periodos button { padding: 7px 10px; font-size: 13px; }
+  .ritmo-colunas { gap: 4px; }
+  .ritmo { --ritmo-h: 170px; }
+  .ritmo-valor, .ritmo-folga { font-size: 10px; }
+}
+/* Impressão do relatório */
+@media print {
+  .lateral, .lateral-fundo, .topo, .aviso-dados-area, .aviso-versao, .dash-controles, .btn-recolher { display: none !important; }
+  .principal { margin-left: 0 !important; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .painel, .grade-dois { break-inside: avoid; }
+}

@@ -59,7 +59,29 @@ var App = (function () {
 
   window.addEventListener('hashchange', function () { fecharMenu(); render(); });
   document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('#menu a[data-icone]').forEach(function (a) { a.insertBefore(UI.icone(a.getAttribute('data-icone')), a.firstChild); });
+    document.querySelectorAll('#menu a[data-icone]').forEach(function (a) {
+      var texto = a.textContent.trim();
+      a.textContent = '';
+      a.title = texto;
+      a.appendChild(UI.icone(a.getAttribute('data-icone')));
+      a.appendChild(UI.el('span', { class: 'lateral-texto', text: texto }));
+    });
+    // Menu recolhido (só os ícones): lembrado neste aparelho.
+    var CHAVE_MINI = 'controle-estudos.menu-recolhido';
+    function aplicarMini(mini) {
+      document.body.classList.toggle('lateral-mini', mini);
+      var b = document.getElementById('recolher-menu');
+      b.title = mini ? 'Expandir o menu' : 'Recolher o menu';
+      b.setAttribute('aria-label', b.title);
+    }
+    var mini = false;
+    try { mini = localStorage.getItem(CHAVE_MINI) === '1'; } catch (e) { /* preferência */ }
+    aplicarMini(mini);
+    document.getElementById('recolher-menu').addEventListener('click', function () {
+      var agora = !document.body.classList.contains('lateral-mini');
+      aplicarMini(agora);
+      try { localStorage.setItem(CHAVE_MINI, agora ? '1' : '0'); } catch (e) { /* preferência */ }
+    });
     document.getElementById('abrir-menu').addEventListener('click', function () { document.body.classList.toggle('menu-aberto'); });
     document.getElementById('lateral-fundo').addEventListener('click', fecharMenu);
     render();
