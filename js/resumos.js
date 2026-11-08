@@ -113,6 +113,8 @@ var Resumos = (function () {
     if (fundo && fundo !== 'white' && fundo !== '#ffffff' && fundo !== 'rgb(255, 255, 255)') r.push('background-color:' + fundo);
     var alinhar = (s.textAlign || origem.getAttribute('align') || '').toLowerCase();
     if (BLOCOS_TEXTO[tag] && /^(left|center|right|justify)$/.test(alinhar) && alinhar !== 'left') r.push('text-align:' + alinhar);
+    var altura = (s.verticalAlign || origem.getAttribute('valign') || '').toLowerCase();
+    if ((tag === 'td' || tag === 'th') && (altura === 'middle' || altura === 'bottom')) r.push('vertical-align:' + altura);
     var peso = s.fontWeight;
     if (tag === 'span' && (peso === 'bold' || +peso >= 600)) fora.push('b');
     if (tag === 'span' && s.fontStyle === 'italic') fora.push('i');
@@ -844,7 +846,8 @@ var Resumos = (function () {
       // Ao arrastar por várias células, o clique cai na linha ou na tabela, não numa célula:
       // continua valendo a célula onde está o cursor (e a barra da tabela continua aberta).
       var alvo = e.target;
-      if (!alvo.closest('td,th') && alvo.closest('table')) {
+      // O mesmo vale quando a barra da tabela, ao abrir, empurra a página e o botão é solto fora da célula.
+      if (!alvo.closest('td,th') && (alvo.closest('table') || selCel.inicio)) {
         var naSelecao = elementoDaSelecao();
         alvo = naSelecao && naSelecao.closest('td,th') ? naSelecao : (selCel.fim || selCel.inicio || alvo);
       }
@@ -1208,7 +1211,12 @@ var Resumos = (function () {
         alterou();
       }, el('span', { class: 'rb-preench' }, [el('i'), 'Preenchimento'])),
       el('span', { class: 'rbb-sep' }),
-      opcaoTabela('Mesclar células', 'Juntar as células marcadas numa só', function (c) { tabela('mesclar', c); }),
+      el('span', { class: 'rb-rotulo', text: 'Altura' }),
+      opcaoTabela('Topo', 'Alinhar o texto no topo das células marcadas', function (c) { alinharAltura(c, ''); }),
+      opcaoTabela('Meio', 'Centralizar o texto na altura das células marcadas', function (c) { alinharAltura(c, 'middle'); }),
+      opcaoTabela('Base', 'Alinhar o texto na base das células marcadas', function (c) { alinharAltura(c, 'bottom'); }),
+      el('span', { class: 'rbb-sep' }),
+      opcaoTabela('Mesclar células','Juntar as células marcadas numa só', function (c) { tabela('mesclar', c); }),
       opcaoTabela('Separar células', 'Separar a célula mesclada', function (c) { tabela('separar', c); }),
       el('span', { class: 'rbb-sep' }),
       opcaoTabela('Larguras iguais', 'Voltar as colunas à largura automática', function (c) { tabela('larguras', c); }),
@@ -1217,6 +1225,10 @@ var Resumos = (function () {
     );
     barra.appendChild(barraTabela);
     barra.appendChild(barraCaneta);
+    function alinharAltura(c, valor) {
+      celulasMarcadas(c).forEach(function (x) { x.style.verticalAlign = valor; });
+      alterou();
+    }
     function mostrarBarraTabela(c) { celulaBarra = c; barraTabela.hidden = false; }
     function esconderBarraTabela() { celulaBarra = null; barraTabela.hidden = true; limparSelecaoCelulas(); }
 
