@@ -163,6 +163,7 @@ var Teoria = (function () {
           el('div', { class: 'rotulo-pequeno', text: 'Peso' }), el('div', { class: 'mini-valor', text: d.peso })
         ])
       ]),
+      painelIncidencia(d),
       el('div', { class: 'novo-bloco' }, [
         UI.botao('+ Bloco', function () { editarBloco(d, null); }, 'btn-tracejado'),
         el('span', { text: 'Cada bloco reúne assuntos do TEC e as aulas que os cobrem.' }),
@@ -174,7 +175,69 @@ var Teoria = (function () {
     ].concat(Dados.blocosDe(d.id).map(function (b) { return cartaoBloco(d, b); }))));
   }
 
-  // ---------- Incidência (TEC) ----------
+  // ---------- Incidência (TEC): importada por matéria e banca, aqui na Teoria ----------
+  function erroImportacao(texto) {
+    UI.modal('Não foi possível importar', el('p', { text: texto }), [{ texto: 'Fechar', classe: 'btn-secundario' }]);
+  }
+
+  function importarIncidencia(d, banca, arquivo) {
+    if (!arquivo || !Dados.NOME_BANCA[banca]) return;
+    var nomeBanca = Dados.NOME_BANCA[banca];
+    Planilha.ler(arquivo).then(function (r) {
+      if (r.tipo !== 'incidencia') return erroImportacao('Esta planilha é de histórico de desempenho, não de incidência. O histórico se importa na aba Estatísticas; aqui vai o índice de um caderno do TEC (colunas Hierarquia, Índice, Quantidade e Porcentagem).');
+      var lista = r.disciplinas;
+      // Uma matéria por planilha; se vierem várias, usa a que corresponde a esta.
+      var alvo = lista.length === 1 ? lista[0] : lista.filter(function (x) { return Estatisticas._corresponder(x.nomePlanilha).escolha === d.id; })[0];
+      if (!alvo) return erroImportacao('A planilha tem ' + lista.length + ' matérias (' + lista.map(function (x) { return x.nomePlanilha; }).join(', ') + ') e nenhuma corresponde a ' + d.nome + '.');
+      function salvar() {
+        Dados.salvarIncidencia({ disciplinaId: d.id, banca: banca, nomeArquivo: arquivo.name, total: alvo.total, assuntos: alvo.topicos });
+        Dados.definirApelido(Planilha.normalizar(alvo.nomePlanilha), d.id);
+        App.atualizar();
+        UI.aviso('Incidência importada (' + nomeBanca + '): ' + UI.fmtNum(alvo.total) + ' questões em ' + alvo.topicos.length + ' assuntos');
+      }
+      var avisos = [], c = Estatisticas._corresponder(alvo.nomePlanilha), ja = Dados.incidencia(d.id, banca);
+      if (c.escolha !== d.id) avisos.push('A planilha é da matéria "' + alvo.nomePlanilha + '", que não parece ser ' + d.nome + '.');
+      if (ja) avisos.push('Ela substitui a incidência de ' + nomeBanca + ' importada em ' + new Date(ja.importadoEm).toLocaleDateString('pt-BR') + '.');
+      if (avisos.length) UI.confirmar(avisos.join(' ') + ' Importar para ' + d.nome + '?', salvar, 'Importar');
+      else salvar();
+    }).catch(function (e) {
+      console.error(e);
+      erroImportacao(e.message || 'Não foi possível ler a planilha.');
+    });
+  }
+
+  // Quadro das quatro bancas da matéria: o que já foi importado e os botões para importar, substituir ou excluir.
+  function painelIncidencia(d) {
+    var bancaAlvo = null;
+    var arquivo = el('input', { type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', hidden: true,
+      onchange: function () { importarIncidencia(d, bancaAlvo, arquivo.files[0]); arquivo.value = ''; } });
+    function escolher(banca) { bancaAlvo = banca; arquivo.value = ''; arquivo.click(); }
+    var cartoes = Dados.BANCAS.map(function (x) {
+      var inc = Dados.incidencia(d.id, x[0]);
+      return el('div', { class: 'inc-banca' + (inc ? ' ok' : '') + (x[0] === 'todas' ? ' inc-referencia' : '') }, [
+        el('div', { class: 'inc-banca-nome' }, [inc ? UI.icone('check') : null, el('span', { text: x[0] === 'todas' ? 'Todas as bancas' : x[1] })]),
+        el('div', { class: 'inc-banca-info', text: inc ? UI.fmtNum(inc.total) + ' questões · ' + inc.assuntos.length + ' assuntos · ' + new Date(inc.importadoEm).toLocaleDateString('pt-BR')
+          : x[0] === 'todas' ? 'Base das estrelas dos blocos' : 'Não importada' }),
+        el('div', { class: 'inc-banca-acoes' }, [
+          el('button', { type: 'button', class: 'link', text: inc ? 'Substituir' : 'Importar', onclick: function () { escolher(x[0]); } }),
+          inc ? el('button', { type: 'button', class: 'link link-perigo', text: 'Excluir', onclick: function () {
+            UI.confirmar('Excluir a incidência de ' + x[1] + ' de ' + d.nome + '? Os assuntos já escolhidos nos blocos continuam, mas sem os números desta banca.', function () {
+              Dados.excluirIncidencia(inc.id); App.atualizar();
+            });
+          } }) : null
+        ])
+      ]);
+    });
+    return el('div', { class: 'painel-incidencia' }, [
+      el('div', { class: 'grafico-topo' }, [
+        el('h3', { class: 'secao-titulo', text: 'Incidência dos assuntos (TEC)' }),
+        el('span', { class: 'data-fraca', text: 'Planilha do índice de um caderno da matéria no TEC, uma por banca' })
+      ]),
+      el('div', { class: 'inc-bancas' }, cartoes),
+      arquivo
+    ]);
+  }
+
   function fmtPct1(v) { return UI.fmtPct(Math.round((v || 0) * 10) / 10); }
 
   // Peso de uma banca em relação a "Todas": 'mais' (30% acima ou mais), 'menos' (30% abaixo ou mais) ou ''.
@@ -357,7 +420,7 @@ var Teoria = (function () {
     if (!arv) {
       UI.modal('Assuntos do TEC — ' + b.nome, [
         el('p', { class: 'modal-desc', text: 'Ainda não há incidência importada para ' + d.nome + '.' }),
-        el('p', null, ['Importe a planilha de incidência do TEC na aba ', el('a', { href: '#/estatisticas', text: 'Estatísticas' }), ' (tipo "Incidência", banca "Todas").'])
+        el('p', { text: 'Importe a planilha de incidência do TEC no quadro "Incidência dos assuntos (TEC)", logo acima dos blocos desta matéria (comece pela banca "Todas").' })
       ], [{ texto: 'Fechar', classe: 'btn-secundario' }]);
       return;
     }
@@ -374,6 +437,23 @@ var Teoria = (function () {
     var lista = el('div', { class: 'arvore-tec' });
     var total = el('div', { class: 'arvore-total' });
 
+    // Blocos que cobrem um assunto: o próprio (se está em outro bloco) ou os subassuntos dele.
+    // total = todos os subassuntos estão cobertos (por outros blocos ou já marcados neste).
+    function cobertura(n) {
+      if (outros[n.chave]) return { blocos: [outros[n.chave]], total: true };
+      if (sel.indexOf(n.chave) >= 0 || incluidoPorPai(n)) return { blocos: [], total: true };
+      if (!n.filhos.length) return { blocos: [], total: false };
+      var bl = {}, total = true;
+      n.filhos.forEach(function (f) { var c = cobertura(f); c.blocos.forEach(function (x) { bl[x] = true; }); if (!c.total) total = false; });
+      return { blocos: Object.keys(bl).sort(function (a, b) { return a.localeCompare(b, 'pt-BR', { numeric: true }); }), total: total };
+    }
+    function marcaCobertura(n, marcado) {
+      if (outros[n.chave]) return { texto: 'no ' + outros[n.chave], classe: 'at-outro' };
+      if (marcado || !n.filhos.length) return null;
+      var c = cobertura(n);
+      if (!c.blocos.length) return null;
+      return { texto: (c.total ? 'no ' : 'em parte no ') + c.blocos.join(' e no '), classe: c.total ? 'at-outro' : 'at-parcial' };
+    }
     function incluidoPorPai(n) {
       for (var p = n.pai && arv.nos[n.pai]; p; p = p.pai && arv.nos[p.pai]) if (sel.indexOf(p.chave) >= 0) return true;
       return false;
@@ -395,14 +475,15 @@ var Teoria = (function () {
       if (!bate(n, termo)) return [];
       var incl = incluidoPorPai(n), marcado = incl || sel.indexOf(n.chave) >= 0;
       var aberto = termo ? true : !!abertos[n.chave];
-      var linhaEl = el('div', { class: 'at-linha' + (incl ? ' at-incluido' : '') + (outros[n.chave] ? ' at-outro' : ''), style: { paddingLeft: (8 + nivel * 18) + 'px' } }, [
+      var cob = marcaCobertura(n, marcado);
+      var linhaEl = el('div', { class: 'at-linha' + (incl ? ' at-incluido' : '') + (cob ? ' ' + cob.classe : ''), style: { paddingLeft: (8 + nivel * 18) + 'px' } }, [
         n.filhos.length ? el('button', { type: 'button', class: 'at-abrir' + (aberto ? ' aberto' : ''), title: aberto ? 'Fechar' : 'Abrir', onclick: function () { abertos[n.chave] = !aberto; desenhar(); } }, UI.icone('abrir'))
           : el('span', { class: 'at-abrir vazio' }),
         el('label', { class: 'at-nome' }, [
           el('input', { type: 'checkbox', checked: marcado, disabled: incl, onchange: function (e) { alternar(n, e.target.checked); } }),
           el('span', { class: 'at-codigo', text: n.codigo }),
           el('span', { text: n.nome }),
-          outros[n.chave] ? el('span', { class: 'at-marca', text: 'no ' + outros[n.chave] }) : null,
+          cob ? el('span', { class: 'at-marca', title: cob.classe === 'at-parcial' ? 'Parte dos subassuntos já está em outros blocos' : 'Coberto por outros blocos', text: cob.texto }) : null,
           incl ? el('span', { class: 'at-marca', text: 'incluído' }) : null
         ]),
         el('div', { class: 'at-nums' }, bancas.map(function (x) {
