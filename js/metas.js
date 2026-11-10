@@ -52,9 +52,9 @@ var Metas = (function () {
     }
     var it = x.it, tl = TIPOS_LEITURA[it.tipo] || TIPOS_LEITURA.teoria, det = '', estrelas = 0;
     if (it.tipo === 'teoria') {
-      var faltam = it.topicos.filter(function (t) { return !t.concluido; });
-      det = faltam.slice(0, 3).map(function (t) { return t.nome; }).join(' · ') + (faltam.length > 3 ? ' · + ' + (faltam.length - 3) : '');
-      if (!it.topicos.length) det = 'Bloco ainda sem tópicos';
+      var faltam = it.aulas.filter(function (a) { return !a.concluido; });
+      det = faltam.slice(0, 3).map(function (a) { return Dados.nomeAula(a); }).join(' · ') + (faltam.length > 3 ? ' · + ' + (faltam.length - 3) : '');
+      if (!it.aulas.length) det = 'Cadastre as aulas deste bloco';
     } else if (it.tipo === 'bateria') {
       var b = it.bateria;
       det = !it.caderno ? 'Cadastre o caderno deste bloco' : b && b.qtd ? it.caderno.nome + ' · ' + plural(b.qtd - b.feitas, 'questão', 'questões') : it.caderno.nome + ' · informe o total de questões';

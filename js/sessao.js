@@ -68,7 +68,7 @@ var Sessao = (function () {
   }, 1000);
 
   // ---------- Formulário ----------
-  // opcoes: { sessaoId, disciplinaId, tipo, topicoIds, cadernoIds, segundos, doCronometro, daMeta }
+  // opcoes: { sessaoId, disciplinaId, tipo, aulaIds, topicoIds, cadernoIds, segundos, doCronometro, daMeta }
   // daMeta: lançamento da meta do ciclo (matéria, tipo e cadernos ou tópicos ficam travados; só este avança o ciclo).
   function abrir(opcoes) {
     var op = opcoes || {};
@@ -85,7 +85,8 @@ var Sessao = (function () {
     var travado = !!op.daMeta && !existente;
     var est = {
       travado: travado,
-      topicosMeta: travado && op.topicoIds ? op.topicoIds.slice() : null,
+      aulasMeta: travado && op.aulaIds ? op.aulaIds.slice() : null,
+      aulaIds: existente ? (existente.aulaIds || []).slice() : (op.aulaIds || []).slice(),
       disciplinaId: existente ? existente.disciplinaId : (op.disciplinaId || (proxima && proxima.disciplinaId) || discs[0].id),
       tipo: existente ? existente.tipo : (op.tipo || 'teoria'),
       sessaoId: existente ? existente.id : null,
@@ -107,6 +108,7 @@ var Sessao = (function () {
     var disciplina = el('select', { onchange: function () {
       est.disciplinaId = disciplina.value;
       est.topicoIds = [];
+      est.aulaIds = [];
       est.linhas = [{ cadernoId: '', acertos: '', erros: '' }];
       est.assuntos = {};
       desenharArea();
@@ -152,8 +154,9 @@ var Sessao = (function () {
       if (est.segundos <= 0) return mostrarErro('Informe o tempo de estudo.');
       var campos = { data: data.value, disciplinaId: est.disciplinaId, tipo: est.tipo, segundos: est.segundos, anotacao: anotacao.value, daMeta: travado };
       if (est.tipo === 'teoria') {
-        if (Dados.topicosDaDisciplina(est.disciplinaId).length && !est.topicoIds.length) return mostrarErro('Marque o(s) tópico(s) estudado(s).');
-        campos.topicoIds = est.topicoIds;
+        if (Dados.progressoTeoria(est.disciplinaId).total && !est.aulaIds.length) return mostrarErro('Marque a(s) aula(s) estudada(s).');
+        campos.aulaIds = est.aulaIds;
+        campos.topicoIds = est.topicoIds; // sessões antigas guardam os tópicos estudados
       } else {
         // Caderno de favoritadas pode ser finalizado mesmo sem questões (quando ele está vazio).
         var linhas = est.linhas.filter(function (l) { return (Number(l.acertos) || 0) + (Number(l.erros) || 0) > 0 || (l.finalizado && l.cadernoId); });
@@ -188,7 +191,7 @@ var Sessao = (function () {
       else Dados.criarSessao(campos);
       var vezDepois = Dados.proximaDoCiclo();
       if (est.tipo === 'teoria' && est.concluir) {
-        est.topicoIds.forEach(function (id) { Dados.definirConcluido(id, true, data.value); });
+        est.aulaIds.forEach(function (id) { var x = Dados.aula(id); if (x && !x.aula.concluido) Dados.definirAulaConcluida(id, true, data.value); });
       }
       if (est.tipo === 'revisao') {
         (campos.revisados || []).forEach(function (r) { Dados.marcarRevisto(est.disciplinaId, r.chave, true, data.value); });
@@ -211,7 +214,7 @@ var Sessao = (function () {
     } else if (!op.doCronometro && !cron) {
       botoes.unshift({ texto: 'Iniciar cronômetro', classe: 'btn-contorno btn-esquerda', acao: function () {
         iniciarCron({
-          disciplinaId: est.disciplinaId, tipo: est.tipo, topicoIds: est.topicoIds, daMeta: travado,
+          disciplinaId: est.disciplinaId, tipo: est.tipo, aulaIds: est.aulaIds, daMeta: travado,
           cadernoIds: est.linhas.map(function (l) { return l.cadernoId; }).filter(Boolean)
         });
         UI.aviso('Cronômetro iniciado. Clique em "Finalizar" no topo quando terminar.');
@@ -291,36 +294,37 @@ var Sessao = (function () {
     ], botoes);
   }
 
+  // Teoria: escolhe as aulas estudadas (o que se conclui são as aulas, não os assuntos).
   function areaTeoria(est) {
-    var blocos = Dados.blocosDe(est.disciplinaId).filter(function (b) { return Dados.topicosDe(b.id).length; });
+    var blocos = Dados.blocosDe(est.disciplinaId).filter(function (b) { return Dados.aulasDe(b.id).length; });
     // Meta de teoria: só o bloco da meta aparece.
-    if (est.topicosMeta && est.topicosMeta.length) {
-      blocos = blocos.filter(function (b) { return Dados.topicosDe(b.id).some(function (t) { return est.topicosMeta.indexOf(t.id) >= 0; }); });
+    if (est.aulasMeta && est.aulasMeta.length) {
+      blocos = blocos.filter(function (b) { return Dados.aulasDe(b.id).some(function (a) { return est.aulasMeta.indexOf(a.id) >= 0; }); });
     }
     if (!blocos.length) {
-      return el('p', { class: 'aviso-suave', text: 'Esta disciplina ainda não tem tópicos. Cadastre-os no Controle de Teoria para registrar o que foi estudado.' });
+      return el('p', { class: 'aviso-suave', text: 'Esta disciplina ainda não tem aulas. Cadastre-as nos blocos do Controle de Teoria para registrar o que foi estudado.' });
     }
     var lista = el('div', { class: 'lista-topicos' }, blocos.map(function (b) {
       return el('div', { class: 'grupo-topicos' }, [
         el('div', { class: 'grupo-titulo', text: b.nome }),
-        Dados.topicosDe(b.id).map(function (t) {
-          var marcado = est.topicoIds.indexOf(t.id) >= 0;
-          return el('label', { class: 'opcao-topico' + (t.concluido ? ' ja-concluido' : '') }, [
+        Dados.aulasDe(b.id).map(function (a) {
+          var marcado = est.aulaIds.indexOf(a.id) >= 0;
+          return el('label', { class: 'opcao-topico' + (a.concluido ? ' ja-concluido' : '') }, [
             el('input', { type: 'checkbox', checked: marcado, onchange: function (e) {
-              if (e.target.checked) est.topicoIds.push(t.id);
-              else est.topicoIds = est.topicoIds.filter(function (x) { return x !== t.id; });
+              if (e.target.checked) est.aulaIds.push(a.id);
+              else est.aulaIds = est.aulaIds.filter(function (x) { return x !== a.id; });
             } }),
-            el('span', { text: t.nome }),
-            t.concluido ? UI.selo('Concluído', 'sucesso') : null
+            el('span', { text: Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : '') }),
+            a.concluido ? UI.selo('Concluída', 'sucesso') : null
           ]);
         })
       ]);
     }));
     var concluir = el('label', { class: 'opcao-check' }, [
       el('input', { type: 'checkbox', checked: est.concluir, onchange: function (e) { est.concluir = e.target.checked; } }),
-      'Marcar os tópicos selecionados como concluídos'
+      'Marcar as aulas selecionadas como concluídas'
     ]);
-    return [UI.campo('Tópico(s) estudado(s)', lista), concluir];
+    return [UI.campo('Aula(s) estudada(s)', lista), concluir];
   }
 
   // Revisão: pontos fracos da disciplina (das Estatísticas), com acertos e erros lançados por assunto
@@ -477,7 +481,8 @@ var Sessao = (function () {
   function descrever(s) {
     if (s.tipo === 'anki') return 'Revisão no Anki';
     if (s.tipo === 'teoria') {
-      return (s.topicoIds || []).map(function (id) { var t = Dados.topico(id); return t ? t.nome : ''; }).filter(Boolean).join('; ') || '—';
+      var aulas = (s.aulaIds || []).map(function (id) { var x = Dados.aula(id); return x ? Dados.nomeAula(x.aula) : ''; });
+      return aulas.concat((s.topicoIds || []).map(function (id) { var t = Dados.topico(id); return t ? t.nome : ''; })).filter(Boolean).join('; ') || '—';
     }
     var partes = (s.cadernos || []).map(function (c) {
       var cad = Dados.caderno(c.cadernoId);

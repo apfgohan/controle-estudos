@@ -376,12 +376,13 @@ var Dashboard = (function () {
         op = { tipo: 'questoes', cadernoIds: [ce.id] };
       }
     } else if (atual.tipo === 'teoria') {
-      var faltam = atual.topicos.filter(function (t) { return !t.concluido; });
-      detalhe = atual.topicos.length
-        ? el('ul', { class: 'rec-topicos' }, faltam.slice(0, 4).map(function (t) { return el('li', { text: t.nome }); })
-            .concat(faltam.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (faltam.length - 4) + ' tópicos' })] : []))
-        : el('p', { class: 'data-fraca', text: 'Este bloco ainda não tem tópicos. Cadastre-os no Controle de Teoria.' });
-      op = { tipo: 'teoria', topicoIds: faltam.map(function (t) { return t.id; }) };
+      var faltam = atual.aulas.filter(function (a) { return !a.concluido; });
+      detalhe = atual.aulas.length
+        ? el('ul', { class: 'rec-topicos' }, faltam.slice(0, 4).map(function (a) {
+            return el('li', null, a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', text: Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : '') }) : Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : ''));
+          }).concat(faltam.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (faltam.length - 4) + ' aulas' })] : []))
+        : el('p', { class: 'data-fraca' }, ['Este bloco ainda não tem aulas. ', el('a', { href: '#/teoria/' + d.id, text: 'Cadastre-as no Controle de Teoria' }), '.']);
+      if (atual.aulas.length) op = { tipo: 'teoria', aulaIds: faltam.map(function (a) { return a.id; }) };
     } else if (!atual.caderno) {
       detalhe = el('p', { class: 'data-fraca' }, ['Este bloco ainda não tem caderno. ',
         el('a', { href: '#/questoes/' + d.id, text: 'Cadastre-o na pasta "' + Dados.NOME_PASTA_TEORIA + '"' }), '.']);
@@ -516,9 +517,9 @@ var Dashboard = (function () {
   function bloquinhoEtapa(it, atual) {
     var nome, sub;
     if (it.tipo === 'teoria') {
-      var prontos = it.topicos.filter(function (t) { return t.concluido; }).length;
+      var prontos = it.aulas.filter(function (a) { return a.concluido; }).length;
       nome = 'Teoria';
-      sub = prontos && !it.concluido ? prontos + '/' + it.topicos.length + ' tópicos' : it.bloco.nome;
+      sub = prontos && !it.concluido ? prontos + '/' + it.aulas.length + ' aulas' : it.bloco.nome;
     } else if (it.tipo === 'favoritas') {
       nome = it.grupo === 'duvidas' ? 'Dúvidas' : 'Errei 2x+';
       sub = it.rodada && it.rodada.vazia ? 'Sem questões' : it.feitas && it.qtd ? it.feitas + '/' + it.qtd : 'Favoritadas';
@@ -821,10 +822,11 @@ var Dashboard = (function () {
     var dias = primeiro ? UI.diasEntre(primeiro, hoje) + 1 : 0;
     var mediaDia = dias ? total.segundos / dias : 0;
 
-    var ativos = Dados.db.topicos.filter(function (t) { return !t.arquivado; });
-    var feitos = ativos.filter(function (t) { return t.concluido; }).length;
-    var totalTopicos = ativos.length;
-    var semanaTopicos = Dados.topicosHistoricos().filter(function (t) { return t.concluido && t.dataConclusao && t.dataConclusao >= iniSemana; }).length;
+    var aulas = [];
+    Dados.db.blocos.forEach(function (b) { aulas = aulas.concat(b.materiais || []); });
+    var feitos = aulas.filter(function (a) { return a.concluido; }).length;
+    var totalTopicos = aulas.length;
+    var semanaTopicos = Dados.topicosHistoricos().concat(Dados.aulasHistoricas()).filter(function (t) { return t.concluido && t.dataConclusao && t.dataConclusao >= iniSemana; }).length;
     function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
     function semanaRodape(texto) { return [el('span', { class: 'caixa-semana', text: 'Nesta semana' }), ' ', texto]; }
 
@@ -840,9 +842,9 @@ var Dashboard = (function () {
           [UI.fmtNum(total.erros), 'Erros']
         ], semanaRodape(semana.feitas ? pct1(semana.pct) + ' (' + UI.fmtNum(semana.acertos) + ' acertos · ' + UI.fmtNum(semana.erros) + ' erros)' : 'sem questões')),
         caixa('Progresso', totalTopicos ? pct1(feitos / totalTopicos * 100) : '—', [
-          [UI.fmtNum(feitos), 'Tópicos concluídos'],
-          [UI.fmtNum(totalTopicos - feitos), 'Tópicos pendentes']
-        ], semanaRodape(semanaTopicos + (semanaTopicos === 1 ? ' tópico concluído' : ' tópicos concluídos')))
+          [UI.fmtNum(feitos), 'Aulas concluídas'],
+          [UI.fmtNum(totalTopicos - feitos), 'Aulas pendentes']
+        ], semanaRodape(semanaTopicos + (semanaTopicos === 1 ? ' aula concluída' : ' aulas concluídas')))
       ]),
       caixaMetas(semana)
     ]);
@@ -977,9 +979,9 @@ var Dashboard = (function () {
       el('ul', { class: 'previsao-premissas' }, [
         'O ciclo é repetido no futuro a partir da posição atual. Posições de matérias em Revisão gastam tempo, mas não adiantam o edital.',
         'Quando uma matéria termina o Modo Leitura, continua no ciclo com 1 vaga, em Revisão, e entra a próxima matéria de fora, em ordem alfabética. Se ela tinha 2 vagas, a extra passa para a nova.',
-        'Cada matéria usa as próprias médias; com menos de 5 tópicos concluídos ou 100 questões, usa as gerais: ' + UI.fmtNum(Math.round(m.horasTopico * 60)) + ' min por tópico e ' + UI.fmtNum(Math.round(m.questoesHora)) + ' questões por hora.',
+        'Cada matéria usa as próprias médias; com menos de 5 aulas concluídas ou 100 questões, usa as gerais: ' + UI.fmtNum(Math.round(m.horasTopico * 60)) + ' min por aula e ' + UI.fmtNum(Math.round(m.questoesHora)) + ' questões por hora.',
         'Cadernos ainda não cadastrados são estimados pela média dos outros; favoritadas sem total, pela média das rodadas já lançadas.',
-        'Matéria em Modo Revisão soma só os tópicos que faltam, não as baterias pendentes.',
+        'Matéria em Modo Revisão soma só as aulas que faltam, não as baterias pendentes.',
         'Na teoria, cada assunto conta como uma etapa. Para chegar à data, as etapas restantes são convertidas em horas, porque cada etapa tem um tamanho diferente.'
       ].map(function (t) { return el('li', { text: t }); }))
     ], [{ texto: 'Fechar', classe: 'btn-secundario' }], { subtitulo: 'Previsão para concluir a teoria de todas as matérias' }).caixa.classList.add('modal-largo');
@@ -1056,15 +1058,15 @@ var Dashboard = (function () {
   }
 
   function verTeoria(d) {
-    var blocos = Dados.blocosDe(d.id).filter(function (b) { return Dados.topicosDe(b.id).length; });
+    var blocos = Dados.blocosDe(d.id).filter(function (b) { return Dados.aulasDe(b.id).length; });
     var corpo = blocos.length ? blocos.map(function (b) {
-      var ts = Dados.topicosDe(b.id);
-      return grupoLinks(b.nome, ts.length + (ts.length === 1 ? ' tópico' : ' tópicos'), ts.map(function (t) {
-        return itemLink('lista', t.nome, null, t.link, t.concluido ? el('span', { class: 'mini-check', title: 'Concluído' }, UI.icone('check')) : null);
+      var as = Dados.aulasDe(b.id);
+      return grupoLinks(b.nome, as.length + (as.length === 1 ? ' aula' : ' aulas'), as.map(function (a) {
+        return itemLink('lista', Dados.nomeAula(a), a.curso || null, a.link, a.concluido ? el('span', { class: 'mini-check', title: 'Concluída' }, UI.icone('check')) : null);
       }));
-    }) : el('p', { class: 'data-fraca', text: 'Nenhum tópico cadastrado nesta disciplina.' });
-    UI.modal('Tópicos de teoria · ' + d.nome, el('div', { class: 'lista-links' }, corpo), [], {
-      icone: 'lista', subtitulo: 'Selecione um tópico com link cadastrado para abri-lo.'
+    }) : el('p', { class: 'data-fraca', text: 'Nenhuma aula cadastrada nesta disciplina.' });
+    UI.modal('Aulas de teoria · ' + d.nome, el('div', { class: 'lista-links' }, corpo), [], {
+      icone: 'lista', subtitulo: 'Selecione uma aula com link cadastrado para abri-la.'
     }).caixa.classList.add('modal-links');
   }
 
@@ -1124,7 +1126,7 @@ var Dashboard = (function () {
     var discs = Dados.disciplinas();
     var teoria = discs.filter(function (d) { return Dados.progressoTeoria(d.id).total; }).map(function (d) {
       var p = Dados.progressoTeoria(d.id);
-      return { nome: d.nome, cor: d.cor, pct: p.pct, texto: UI.fmtPct(Math.round(p.pct)), dica: [d.nome, p.feitos + ' de ' + p.total + ' tópicos', UI.fmtPct(p.pct)] };
+      return { nome: d.nome, cor: d.cor, pct: p.pct, texto: UI.fmtPct(Math.round(p.pct)), dica: [d.nome, p.feitos + ' de ' + p.total + ' aulas', UI.fmtPct(p.pct)] };
     });
     var acerto = discs.filter(function (d) { return Dados.statsQuestoes(d.id).feitas; }).map(function (d) {
       var q = Dados.statsQuestoes(d.id);
@@ -1133,7 +1135,7 @@ var Dashboard = (function () {
     return el('div', { class: 'grade-graficos' }, [
       horas,
       questoes,
-      cartaoGrafico('Progresso da teoria', 'Tópicos concluídos por disciplina', graficoBarras(teoria, 'Cadastre tópicos no Controle de Teoria.')),
+      cartaoGrafico('Progresso da teoria', 'Aulas concluídas por disciplina', graficoBarras(teoria, 'Cadastre as aulas no Controle de Teoria.')),
       cartaoGrafico('Taxa de acerto', 'Todas as questões lançadas', graficoBarras(acerto, 'Nenhuma questão lançada ainda.'))
     ]);
   }

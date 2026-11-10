@@ -42,7 +42,7 @@ var Teoria = (function () {
       ]),
       el('div', { class: 'linha-metricas' }, [
         UI.metrica('Progresso', UI.fmtPct(p.pct), completa ? 'completo' : ''),
-        UI.metrica('Tópicos', p.feitos + ' / ' + p.total),
+        UI.metrica('Aulas', p.feitos + ' / ' + p.total),
         UI.metrica('Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id, 'teoria')))
       ]),
       el('a', { class: 'btn btn-abrir', href: '#/teoria/' + d.id }, ['Abrir disciplina', UI.icone('seta')])
@@ -123,9 +123,11 @@ var Teoria = (function () {
     if (!d) { location.hash = '#/teoria'; return; }
     var p = Dados.progressoTeoria(d.id);
     var anot = Dados.ultimaAnotacao(d.id, 'teoria');
-    var detalheAnot = anot && anot.topicoIds && anot.topicoIds.length
-      ? 'Tópico: ' + anot.topicoIds.map(function (t) { var x = Dados.topico(t); return x ? x.nome : ''; }).filter(Boolean).join('; ')
-      : '';
+    var detalheAnot = anot && anot.aulaIds && anot.aulaIds.length
+      ? 'Aula: ' + anot.aulaIds.map(function (id) { var x = Dados.aula(id); return x ? Dados.nomeAula(x.aula) : ''; }).filter(Boolean).join('; ')
+      : anot && anot.topicoIds && anot.topicoIds.length
+        ? 'Tópico: ' + anot.topicoIds.map(function (t) { var x = Dados.topico(t); return x ? x.nome : ''; }).filter(Boolean).join('; ')
+        : '';
 
     raiz.appendChild(el('section', { class: 'painel' }, [
       el('div', { class: 'pagina-topo' }, [
@@ -140,7 +142,7 @@ var Teoria = (function () {
       ]),
       el('div', { class: 'cartoes' }, [
         UI.cartao('progresso', 'Progresso', UI.fmtPct(p.pct)),
-        UI.cartao('lista', 'Tópicos', p.feitos + ' / ' + p.total),
+        UI.cartao('lista', 'Aulas', p.feitos + ' / ' + p.total),
         UI.cartao('info', 'Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id, 'teoria'))),
         UI.cartao('relogio', 'Tempo acumulado', UI.fmtDuracao(Dados.tempoAcumulado(d.id, 'teoria')))
       ]),
@@ -163,7 +165,11 @@ var Teoria = (function () {
       ]),
       el('div', { class: 'novo-bloco' }, [
         UI.botao('+ Bloco', function () { editarBloco(d, null); }, 'btn-tracejado'),
-        el('span', { text: 'Crie blocos para organizar seus tópicos (ex.: as aulas do curso).' })
+        el('span', { text: 'Cada bloco reúne assuntos do TEC e as aulas que os cobrem.' }),
+        Dados.blocosDe(d.id).length ? el('span', { class: 'novo-bloco-acoes' }, [
+          el('button', { type: 'button', class: 'link', text: 'Recolher todos', onclick: function () { recolherTodos(Dados.blocosDe(d.id), true); App.atualizar(); } }),
+          el('button', { type: 'button', class: 'link', text: 'Abrir todos', onclick: function () { recolherTodos(Dados.blocosDe(d.id), false); App.atualizar(); } })
+        ]) : null
       ])
     ].concat(Dados.blocosDe(d.id).map(function (b) { return cartaoBloco(d, b); }))));
   }
@@ -205,21 +211,16 @@ var Teoria = (function () {
   var ICONE_MATERIAL = { pdf: 'pdf', video: 'video', resumo: 'lista', lei: 'lei' };
   function nomeTipoMaterial(tipo) { var x = Dados.TIPOS_MATERIAL.filter(function (y) { return y[0] === tipo; })[0]; return x ? x[1] : 'PDF'; }
 
-  function faixaMateriais(b) {
-    var lista = (b.materiais || []).map(function (m) {
-      var texto = [el('strong', { text: nomeTipoMaterial(m.tipo) }), ' ' + m.nome + (m.curso ? ' · ' + m.curso : '')];
-      return el('span', { class: 'material material-' + m.tipo }, [
-        UI.icone(ICONE_MATERIAL[m.tipo] || 'pdf'),
-        m.link ? el('a', { href: m.link, target: '_blank', rel: 'noopener noreferrer', title: 'Abrir o material' }, texto) : el('span', { title: 'Sem link — cadastre na engrenagem' }, texto),
-        UI.botaoEngrenagem(function () { editarMaterial(b, m); }, 'Editar material')
-      ]);
-    });
-    return el('div', { class: 'materiais' }, [el('span', { class: 'materiais-rotulo', text: 'Materiais' })].concat(lista, [
-      el('button', { type: 'button', class: 'link', text: '+ Material', onclick: function () { editarMaterial(b, null); } })
-    ]));
-  }
+  // Blocos recolhidos (só uma preferência visual deste navegador), como as pastas da aba Questões.
+  var CHAVE_RECOLHIDOS = 'controle-estudos.blocos-recolhidos';
+  var recolhidos = {};
+  try { recolhidos = JSON.parse(localStorage.getItem(CHAVE_RECOLHIDOS)) || {}; } catch (e) { recolhidos = {}; }
+  function gravarRecolhidos() { try { localStorage.setItem(CHAVE_RECOLHIDOS, JSON.stringify(recolhidos)); } catch (e) { /* sem problema */ } }
+  function alternarBloco(id) { if (recolhidos[id]) delete recolhidos[id]; else recolhidos[id] = true; gravarRecolhidos(); }
+  function recolherTodos(blocos, fechar) { blocos.forEach(function (b) { if (fechar) recolhidos[b.id] = true; else delete recolhidos[b.id]; }); gravarRecolhidos(); }
 
-  function editarMaterial(b, m) {
+  // Aula do bloco: tipo, nome, curso e link (é o que se estuda e marca como concluído).
+  function editarAula(b, m) {
     var tipo = m ? m.tipo : 'pdf';
     var seg = el('div', { class: 'segmentado' });
     function desenhar() {
@@ -236,7 +237,7 @@ var Teoria = (function () {
     var link = el('input', { type: 'text', inputmode: 'url', value: m ? m.link : '', placeholder: 'https://...' });
     var botoes = [{ texto: 'Cancelar', classe: 'btn-secundario' }];
     if (m) botoes.unshift({ texto: 'Excluir', classe: 'btn-perigo btn-esquerda', acao: function () {
-      UI.confirmar('Excluir o material "' + m.nome + '"?', function () { Dados.excluirMaterial(b.id, m.id); App.atualizar(); });
+      UI.confirmar('Excluir a aula "' + m.nome + '"?', function () { Dados.excluirMaterial(b.id, m.id); App.atualizar(); });
     } });
     botoes.push({ texto: 'Salvar', classe: 'btn-primario', acao: function () {
       if (!nome.value.trim()) { nome.focus(); return false; }
@@ -244,55 +245,112 @@ var Teoria = (function () {
       if (m) Dados.atualizarMaterial(b.id, m.id, campos); else Dados.criarMaterial(b.id, campos);
       App.atualizar();
     } });
-    UI.modal(m ? 'Editar material' : 'Novo material — ' + b.nome, [
+    UI.modal(m ? 'Editar aula' : 'Nova aula — ' + b.nome, [
       UI.campo('Tipo', seg),
       UI.campo('Nome', nome, 'Sem o tipo, que já aparece antes do nome. Ex.: 00 - Atos Administrativos, ou 01 - Bancos de Dados.'),
       UI.campo('Curso', curso), lista,
-      UI.campo('Link', link, 'Opcional: abre o material com um clique.')
+      UI.campo('Link', link, 'Opcional: abre a aula com um clique.')
     ], botoes);
   }
 
-  // Situação dos tópicos antigos (arquivados na troca para os assuntos do TEC), enquanto o bloco está vazio.
-  function avisoHeranca(b) {
-    var h = b.herancaTeoria;
-    if (!h) return null;
-    var antes = 'Antes da troca: ' + h.qtd + (h.qtd === 1 ? ' tópico' : ' tópicos') +
-      (h.concluida ? ', todos concluídos' + (h.data ? ' (até ' + UI.fmtData(h.data) + ')' : '') + '. Os assuntos que você escolher já entram concluídos.'
-        : h.feitos ? ', ' + h.feitos + ' concluídos.' : ', nenhum concluído.');
-    return el('div', { class: 'aviso-suave bloco-heranca' }, [el('strong', { text: 'Escolha os assuntos do TEC deste bloco. ' }), antes]);
+  // O que falta para o bloco ficar completo (assuntos do TEC e aulas), com a situação de antes da troca.
+  function avisoBloco(b, temAssuntos, temAulas) {
+    var partes = [];
+    if (!temAssuntos) partes.push('escolha os assuntos do TEC');
+    if (!temAulas) partes.push('cadastre as aulas');
+    if (!partes.length) return null;
+    var h = b.herancaTeoria, antes = '';
+    if (!temAulas && h) {
+      antes = h.concluida ? ' A teoria deste bloco já estava concluída' + (h.data ? ' (até ' + UI.fmtData(h.data) + ')' : '') + ': as aulas que você cadastrar entram concluídas.'
+        : h.feitos ? ' Antes da troca, ' + h.feitos + ' de ' + h.qtd + ' tópicos estavam concluídos.' : '';
+    }
+    return el('div', { class: 'aviso-suave bloco-heranca' }, [el('strong', { text: 'Para completar este bloco: ' + partes.join(' e ') + '.' }), antes]);
   }
 
-  function cartaoBloco(d, b) {
-    var pb = Dados.progressoBloco(b.id);
-    var topicos = Dados.topicosDe(b.id);
-    var inc = Dados.incidenciaBloco(b);
-    var temArvore = !!Dados.arvoreIncidencia(d.id);
-    return el('div', { class: 'bloco' }, [
-      el('div', { class: 'bloco-topo' }, [
-        el('div', { class: 'bloco-nome', text: b.nome }),
-        el('div', { class: 'bloco-direita' }, [
-          inc && inc.pct.todas != null ? el('span', { class: 'bloco-incidencia', title: 'Questões da matéria (todas as bancas) que caem nos assuntos deste bloco', text: fmtPct1(inc.pct.todas) + ' das questões' }) : null,
-          estrelasBloco(b),
-          el('span', { class: 'pilula' + (pb.pct >= 100 ? ' completo' : ''), text: '(' + pb.feitos + '/' + pb.total + ' • ' + UI.fmtPct(pb.pct) + ')' }),
-          UI.botaoEngrenagem(function () { editarBloco(d, b); }, 'Editar bloco')
-        ])
+  // Assunto do bloco em chip: código, nome e % (todas as bancas); na dica, os subassuntos e as bancas. Clique edita.
+  function chipAssunto(d, t) {
+    var arv = t.tec && Dados.arvoreIncidencia(d.id), n = arv && arv.nos[t.tec.chave];
+    var dica = [t.nome], pct = {}, mais = [], menos = [];
+    if (n) {
+      Object.keys(n.bancas).forEach(function (k) { pct[k] = n.bancas[k].pct; });
+      Dados.BANCAS.forEach(function (x) {
+        if (x[0] === 'todas' || pct[x[0]] == null) return;
+        var p = pesoBanca(pct[x[0]], pct.todas);
+        if (p === 'mais') mais.push(x[1]); else if (p === 'menos') menos.push(x[1]);
+        dica.push(x[1] + ': ' + fmtPct1(pct[x[0]]) + (p === 'mais' ? ' ▲' : p === 'menos' ? ' ▼' : ''));
+      });
+      var desc = Dados.descendentes(n);
+      if (desc.length) dica.push('Inclui: ' + desc.map(function (x) { return x.codigo + ' ' + x.nome; }).join('; '));
+    } else if (!t.tec) dica.push('Tópico manual (sem incidência do TEC)');
+    return el('button', { type: 'button', class: 'chip-assunto' + (n ? '' : ' manual'), title: dica.join('\n') + '\n(clique para editar)', onclick: function () { editarTopico(d, t); } }, [
+      n ? el('span', { class: 'tec-codigo', text: n.codigo }) : null,
+      el('span', { class: 'chip-assunto-nome', text: t.nome }),
+      pct.todas != null ? el('em', { text: fmtPct1(pct.todas) }) : null,
+      mais.length ? el('span', { class: 'tec-mais', text: '▲' }) : null
+    ]);
+  }
+
+  function linhaAula(d, b, a) {
+    var ultimo = Dados.ultimoEstudoAula(a.id);
+    var sub = a.concluido ? 'Concluída' + (a.dataConclusao ? ' em ' + UI.fmtData(a.dataConclusao) : '') + (a.herdado ? ' (antes da troca)' : '')
+      : ultimo ? 'Pendente · último estudo em ' + UI.fmtData(ultimo) : 'Pendente';
+    return el('div', { class: 'aula' + (a.concluido ? ' concluida' : '') }, [
+      el('button', { type: 'button', class: 'btn-check' + (a.concluido ? ' marcado' : ''), title: a.concluido ? 'Desmarcar como concluída' : 'Marcar como concluída',
+        onclick: function () { Dados.definirAulaConcluida(a.id, !a.concluido); App.atualizar(); } }, UI.icone('check')),
+      el('div', { class: 'aula-corpo' }, [
+        el('div', { class: 'aula-nome aula-' + a.tipo }, [
+          UI.icone(ICONE_MATERIAL[a.tipo] || 'pdf'),
+          el('span', { class: 'aula-tipo', text: nomeTipoMaterial(a.tipo) }),
+          a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', title: 'Abrir a aula', text: a.nome }) : el('span', { title: 'Sem link — cadastre na engrenagem', text: a.nome }),
+          a.curso ? el('span', { class: 'aula-curso', text: '· ' + a.curso }) : null
+        ]),
+        el('div', { class: 'aula-sub', text: sub })
       ]),
-      inc ? el('div', { class: 'bloco-bancas' }, chipsBancas(inc.pct)) : null,
-      UI.barra(pb.pct, d.cor),
-      faixaMateriais(b),
-      !topicos.length ? avisoHeranca(b) : null,
-      el('div', { class: 'tabela-rolagem' }, el('table', { class: 'tabela' }, [
-        el('thead', null, el('tr', null, ['Tópico', 'Status', 'Último estudo', 'Ação'].map(function (h) { return el('th', { text: h }); }))),
-        el('tbody', null, topicos.length ? topicos.map(function (t) { return linhaTopico(d, t); })
-          : el('tr', null, el('td', { colspan: 4, class: 'tabela-vazia', text: 'Nenhum tópico neste bloco.' })))
-      ])),
-      el('div', { class: 'bloco-rodape' }, [
-        UI.botao('Escolher assuntos do TEC', function () { escolherAssuntos(d, b); }, temArvore ? 'btn-secundario' : 'btn-secundario btn-apagado', 'lista'),
-        el('button', { type: 'button', class: 'link', onclick: function () { novosTopicos(b); }, text: '+ Tópico manual' })
+      el('div', { class: 'aula-acoes' }, [
+        window.Sessao ? UI.botao('Lançar estudo', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'teoria', aulaIds: [a.id] }); }, 'btn-lancar', 'play') : null,
+        UI.botaoEngrenagem(function () { editarAula(b, a); }, 'Editar aula')
       ])
     ]);
   }
 
+  function cartaoBloco(d, b) {
+    var pb = Dados.progressoBloco(b.id);
+    var topicos = Dados.topicosDe(b.id), aulas = Dados.aulasDe(b.id);
+    var inc = Dados.incidenciaBloco(b);
+    var fechado = !!recolhidos[b.id];
+    var topo = el('div', { class: 'bloco-topo bloco-topo-clicavel', title: fechado ? 'Abrir o bloco' : 'Recolher o bloco', onclick: function (e) {
+      if (e.target.closest('button, a, input')) return;
+      alternarBloco(b.id);
+      App.atualizar();
+    } }, [
+      el('div', { class: 'bloco-titulo' }, [
+        el('span', { class: 'bloco-seta' + (fechado ? '' : ' aberta') }, UI.icone('abrir')),
+        el('div', { class: 'bloco-nome', text: b.nome })
+      ]),
+      el('div', { class: 'bloco-direita' }, [
+        inc && inc.pct.todas != null ? el('span', { class: 'bloco-incidencia', title: 'Questões da matéria (todas as bancas) que caem nos assuntos deste bloco', text: fmtPct1(inc.pct.todas) + ' das questões' }) : null,
+        estrelasBloco(b),
+        el('span', { class: 'pilula' + (pb.total && pb.pct >= 100 ? ' completo' : ''), text: pb.total ? pb.feitos + '/' + pb.total + (pb.total === 1 ? ' aula' : ' aulas') + ' • ' + UI.fmtPct(pb.pct) : 'sem aulas' }),
+        UI.botaoEngrenagem(function () { editarBloco(d, b); }, 'Editar bloco')
+      ])
+    ]);
+    if (fechado) return el('div', { class: 'bloco recolhido' }, [topo, UI.barra(pb.pct, d.cor)]);
+    return el('div', { class: 'bloco' }, [
+      topo,
+      inc ? el('div', { class: 'bloco-bancas' }, chipsBancas(inc.pct)) : null,
+      UI.barra(pb.pct, d.cor),
+      el('div', { class: 'bloco-secao' }, [el('span', { class: 'materiais-rotulo', text: 'Assuntos do bloco' })].concat(
+        topicos.map(function (t) { return chipAssunto(d, t); }),
+        [el('button', { type: 'button', class: 'chip-assunto acao', text: topicos.length ? 'Alterar assuntos' : '+ Escolher assuntos do TEC', onclick: function () { escolherAssuntos(d, b); } }),
+          el('button', { type: 'button', class: 'link', text: '+ Tópico manual', onclick: function () { novosTopicos(b); } })]
+      )),
+      avisoBloco(b, !!topicos.length, !!aulas.length),
+      el('div', { class: 'materiais-rotulo bloco-rotulo-aulas', text: 'Aulas' }),
+      aulas.length ? el('div', { class: 'aulas' }, aulas.map(function (a) { return linhaAula(d, b, a); }))
+        : el('div', { class: 'tabela-vazia aulas-vazio', text: 'Nenhuma aula neste bloco.' }),
+      el('button', { type: 'button', class: 'btn-adicionar-linha', onclick: function () { editarAula(b, null); }, text: '+ Aula' })
+    ]);
+  }
   // Modal: árvore da incidência da matéria. Marcar um assunto inclui todos os subassuntos dele.
   function escolherAssuntos(d, b) {
     var arv = Dados.arvoreIncidencia(d.id);
@@ -389,44 +447,6 @@ var Teoria = (function () {
       } }
     ]);
     m.caixa.classList.add('modal-largo', 'modal-arvore');
-  }
-
-  // Assunto do TEC de um tópico: código, % (todas as bancas), subassuntos incluídos e bancas que dão mais peso.
-  function infoTec(d, t) {
-    var arv = t.tec && Dados.arvoreIncidencia(d.id), n = arv && arv.nos[t.tec.chave];
-    if (!n) return t.tec ? [el('span', { class: 'tec-codigo', text: t.tec.codigo || 'TEC' })] : [];
-    var desc = Dados.descendentes(n);
-    var pct = {}; Object.keys(n.bancas).forEach(function (k) { pct[k] = n.bancas[k].pct; });
-    var mais = Dados.BANCAS.filter(function (x) { return x[0] !== 'todas' && pct[x[0]] != null && pesoBanca(pct[x[0]], pct.todas) === 'mais'; }).map(function (x) { return x[1]; });
-    return [
-      el('span', { class: 'tec-codigo', text: n.codigo }),
-      pct.todas != null ? el('span', { class: 'tec-pct', title: 'Questões da matéria (todas as bancas)', text: fmtPct1(pct.todas) }) : null,
-      desc.length ? el('span', { class: 'tec-sub', title: desc.map(function (x) { return x.codigo + ' ' + x.nome; }).join('\n'), text: 'inclui ' + desc.length + (desc.length === 1 ? ' subtópico' : ' subtópicos') }) : null,
-      mais.length ? el('span', { class: 'tec-mais', title: 'Bancas que dão mais peso a este assunto', text: '▲ ' + mais.join(', ') }) : null
-    ];
-  }
-
-  function linhaTopico(d, t) {
-    var ultimo = Dados.ultimoEstudoTopico(t.id);
-    return el('tr', { class: t.concluido ? 'concluido' : '' }, [
-      el('td', { class: 'col-topico' }, el('div', { class: 'topico-nome' }, [
-        el('span', { class: 'topico-texto' }, [el('span', { text: t.nome }), el('span', { class: 'topico-tec' }, infoTec(d, t))]),
-        UI.botaoEngrenagem(function () { editarTopico(d, t); }, 'Editar tópico')
-      ])),
-      el('td', null, t.concluido ? UI.selo('Concluído', 'sucesso') : UI.selo('Pendente', 'neutro')),
-      el('td', null, ultimo ? [
-        el('div', { class: 'data-forte', text: UI.fmtData(ultimo) }),
-        t.dataConclusao ? el('div', { class: 'data-fraca', text: 'Concluído em ' + UI.fmtData(t.dataConclusao) }) : null
-      ] : el('span', { class: 'data-fraca', text: '—' })),
-      el('td', null, el('div', { class: 'acoes-linha' }, [
-        el('button', {
-          type: 'button', class: 'btn-check' + (t.concluido ? ' marcado' : ''),
-          title: t.concluido ? 'Desmarcar como concluído' : 'Marcar como concluído',
-          onclick: function () { Dados.definirConcluido(t.id, !t.concluido); App.atualizar(); }
-        }, UI.icone('check')),
-        window.Sessao ? UI.botao('Lançar estudo', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'teoria', topicoIds: [t.id] }); }, 'btn-lancar', 'play') : null
-      ]))
-    ]);
   }
 
   function editarBloco(d, b) {

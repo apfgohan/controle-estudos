@@ -102,6 +102,13 @@ var Patentes = (function () {
       var dono = g.registros.filter(function (x) { return (x.sessao.topicoIds || []).indexOf(t.id) >= 0; })[0];
       if (dono) dono.topicos++; else g.topicosAvulsos++;
     });
+    // Aulas concluídas valem como os tópicos valiam (as concluídas por herança não rendem XP de novo).
+    Dados.aulasHistoricas().forEach(function (a) {
+      var g = dia(a.dataConclusao || primeira || UI.hoje());
+      g.topicos++;
+      var dono = g.registros.filter(function (x) { return (x.sessao.aulaIds || []).indexOf(a.id) >= 0; })[0];
+      if (dono) dono.topicos++; else g.topicosAvulsos++;
+    });
     return dias;
   }
 
@@ -711,7 +718,7 @@ var Patentes = (function () {
       var q = b.n + (b.n === 1 ? ' questão' : ' questões');
       partes.push(b.mult > 1 ? q + ' a ' + Math.round(b.a / b.n * 100) + '% (×' + String(b.mult).replace('.', ',') + '): +' + b.xp : q + ' (+' + b.xp + ')');
     });
-    if (x.topicos) partes.push(x.topicos + (x.topicos === 1 ? ' tópico concluído' : ' tópicos concluídos') + ' (+' + x.topicos * XP.TOPICO + ')');
+    if (x.topicos) partes.push(x.topicos + (x.topicos === 1 ? ' aula concluída' : ' aulas concluídas') + ' (+' + x.topicos * XP.TOPICO + ')');
     if (x.etapas) partes.push(x.etapas + (x.etapas === 1 ? ' etapa concluída' : ' etapas concluídas') + ' (+' + x.etapas * XP.ETAPA + ')');
     return partes.join(' · ');
   }
@@ -740,7 +747,7 @@ var Patentes = (function () {
           var disc = Dados.disciplina(x.sessao.disciplinaId);
           linhas.push(linhaXp((disc ? disc.nome : 'Disciplina excluída') + ' · ' + (NOMES_TIPO[x.sessao.tipo] || 'Estudo'), detalheRegistro(x), xpDoRegistro(x), disc && disc.cor));
         });
-        if (dia.topicosAvulsos) linhas.push(linhaXp('Tópicos marcados como concluídos', dia.topicosAvulsos + ' × ' + XP.TOPICO, dia.topicosAvulsos * XP.TOPICO));
+        if (dia.topicosAvulsos) linhas.push(linhaXp('Aulas marcadas como concluídas', dia.topicosAvulsos + ' × ' + XP.TOPICO, dia.topicosAvulsos * XP.TOPICO));
         if (dia.sequencia) linhas.push(linhaXp('Sequência de estudos', 'bônus pelos dias seguidos', dia.sequencia, null, 'bonus'));
         if (dia.meta) linhas.push(linhaXp('Meta semanal batida', dia.meta / XP.META === 2 ? 'horas e questões' : 'horas ou questões', dia.meta, null, 'bonus'));
         if (dia.limite) linhas.push(linhaXp('Acima do limite da patente', 'sem o acerto exigido, o XP não passa do início da próxima patente', -dia.limite, null, 'perda'));
@@ -767,7 +774,7 @@ var Patentes = (function () {
     var f = r.fontes;
     var fontes = [
       ['Tempo de estudo', f.tempo], ['Questões resolvidas', f.questoes], ['Bônus por desempenho', f.bonus],
-      ['Tópicos concluídos', f.topicos], ['Baterias e etapas concluídas', f.etapas],
+      ['Aulas e tópicos concluídos', f.topicos], ['Baterias e etapas concluídas', f.etapas],
       ['Metas semanais', f.metas], ['Sequência de estudos', f.sequencia]
     ];
     var corpo = [

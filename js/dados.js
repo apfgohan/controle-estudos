@@ -8,20 +8,21 @@ var Dados = (function () {
     return {
       versao: VERSAO,
       disciplinas: [],   // { id, nome, cor, peso, ordem }
-      blocos: [],        // { id, disciplinaId, nome, ordem, relevancia, materiais: [{ id, tipo, nome, curso, link }], herancaTeoria }
+      // materiais = as aulas do bloco (o que se estuda e marca como concluído): { id, tipo, nome, curso, link, concluido, dataConclusao, herdado }
+      blocos: [],        // { id, disciplinaId, nome, ordem, relevancia, materiais: [...], herancaTeoria }
       // tec: { chave, codigo } quando o tópico é um assunto da incidência do TEC; arquivado: tópico antigo (fora da tela,
       // mas no Histórico e no XP); herdado: concluído por herança do bloco (não rende XP).
       topicos: [],       // { id, blocoId, nome, tec, ordem, concluido, dataConclusao, revisaoAgendada, ultimaRevisao, arquivado, herdado }
       pastas: [],        // { id, disciplinaId, nome, ordem }
       cadernos: [],      // { id, pastaId, nome, assunto, link, prioridade, totalQuestoes, ordem }
-      sessoes: [],       // { id, data, disciplinaId, segundos, tipo, topicoIds, cadernos:[{cadernoId,acertos,erros}], anotacao, criadoEm }
+      sessoes: [],       // { id, data, disciplinaId, segundos, tipo, topicoIds, aulaIds, cadernos:[{cadernoId,acertos,erros}], anotacao, criadoEm }
       ciclo: { itens: [], posicaoAtual: 0, voltas: 0 },
       // Histórico importado do TecConcursos: usado SÓ na aba Estatísticas (não entra em sessões nem cadernos).
       importacoes: [],   // { id, inicio, fim, nomeArquivo, importadoEm, disciplinas: [{ disciplinaId, nomePlanilha, feitas, acertos, erros, topicos: [{ codigo, nome, caminho, feitas, acertos, erros }] }] }
       apelidos: {},      // nome da disciplina na planilha (normalizado) -> disciplinaId ou 'ignorar'
       // Incidência dos assuntos nas provas (planilha do TEC), uma por disciplina e banca.
       incidencias: [],   // { id, disciplinaId, banca, nomeArquivo, importadoEm, total, assuntos: [{ chave, codigo, nome, caminho, qtd }] }
-      migracoes: { tec1: true },
+      migracoes: { tec1: true, tec2: true },
       // Pontos fracos (das Estatísticas) marcados como revistos numa sessão de Revisão.
       // 'disciplinaId|chaveDoAssunto' -> { data, ate } ; 'ate' = fim da última planilha quando foi marcado.
       revistos: {},
@@ -57,6 +58,7 @@ var Dados = (function () {
   var migrouAgora = false;
   function normalizar(d) {
     var migrar = !(d.migracoes && d.migracoes.tec1);
+    var migrar2 = !(d.migracoes && d.migracoes.tec2);
     var base = vazio();
     for (var k in base) if (d[k] == null) d[k] = base[k];
     d.versao = VERSAO;
@@ -64,6 +66,7 @@ var Dados = (function () {
     (d.blocos || []).forEach(function (b) { if (!Array.isArray(b.materiais)) b.materiais = []; });
     (d.incidencias || []).forEach(function (i) { if (!Array.isArray(i.assuntos)) i.assuntos = []; });
     if (migrar) { migrarParaTec(d); d.migracoes = Object.assign({}, d.migracoes, { tec1: true }); migrouAgora = true; }
+    if (migrar2) { migrarParaAulas(d); d.migracoes = Object.assign({}, d.migracoes, { tec2: true }); migrouAgora = true; }
     cacheRel = null;
     return d;
   }
@@ -83,6 +86,29 @@ var Dados = (function () {
       };
     });
     (d.topicos || []).forEach(function (t) { t.arquivado = true; delete t.link; });
+  }
+
+  // Migração única (2026-11-10b → c): o que se conclui passa a ser a aula, não o assunto. O bloco guarda se a teoria
+  // estava concluída pela regra antiga; as aulas já cadastradas num bloco concluído entram concluídas (sem XP de novo).
+  function migrarParaAulas(d) {
+    (d.blocos || []).forEach(function (b) {
+      var ts = (d.topicos || []).filter(function (t) { return t.blocoId === b.id && !t.arquivado; });
+      var h = b.herancaTeoria || null;
+      var concluida = ts.length ? ts.every(function (t) { return t.concluido; }) : !!(h && h.concluida);
+      var feitos = ts.filter(function (t) { return t.concluido; });
+      var ids = ts.map(function (t) { return t.id; });
+      var estudado = (d.sessoes || []).some(function (s) { return (s.topicoIds || []).some(function (id) { return ids.indexOf(id) >= 0; }); });
+      if (!ts.length && !h) return;
+      var data = feitos.reduce(function (m, t) { return t.dataConclusao && (!m || t.dataConclusao > m) ? t.dataConclusao : m; }, h ? h.data : null);
+      b.herancaTeoria = {
+        concluida: concluida, iniciada: !!(h && h.iniciada) || !!feitos.length || estudado, data: data,
+        qtd: h ? h.qtd : ts.length, feitos: h ? h.feitos : feitos.length
+      };
+      if (concluida) (b.materiais || []).forEach(function (a) {
+        if (a.concluido) return;
+        a.concluido = true; a.dataConclusao = data || null; a.herdado = true;
+      });
+    });
   }
 
   // ---------- Pastas fixas "Cadernos de Teoria" e "Cadernos de Erros" ----------
@@ -614,12 +640,12 @@ var Dados = (function () {
     var N = blocos.length;
     var itens = [];
     var progresso = blocos.map(function (b) {
-      var ts = topicosDe(b.id);
+      var ts = topicosDe(b.id), aulas = aulasDe(b.id);
       var cad = cadernoDoBloco(b.id);
       return {
-        bloco: b, topicos: ts,
-        // Bloco sem tópicos ativos (antes de escolher os assuntos do TEC) segue como estava antes da troca.
-        teoriaConcluida: ts.length ? ts.every(function (t) { return t.concluido; }) : !!(b.herancaTeoria && b.herancaTeoria.concluida),
+        bloco: b, topicos: ts, aulas: aulas,
+        // A teoria do bloco é concluída pelas aulas; sem aulas cadastradas, segue como estava antes da troca.
+        teoriaConcluida: aulas.length ? aulas.every(function (a) { return a.concluido; }) : !!(b.herancaTeoria && b.herancaTeoria.concluida),
         caderno: cad, baterias: cad ? bateriasCaderno(cad, nb) : null
       };
     });
@@ -632,13 +658,13 @@ var Dados = (function () {
         if (passo > 1) ORDEM_FAVORITAS.forEach(function (g) {
           var cf = cadernoFavorito(disciplinaId, g);
           var rod = cf ? rodadaFavorita(cf.id, pb.bloco.id) : null;
-          if ((g !== GRUPO_FAVORITAS_LEITURA || teoriaIniciada(pb.topicos) || (pb.bloco.herancaTeoria && pb.bloco.herancaTeoria.iniciada)) && !(rod && rod.concluida)) return;
+          if ((g !== GRUPO_FAVORITAS_LEITURA || teoriaIniciada(pb.topicos) || aulasIniciadas(pb.aulas) || (pb.bloco.herancaTeoria && pb.bloco.herancaTeoria.iniciada)) && !(rod && rod.concluida)) return;
           itens.push({
             tipo: 'favoritas', passo: passo, indice: passo, bloco: pb.bloco, grupo: g, caderno: cf, rodada: rod,
             feitas: rod ? rod.feitas : 0, qtd: rod ? rod.total : null, concluido: !!(rod && rod.concluida)
           });
         });
-        itens.push({ tipo: 'teoria', passo: passo, indice: passo, bloco: pb.bloco, topicos: pb.topicos, concluido: pb.teoriaConcluida });
+        itens.push({ tipo: 'teoria', passo: passo, indice: passo, bloco: pb.bloco, topicos: pb.topicos, aulas: pb.aulas, concluido: pb.teoriaConcluida });
       }
       atrasos.forEach(function (atraso, k) {
         var i = passo - atraso;
@@ -685,6 +711,12 @@ var Dados = (function () {
       itens: itens, pendentes: pendentes, progresso: progresso,
       concluido: N > 0 && !pendentes.length
     };
+  }
+
+  function aulasIniciadas(aulas) {
+    if (aulas.some(function (a) { return a.concluido; })) return true;
+    var ids = aulas.map(function (a) { return a.id; });
+    return !!ids.length && db.sessoes.some(function (s) { return (s.aulaIds || []).some(function (id) { return ids.indexOf(id) >= 0; }); });
   }
 
   function teoriaIniciada(topicos) {
@@ -886,6 +918,7 @@ var Dados = (function () {
       segundos: Math.max(0, Math.round(Number(campos.segundos) || 0)),
       tipo: tipo,
       topicoIds: teoria ? (campos.topicoIds || []).slice() : [],
+      aulaIds: teoria ? (campos.aulaIds || []).slice() : [],
       // finalizado: caderno de favoritadas terminado nesta sessão; assunto: questões avulsas de um ponto fraco (Revisão).
       cadernos: teoria ? [] : (campos.cadernos || []).map(function (c) {
         var l = { cadernoId: c.cadernoId || null, acertos: Number(c.acertos) || 0, erros: Number(c.erros) || 0 };
@@ -1053,16 +1086,18 @@ var Dados = (function () {
     return somarQuestoes(itens);
   }
 
+  // Progresso da teoria: pelas aulas concluídas.
   function progressoTeoria(disciplinaId) {
-    var ts = topicosDaDisciplina(disciplinaId);
-    var feitos = ts.filter(function (t) { return t.concluido; }).length;
-    return { feitos: feitos, total: ts.length, pct: ts.length ? (feitos / ts.length) * 100 : 0 };
+    var as = [];
+    blocosDe(disciplinaId).forEach(function (b) { as = as.concat(aulasDe(b.id)); });
+    var feitos = as.filter(function (a) { return a.concluido; }).length;
+    return { feitos: feitos, total: as.length, pct: as.length ? (feitos / as.length) * 100 : 0 };
   }
 
   function progressoBloco(blocoId) {
-    var ts = topicosDe(blocoId);
-    var feitos = ts.filter(function (t) { return t.concluido; }).length;
-    return { feitos: feitos, total: ts.length, pct: ts.length ? (feitos / ts.length) * 100 : 0 };
+    var as = aulasDe(blocoId);
+    var feitos = as.filter(function (a) { return a.concluido; }).length;
+    return { feitos: feitos, total: as.length, pct: as.length ? (feitos / as.length) * 100 : 0 };
   }
 
   // Sessões de uma disciplina (opcionalmente de um tipo), da mais recente para a mais antiga.
@@ -1080,7 +1115,7 @@ var Dados = (function () {
     var data = s ? s.data : null;
     if (tipo !== 'questoes') {
       // Sem sessões lançadas, usa a data em que algum tópico foi marcado como concluído.
-      topicosHistoricos(disciplinaId).forEach(function (t) {
+      topicosHistoricos(disciplinaId).concat(aulasHistoricas(disciplinaId)).forEach(function (t) {
         if (t.dataConclusao && (!data || t.dataConclusao > data)) data = t.dataConclusao;
       });
     }
@@ -1268,7 +1303,43 @@ var Dados = (function () {
     salvar();
   }
 
-  // ---------- Materiais do bloco (um material pode cobrir vários assuntos) ----------
+  // ---------- Aulas do bloco (guardadas em bloco.materiais; uma aula pode cobrir vários assuntos) ----------
+  function aulasDe(blocoId) { var b = bloco(blocoId); return b ? (b.materiais || []) : []; }
+  // { aula, bloco } de uma aula pelo id.
+  function aula(id) {
+    for (var i = 0; i < db.blocos.length; i++) {
+      var a = buscar(db.blocos[i].materiais || [], id);
+      if (a) return { aula: a, bloco: db.blocos[i] };
+    }
+    return null;
+  }
+  // Aulas concluídas que contam para o histórico (XP, ritmo): menos as concluídas por herança.
+  function aulasHistoricas(disciplinaId) {
+    var r = [];
+    db.blocos.forEach(function (b) {
+      if (disciplinaId && b.disciplinaId !== disciplinaId) return;
+      (b.materiais || []).forEach(function (a) { if (a.concluido && !a.herdado) r.push(a); });
+    });
+    return r;
+  }
+  function definirAulaConcluida(id, concluido, data) {
+    var x = aula(id);
+    if (!x) return;
+    var a = x.aula;
+    if (a.herdado) { delete a.herdado; a.dataConclusao = null; } // marcada por você: passa a valer como estudo seu
+    a.concluido = !!concluido;
+    a.dataConclusao = concluido ? (a.dataConclusao || data || UI.hoje()) : null;
+    salvar();
+  }
+  function ultimoEstudoAula(id) {
+    var data = null;
+    db.sessoes.forEach(function (s) { if ((s.aulaIds || []).indexOf(id) >= 0 && (!data || s.data > data)) data = s.data; });
+    var x = aula(id);
+    if (x && x.aula.dataConclusao && !x.aula.herdado && (!data || x.aula.dataConclusao > data)) data = x.aula.dataConclusao;
+    return data;
+  }
+  function nomeAula(a) { var t = TIPOS_MATERIAL.filter(function (x) { return x[0] === a.tipo; })[0]; return (t ? t[1] : 'Aula') + ' ' + a.nome; }
+
   var TIPOS_MATERIAL = [['pdf', 'PDF'], ['video', 'Videoaula'], ['resumo', 'Resumo'], ['lei', 'Lei Seca']];
   function camposMaterial(campos) {
     var tipo = TIPOS_MATERIAL.some(function (x) { return x[0] === campos.tipo; }) ? campos.tipo : 'pdf';
@@ -1277,7 +1348,11 @@ var Dados = (function () {
   function criarMaterial(blocoId, campos) {
     var b = bloco(blocoId); if (!b) return;
     b.materiais = b.materiais || [];
-    b.materiais.push(Object.assign({ id: novoId() }, camposMaterial(campos)));
+    var a = Object.assign({ id: novoId(), concluido: false, dataConclusao: null }, camposMaterial(campos));
+    // Bloco cuja teoria já estava concluída antes da troca: a aula nova entra concluída (sem XP de novo).
+    var h = b.herancaTeoria;
+    if (h && h.concluida && (b.materiais || []).every(function (x) { return x.concluido; })) { a.concluido = true; a.dataConclusao = h.data || UI.hoje(); a.herdado = true; }
+    b.materiais.push(a);
     salvar();
   }
   function atualizarMaterial(blocoId, id, campos) {
@@ -1400,6 +1475,7 @@ var Dados = (function () {
     excluirIncidencia: excluirIncidencia, arvoreIncidencia: arvoreIncidencia, descendentes: descendentes, somarIncidencia: somarIncidencia,
     estrelasPorRazao: estrelasPorRazao, relevanciasDaDisciplina: relevanciasDaDisciplina, incidenciaBloco: incidenciaBloco,
     definirAssuntosTec: definirAssuntosTec, topicosHistoricos: topicosHistoricos,
+    aulasDe: aulasDe, aula: aula, aulasHistoricas: aulasHistoricas, definirAulaConcluida: definirAulaConcluida, ultimoEstudoAula: ultimoEstudoAula, nomeAula: nomeAula,
     TIPOS_MATERIAL: TIPOS_MATERIAL, criarMaterial: criarMaterial, atualizarMaterial: atualizarMaterial, excluirMaterial: excluirMaterial, cursosUsados: cursosUsados,
     atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,
     exportar: exportar, importar: importar, limpar: limpar, estaVazio: estaVazio, carregarExemplo: carregarExemplo
