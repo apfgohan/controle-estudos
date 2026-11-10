@@ -65,7 +65,8 @@ var Patentes = (function () {
       return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
     }).forEach(function (s) {
       var g = dia(s.data);
-      var reg = { sessao: s, minutos: Math.round((s.segundos || 0) / 60), questoes: 0, acertos: 0, bonus: 0, baterias: [], etapas: 0, topicos: 0 };
+      // A matéria fica guardada porque pode ser de outra fase (a patente soma todas as fases).
+      var reg = { sessao: s, disciplina: Dados.disciplina(s.disciplinaId), minutos: Math.round((s.segundos || 0) / 60), questoes: 0, acertos: 0, bonus: 0, baterias: [], etapas: 0, topicos: 0 };
       g.sessoes++;
       g.segundos += s.segundos || 0;
       g.minutos += reg.minutos;
@@ -144,7 +145,9 @@ var Patentes = (function () {
     return (Dados.db.pausas || []).filter(function (p) { return p.inicio <= d && d <= p.fim; })[0] || null;
   }
 
-  function calcular() {
+  // A patente é uma só: soma o estudo de todas as fases (Pré-Edital e cada concurso do Pós-Edital).
+  function calcular() { return Dados.comTodosOsEspacos(calcularTudo); }
+  function calcularTudo() {
     var hoje = UI.hoje();
     var dias = ganhosPorDia();
     var datas = Object.keys(dias).sort();
@@ -744,7 +747,7 @@ var Patentes = (function () {
       var linhas = [];
       if (dia) {
         dia.registros.forEach(function (x) {
-          var disc = Dados.disciplina(x.sessao.disciplinaId);
+          var disc = x.disciplina || Dados.disciplina(x.sessao.disciplinaId);
           linhas.push(linhaXp((disc ? disc.nome : 'Disciplina excluída') + ' · ' + (NOMES_TIPO[x.sessao.tipo] || 'Estudo'), detalheRegistro(x), xpDoRegistro(x), disc && disc.cor));
         });
         if (dia.topicosAvulsos) linhas.push(linhaXp('Aulas marcadas como concluídas', dia.topicosAvulsos + ' × ' + XP.TOPICO, dia.topicosAvulsos * XP.TOPICO));

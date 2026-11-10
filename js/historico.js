@@ -4,7 +4,7 @@ var Historico = (function () {
   var DIAS_POR_PAGINA = 30;
 
   // Filtros (sobrevivem às re-renderizações)
-  var filtros = { de: '', ate: '', tipo: '', disciplina: '' };
+  var filtros = { de: '', ate: '', tipo: '', disciplina: '', fase: 'atual' };
   var diasVisiveis = DIAS_POR_PAGINA;
 
   function filtrar() {
@@ -51,8 +51,12 @@ var Historico = (function () {
     var disc = el('select', { onchange: function () { filtros.disciplina = disc.value; aplicar(); } }, [
       el('option', { value: '', text: 'Todas as disciplinas' })
     ].concat(Dados.disciplinas().map(function (d) {
-      return el('option', { value: d.id, text: d.nome, selected: filtros.disciplina === d.id });
+      return el('option', { value: d.id, text: Dados.estaMesclado() ? d.nome + ' · ' + Dados.faseDe(d.id).nome : d.nome, selected: filtros.disciplina === d.id });
     })));
+    // Fase: só a atual ou o acumulado de todas (com mais de uma fase cadastrada).
+    var fase = Dados.idsDasFases().length > 1 ? el('div', { class: 'segmentado' }, [['atual', 'Atual: ' + Dados.faseAtual().nome], ['tudo', 'Tudo']].map(function (t) {
+      return el('button', { type: 'button', class: filtros.fase === t[0] ? 'ativo' : '', text: t[1], onclick: function () { filtros.fase = t[0]; filtros.disciplina = ''; aplicar(); } });
+    })) : null;
 
     var tipos = el('div', { class: 'segmentado' }, [['', 'Todos'], ['teoria', 'Teoria'], ['questoes', 'Questões'], ['revisao', 'Revisão'], ['anki', 'Anki']].map(function (t) {
       return el('button', { type: 'button', class: filtros.tipo === t[0] ? 'ativo' : '', text: t[1], onclick: function () { filtros.tipo = t[0]; aplicar(); } });
@@ -76,10 +80,11 @@ var Historico = (function () {
           el('div', { class: 'atalhos' }, [atalho('Hoje', 1), atalho('7 dias', 7), atalho('30 dias', 30), atalho('Tudo', null)])
         ]),
         UI.campo('Tipo de estudo', tipos),
-        UI.campo('Disciplina', disc)
+        UI.campo('Disciplina', disc),
+        fase ? UI.campo('Fase', fase) : null
       ]),
       algumFiltro ? el('div', { class: 'acoes-direita' }, el('button', { type: 'button', class: 'link', text: 'Limpar filtros', onclick: function () {
-        filtros = { de: '', ate: '', tipo: '', disciplina: '' };
+        filtros = { de: '', ate: '', tipo: '', disciplina: '', fase: filtros.fase };
         aplicar();
       } })) : null
     ]);
@@ -89,13 +94,16 @@ var Historico = (function () {
   function linhaSessao(s) {
     var anki = s.tipo === 'anki';
     var d = anki ? null : Dados.disciplina(s.disciplinaId);
+    // Na visão de todas as fases, só os estudos da fase atual podem ser editados aqui.
+    var deOutraFase = Dados.estaMesclado() && !idsDaFaseAtual[s.id];
     var q = resumir([s]);
     return el('div', { class: 'registro' }, [
       el('div', { class: 'registro-tipo' }, Sessao.seloTipo(s.tipo)),
       el('div', { class: 'registro-corpo' }, [
         el('div', { class: 'registro-disc' }, [
           el('span', { class: 'bolinha', style: { background: anki ? 'var(--teal)' : d ? d.cor : '#ccc' } }),
-          el('span', { text: anki ? 'Anki' : d ? d.nome : '(disciplina excluída)' })
+          el('span', { text: anki ? 'Anki' : d ? d.nome : '(disciplina excluída)' }),
+          Dados.estaMesclado() && d ? el('span', { class: 'selo-fase ' + Dados.faseDe(d.id).tipo, text: Dados.faseDe(d.id).nome }) : null
         ]),
         el('div', { class: 'registro-detalhe', text: Sessao.descrever(s) }),
         s.anotacao ? el('div', { class: 'registro-anotacao' }, [UI.icone('nota'), el('span', { text: s.anotacao })]) : null
@@ -104,14 +112,21 @@ var Historico = (function () {
         el('div', { class: 'registro-tempo' }, [UI.icone('relogio'), UI.fmtDuracao(s.segundos)]),
         q.feitas ? el('div', { class: 'registro-questoes' }, [UI.fmtNum(q.feitas) + ' questões · ', UI.acerto(q.pct, q.feitas)]) : null
       ]),
-      el('div', { class: 'registro-acoes' }, [
+      deOutraFase ? el('div', { class: 'registro-acoes data-fraca', text: 'Outra fase' }) : el('div', { class: 'registro-acoes' }, [
         el('button', { type: 'button', class: 'link', text: 'Editar', onclick: function () { Sessao.abrir({ sessaoId: s.id }); } }),
         el('button', { type: 'button', class: 'link link-perigo', text: 'Excluir', onclick: function () { Sessao.confirmarExclusao(s); } })
       ])
     ]);
   }
 
+  var idsDaFaseAtual = {};
   function render(raiz) {
+    idsDaFaseAtual = {};
+    Dados.db.sessoes.forEach(function (s) { idsDaFaseAtual[s.id] = true; });
+    if (filtros.fase === 'tudo' && Dados.idsDasFases().length > 1) return Dados.comTodosOsEspacos(function () { renderLista(raiz); });
+    renderLista(raiz);
+  }
+  function renderLista(raiz) {
     raiz.appendChild(el('div', { class: 'pagina-topo' }, [
       el('div', null, [
         el('h1', { class: 'pagina-titulo', text: 'Histórico' }),

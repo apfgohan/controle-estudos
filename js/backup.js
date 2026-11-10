@@ -58,7 +58,7 @@ var Backup = (function () {
     raiz.appendChild(el('section', { class: 'painel grade-backup' }, [
       el('div', { class: 'opcao-backup' }, [
         el('h2', { class: 'secao-titulo', text: 'Exportar' }),
-        el('p', { text: 'Baixa um arquivo .json com tudo: ' + db.disciplinas.length + ' disciplinas, ' + db.topicos.filter(function (t) { return !t.arquivado; }).length + ' tópicos, ' + db.sessoes.length + ' sessões.' }),
+        el('p', { text: 'Baixa um arquivo .json com tudo: ' + db.disciplinas.length + ' disciplinas, ' + db.topicos.filter(function (t) { return !t.arquivado; }).length + ' tópicos, ' + db.sessoes.length + ' sessões' + (Dados.idsDasFases().length > 1 ? ' na fase atual (' + Dados.faseAtual().nome + '), mais as outras ' + (Dados.idsDasFases().length - 1) + ' fases' : '') + '.' }),
         UI.botao('Exportar backup', exportar, 'btn-primario')
       ]),
       el('div', { class: 'opcao-backup' }, [

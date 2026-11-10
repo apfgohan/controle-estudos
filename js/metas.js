@@ -190,14 +190,66 @@ var Metas = (function () {
     return secao;
   }
 
+  // Pós-Edital com data da prova: contagem regressiva e quantas metas cabem até a véspera, pelo ritmo das últimas
+  // 4 semanas (de todas as fases, porque o concurso novo ainda não tem histórico).
+  function painelProva() {
+    var c = Dados.faseAtual().concurso, dias = c ? Dados.diasParaProva(c) : null;
+    if (!c || dias == null || dias < 0) return null;
+    var hoje = UI.hoje(), vespera = UI.somarDias(c.dataProva, -1);
+    var ritmo = Dados.comTodosOsEspacos(function () {
+      var de = UI.somarDias(hoje, -27), n = 0, primeira = null;
+      Dados.db.sessoes.forEach(function (s) {
+        if (!s.ciclo) return;
+        if (!primeira || s.data < primeira) primeira = s.data;
+        if (s.data >= de && s.data <= hoje) n++;
+      });
+      var janela = primeira ? Math.min(28, Math.max(7, UI.diasEntre(primeira, hoje) + 1)) : 28;
+      return { porDia: n / janela, n: n, janela: janela };
+    });
+    var metas = Math.floor(ritmo.porDia * dias);
+    var prev = Previsao.calcular();
+    var linhas = [];
+    if (dias === 0) linhas.push(el('p', { text: 'A prova é hoje. Boa prova!' }));
+    else {
+      linhas.push(el('p', null, ritmo.n
+        ? ['Dá para cumprir cerca de ', el('strong', { text: UI.fmtNum(metas) + (metas === 1 ? ' meta' : ' metas') }), ' até ' + UI.fmtData(vespera) + ' (véspera), no ritmo de ' +
+          String(Math.round(ritmo.porDia * 7 * 10) / 10).replace('.', ',') + ' metas por semana.']
+        : ['Ainda não há metas cumpridas nas últimas semanas para estimar o ritmo. Lance as metas pela página Metas.']));
+      if (!prev.vazio && prev.etapasRestantes) {
+        var cabe = prev.data && prev.data < c.dataProva;
+        linhas.push(el('p', { class: cabe ? 'prova-ok' : 'prova-alerta', text: 'Faltam ' + UI.fmtNum(prev.etapasRestantes) + ' etapas para concluir o edital' +
+          (prev.data ? ' · previsão: ' + UI.fmtData(prev.data) + (cabe ? ', antes da prova' : ', depois da prova') : prev.semRitmo ? ' · sem ritmo para estimar a data' : '') + '.' }));
+      } else if (prev.concluido) linhas.push(el('p', { class: 'prova-ok', text: 'Toda a teoria está concluída: as matérias estão no Modo Revisão.' }));
+    }
+    return el('section', { class: 'painel painel-prova' }, [
+      el('div', { class: 'prova-contagem' }, [
+        el('strong', { text: dias === 0 ? 'Hoje' : UI.fmtNum(dias) }),
+        el('span', { text: dias === 0 ? 'é a prova' : dias === 1 ? 'dia para a prova' : 'dias para a prova' })
+      ]),
+      el('div', { class: 'prova-texto' }, [
+        el('div', { class: 'rotulo-pequeno', text: 'Até a prova · ' + c.nome + ' · ' + Dados.nomeBancaEdital(c) + ' · ' + UI.fmtData(c.dataProva) })
+      ].concat(linhas))
+    ]);
+  }
+
   function render(raiz) {
     var hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
     raiz.appendChild(el('div', { class: 'pagina-topo' }, el('div', null, [
       el('h1', { class: 'pagina-titulo', text: 'Metas' }),
       el('div', { class: 'pagina-subtitulo', text: hoje.charAt(0).toUpperCase() + hoje.slice(1) })
     ])));
+    var prova = painelProva();
+    if (prova) raiz.appendChild(prova);
     if (Dados.estaVazio()) {
-      raiz.appendChild(el('div', { class: 'vazio' }, [
+      var pos = Dados.posEdital();
+      raiz.appendChild(el('div', { class: 'vazio' }, pos ? [
+        el('p', { class: 'vazio-destaque', text: 'Pós-Edital: ' + Dados.faseAtual().nome }),
+        el('p', { text: 'Este concurso começa vazio. Cadastre as matérias, os blocos e os cadernos dele; o Pré-Edital fica guardado em Configurações.' }),
+        el('div', { class: 'vazio-acoes' }, [
+          el('a', { class: 'btn btn-primario', href: '#/teoria', text: 'Cadastrar as matérias' }),
+          el('a', { class: 'btn btn-secundario', href: '#/configuracoes', text: 'Trocar de fase' })
+        ])
+      ] : [
         el('p', { class: 'vazio-destaque', text: 'Bem-vindo! Comece cadastrando suas disciplinas.' }),
         el('p', { text: 'Depois monte o ciclo de estudos e lance cada meta por aqui.' }),
         el('div', { class: 'vazio-acoes' }, [

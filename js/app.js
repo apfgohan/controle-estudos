@@ -8,7 +8,8 @@ var App = (function () {
     estatisticas: Estatisticas.render,
     historico: Historico.render,
     resumos: Resumos.render,
-    backup: Backup.render
+    backup: Backup.render,
+    configuracoes: Configuracoes.render
   };
   var ROTA_INICIAL = 'metas';
 
@@ -26,6 +27,8 @@ var App = (function () {
     });
 
     desenharLateral();
+    var fase = document.getElementById('fase-topo');
+    if (fase) { fase.innerHTML = ''; fase.appendChild(Configuracoes.seloTopo()); }
     var raiz = document.getElementById('conteudo');
     raiz.innerHTML = '';
     rotas[nome](raiz, partes.slice(1));

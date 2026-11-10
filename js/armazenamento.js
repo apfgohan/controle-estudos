@@ -105,7 +105,7 @@ var Armazenamento = (function () {
           throw new Error('O arquivo ' + ARQUIVO + ' está ilegível. Ele não foi alterado; restaure uma cópia da pasta "backups".');
         }
         if (!doArquivo || !Array.isArray(doArquivo.disciplinas)) throw new Error('O arquivo ' + ARQUIVO + ' não parece ser deste programa.');
-        if (Dados.estaVazio() || (doArquivo.atualizadoEm || 0) >= (Dados.db.atualizadoEm || 0)) {
+        if (Dados.semDados() || (doArquivo.atualizadoEm || 0) >= (Dados.db.atualizadoEm || 0)) {
           Dados.substituir(doArquivo, 'arquivo');
           estado = 'conectado';
           ultimoSalvo = doArquivo.atualizadoEm || Date.now();

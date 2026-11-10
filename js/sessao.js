@@ -540,7 +540,7 @@ var Sessao = (function () {
   }
 
   return {
-    abrir: abrir, historico: historico, iniciarCronometro: iniciarCronometro,
+    abrir: abrir, historico: historico, iniciarCronometro: iniciarCronometro, cronometroAtivo: function () { return !!cron; },
     descrever: descrever, seloTipo: seloTipo, confirmarExclusao: confirmarExclusao
   };
 })();

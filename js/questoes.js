@@ -197,7 +197,7 @@ var Questoes = (function () {
     if (semTotal.length) avisos.push('Informe o total de questões de: ' + semTotal.map(function (c) { return c.nome; }).join(', ') + ' (sem ele não dá para dividir as baterias).');
     return el('div', { class: 'pasta-teoria-info' }, [
       el('p', { class: 'data-fraca', text: 'Um caderno por bloco de teoria (' + cadernos.length + ' de ' + blocos.length + '). ' +
-        'Cada caderno tem ' + nb + ' baterias' + (blocos.length >= 10 ? ', cada uma com 1/4 das questões do caderno (matéria com 10 blocos ou mais); o restante fica fora da sequência.' : ' de tamanho igual.') +
+        'Cada caderno tem ' + nb + ' baterias' + (Dados.posEdital(d.id) ? ', cada uma com metade das questões do caderno (Pós-Edital).' : blocos.length >= 10 ? ', cada uma com 1/4 das questões do caderno (matéria com 10 blocos ou mais); o restante fica fora da sequência.' : ' de tamanho igual.') +
         ' Uma bateria fica concluída quando as questões lançadas no caderno alcançam a quantidade dela.' }),
       avisos.length ? el('ul', { class: 'pasta-teoria-avisos' }, avisos.map(function (a) { return el('li', null, [UI.icone('alerta'), el('span', { text: a })]); })) : null
     ]);

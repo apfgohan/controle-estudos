@@ -59,7 +59,7 @@ var Nuvem = (function () {
   // ---------- Sincronização ----------
   function local() { return Dados.db.atualizadoEm || 0; }
   function vazioNoTexto(texto) {
-    try { var d = JSON.parse(texto); return !d || !Array.isArray(d.disciplinas) || !d.disciplinas.length; } catch (e) { return false; }
+    try { var d = JSON.parse(texto); return !d || !Array.isArray(d.disciplinas) || Dados.semDados(d); } catch (e) { return false; }
   }
 
   function aplicarRemoto(texto) {
@@ -92,7 +92,7 @@ var Nuvem = (function () {
       // Dados vazios nunca vencem dados preenchidos, seja qual for a data
       // (protege contra um aparelho novo ou vazio apagar o que já está na nuvem, e vice-versa).
       var remotoVazio = !v || !v.dados || vazioNoTexto(v.dados);
-      var localVazio = Dados.estaVazio();
+      var localVazio = Dados.semDados();
       if (!remotoVazio && (localVazio || (v.atualizadoEm || 0) >= local())) {
         aplicarRemoto(v.dados);
         ultimoSalvo = v.atualizadoEm || null;

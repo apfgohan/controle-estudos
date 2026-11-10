@@ -31,9 +31,151 @@ var Dados = (function () {
       // Metas da semana (segunda a domingo) no Dashboard. 0 = sem meta.
       metas: { horas: 30, questoes: 500 },
       // Pausas programadas das patentes: { id, inicio, fim, motivo }. Nesses dias não há falta.
-      pausas: []
+      pausas: [],
+      // Fase de estudo: 'pre' (Pré-Edital) ou o id de um concurso (Pós-Edital). Cada fase é um espaço separado
+      // (matérias, cadernos, estudos…): o ativo fica no topo destes dados e os outros em `espacos`.
+      fases: { atual: 'pre', concursos: [] }, // concursos: { id, nome, esfera, banca, bancaOutra, dataProva, criadoEm }
+      espacos: {}
     };
   }
+
+  // ---------- Fases (Pré-Edital / Pós-Edital) ----------
+  // Campos que pertencem a cada espaço; o resto (perfil, pausas, metas da semana, patente) é comum a todas as fases.
+  var CAMPOS_ESPACO = ['disciplinas', 'blocos', 'topicos', 'pastas', 'cadernos', 'sessoes', 'ciclo', 'importacoes', 'apelidos', 'incidencias', 'revistos'];
+  var LISTAS_ESPACO = ['disciplinas', 'blocos', 'topicos', 'pastas', 'cadernos', 'sessoes', 'importacoes', 'incidencias'];
+  var ESFERAS = [['federal', 'Federal'], ['estadual', 'Estadual'], ['municipal', 'Municipal']];
+  var BANCAS_EDITAL = [['cebraspe', 'Cebraspe'], ['fcc', 'FCC'], ['fgv', 'FGV'], ['outra', 'Outra']];
+
+  function espacoVazio() {
+    var v = vazio(), e = {};
+    CAMPOS_ESPACO.forEach(function (k) { e[k] = v[k]; });
+    return e;
+  }
+  // A nuvem descarta listas e objetos vazios: recria o que faltar num espaço guardado.
+  function normalizarEspaco(e) {
+    var v = espacoVazio();
+    CAMPOS_ESPACO.forEach(function (k) { if (e[k] == null) e[k] = v[k]; });
+    if (!Array.isArray(e.ciclo.itens)) e.ciclo.itens = [];
+    e.blocos.forEach(function (b) { if (!Array.isArray(b.materiais)) b.materiais = []; });
+    e.incidencias.forEach(function (i) { if (!Array.isArray(i.assuntos)) i.assuntos = []; });
+    e.importacoes.forEach(function (i) { if (!Array.isArray(i.disciplinas)) i.disciplinas = []; });
+    return e;
+  }
+
+  function concurso(id) { return buscar(db.fases.concursos, id); }
+  function concursos() { return db.fases.concursos.slice().sort(function (a, b) { return (b.criadoEm || 0) - (a.criadoEm || 0); }); }
+  function infoFase(id) {
+    var c = id && id !== 'pre' ? concurso(id) : null;
+    return c ? { id: c.id, tipo: 'pos', concurso: c, nome: c.nome } : { id: 'pre', tipo: 'pre', concurso: null, nome: 'Pré-Edital' };
+  }
+  function faseAtual() { return infoFase(db.fases.atual); }
+  // Durante a visão de todas as fases, cada matéria segue as regras da fase a que pertence.
+  var faseDaDisciplina = null;
+  function posEdital(disciplinaId) {
+    var id = faseDaDisciplina && disciplinaId && faseDaDisciplina[disciplinaId] || db.fases.atual;
+    return infoFase(id).tipo === 'pos';
+  }
+  function posEditalDe(dados) { var f = dados.fases; return !!(f && f.atual !== 'pre' && (f.concursos || []).some(function (c) { return c.id === f.atual; })); }
+  // Banca de referência da incidência e das estrelas: no Pós-Edital, a banca do edital (ou todas, se for outra banca).
+  function bancaReferencia() {
+    var c = faseAtual().concurso;
+    return c && NOME_BANCA[c.banca] ? c.banca : 'todas';
+  }
+  function nomeBancaEdital(c) {
+    if (!c) return '';
+    if (c.banca === 'outra') return c.bancaOutra || 'Outra banca';
+    var b = BANCAS_EDITAL.filter(function (x) { return x[0] === c.banca; })[0];
+    return b ? b[1] : '';
+  }
+  // Dias até a prova (0 = hoje; negativo = já passou); null sem data.
+  function diasParaProva(c) {
+    c = c || faseAtual().concurso;
+    if (!c || !c.dataProva) return null;
+    return Math.round((new Date(c.dataProva + 'T12:00:00') - new Date(UI.hoje() + 'T12:00:00')) / 86400000);
+  }
+
+  function camposConcurso(c, campos) {
+    if (campos.nome != null) c.nome = String(campos.nome).trim() || 'Concurso';
+    if (campos.esfera != null) c.esfera = ESFERAS.some(function (x) { return x[0] === campos.esfera; }) ? campos.esfera : 'federal';
+    if (campos.banca != null) c.banca = BANCAS_EDITAL.some(function (x) { return x[0] === campos.banca; }) ? campos.banca : 'outra';
+    if (campos.bancaOutra != null) c.bancaOutra = String(campos.bancaOutra).trim();
+    if (campos.dataProva !== undefined) c.dataProva = campos.dataProva || null;
+  }
+  function criarConcurso(campos) {
+    var c = { id: novoId(), criadoEm: Date.now() };
+    camposConcurso(c, Object.assign({ nome: '', esfera: 'federal', banca: 'outra', bancaOutra: '', dataProva: null }, campos));
+    db.fases.concursos.push(c);
+    db.espacos[c.id] = espacoVazio();
+    salvar();
+    return c;
+  }
+  function atualizarConcurso(id, campos) {
+    var c = concurso(id);
+    if (!c) return;
+    camposConcurso(c, campos);
+    if (id === db.fases.atual) garantirPastasTeoria(db);
+    cacheRel = null;
+    salvar();
+  }
+  // O concurso ativo não pode ser excluído (volte a outra fase antes).
+  function excluirConcurso(id) {
+    if (id === db.fases.atual) return false;
+    var esp = db.espacos[id];
+    if (esp && window.ResumosDados) (esp.disciplinas || []).forEach(function (d) { ResumosDados.apagar(d.id).catch(function (e) { console.error(e); }); });
+    db.fases.concursos = db.fases.concursos.filter(function (c) { return c.id !== id; });
+    delete db.espacos[id];
+    if (db.fases.acessos) delete db.fases.acessos[id];
+    salvar();
+    return true;
+  }
+
+  // Troca o espaço ativo: guarda o atual em `espacos` e traz o escolhido para o topo.
+  function trocarFase(id) {
+    var novo = id === 'pre' || concurso(id) ? id : 'pre';
+    if (novo === db.fases.atual) return;
+    var atual = {};
+    CAMPOS_ESPACO.forEach(function (k) { atual[k] = db[k]; });
+    db.espacos[db.fases.atual] = atual;
+    var vem = normalizarEspaco(db.espacos[novo] || espacoVazio());
+    CAMPOS_ESPACO.forEach(function (k) { db[k] = vem[k]; });
+    delete db.espacos[novo];
+    db.fases.acessos = db.fases.acessos || {};
+    db.fases.acessos[db.fases.atual] = UI.hoje();
+    db.fases.atual = novo;
+    garantirPastasTeoria(db);
+    cacheRel = null;
+    salvar();
+  }
+
+  // Espaço de uma fase sem trocar (o ativo vem do topo).
+  function espacoDe(id) {
+    if (id === db.fases.atual) { var e = {}; CAMPOS_ESPACO.forEach(function (k) { e[k] = db[k]; }); return e; }
+    return db.espacos[id] ? normalizarEspaco(db.espacos[id]) : espacoVazio();
+  }
+  function idsDasFases() { return ['pre'].concat(db.fases.concursos.map(function (c) { return c.id; })); }
+
+  // Roda `fn` com as listas de todas as fases juntas no topo (os ids são únicos entre fases). Usado pela patente,
+  // que é uma só, e pela visão "Tudo" do Dashboard e do Histórico. Nada é gravado enquanto isso.
+  var mesclado = false;
+  function comTodosOsEspacos(fn) {
+    var outros = Object.keys(db.espacos).filter(function (k) { return k !== db.fases.atual && db.espacos[k]; });
+    if (mesclado || !outros.length) return fn();
+    var guardado = {}, mapa = {};
+    LISTAS_ESPACO.forEach(function (k) { guardado[k] = db[k]; });
+    db.disciplinas.forEach(function (d) { mapa[d.id] = db.fases.atual; });
+    outros.forEach(function (id) {
+      var e = normalizarEspaco(db.espacos[id]);
+      e.disciplinas.forEach(function (d) { mapa[d.id] = id; });
+      LISTAS_ESPACO.forEach(function (k) { db[k] = db[k].concat(e[k]); });
+    });
+    mesclado = true; faseDaDisciplina = mapa; cacheRel = null;
+    try { return fn(); } finally {
+      LISTAS_ESPACO.forEach(function (k) { db[k] = guardado[k]; });
+      mesclado = false; faseDaDisciplina = null; cacheRel = null;
+    }
+  }
+  function estaMesclado() { return mesclado; }
+  function faseDe(disciplinaId) { return infoFase(faseDaDisciplina && faseDaDisciplina[disciplinaId] || db.fases.atual); }
 
   function criarPausa(campos) {
     db.pausas.push({ id: novoId(), inicio: campos.inicio, fim: campos.fim, motivo: campos.motivo || '' });
@@ -62,6 +204,10 @@ var Dados = (function () {
     var base = vazio();
     for (var k in base) if (d[k] == null) d[k] = base[k];
     d.versao = VERSAO;
+    if (!Array.isArray(d.fases.concursos)) d.fases.concursos = [];
+    if (!d.fases.atual || (d.fases.atual !== 'pre' && !d.fases.concursos.some(function (c) { return c.id === d.fases.atual; }))) d.fases.atual = 'pre';
+    Object.keys(d.espacos).forEach(function (id) { if (d.espacos[id]) normalizarEspaco(d.espacos[id]); });
+    normalizarEspaco(d);
     garantirPastasTeoria(d);
     (d.blocos || []).forEach(function (b) { if (!Array.isArray(b.materiais)) b.materiais = []; });
     (d.incidencias || []).forEach(function (i) { if (!Array.isArray(i.assuntos)) i.assuntos = []; });
@@ -129,8 +275,10 @@ var Dados = (function () {
   function pastaFixa(p) { return !!p && PASTAS_FIXAS.some(function (f) { return f[0] === p.tipo; }); }
 
   function garantirPastasTeoria(dados) {
+    // No Pós-Edital não há bateria de erros: a pasta de erros não é criada.
+    var fixas = posEditalDe(dados) ? PASTAS_FIXAS.filter(function (f) { return f[0] !== 'erros'; }) : PASTAS_FIXAS;
     dados.disciplinas.forEach(function (disc) {
-      PASTAS_FIXAS.forEach(function (f) {
+      fixas.forEach(function (f) {
         var dela = dados.pastas.filter(function (p) { return p.disciplinaId === disc.id; });
         if (dela.some(function (p) { return p.tipo === f[0]; })) return;
         var existente = dela.filter(function (p) { return !p.tipo && chaveNome(p.nome) === chaveNome(f[1]); })[0];
@@ -159,6 +307,7 @@ var Dados = (function () {
 
   // Salva no navegador (cópia rápida) e avisa a pasta de dados e a nuvem para gravarem também.
   function salvar() {
+    if (mesclado) { console.warn('Gravação ignorada durante a visão de todas as fases'); return; }
     cacheRel = null;
     db.atualizadoEm = Date.now();
     gravarNoNavegador();
@@ -529,6 +678,7 @@ var Dados = (function () {
   // bateria de erros própria os pares cuja última bateria do 2º bloco ainda cabe na sequência. Os demais pares
   // (que ainda não tenham caderno de erros concluído) se juntam numa única bateria final, ex.: "Blocos 05 a 10".
   function gruposDeErros(disciplinaId) {
+    if (posEdital(disciplinaId)) return { normais: [], final: null };
     var bs = blocosDe(disciplinaId), N = bs.length;
     var atrasoUltima = ATRASO_BATERIA[numBaterias(disciplinaId) - 1];
     var normais = [], finais = [];
@@ -584,12 +734,14 @@ var Dados = (function () {
   }
 
   // ---------- Modo Teoria: baterias e sequência de estudo ----------
-  // Todas as matérias têm 3 baterias por caderno.
-  function numBaterias() { return 3; }
+  // No Pré-Edital, 3 baterias por caderno; no Pós-Edital, só 2 (e sem bateria de erros).
+  function numBaterias(disciplinaId) { return posEdital(disciplinaId) ? 2 : 3; }
 
   // Divisão padrão: com menos de 10 blocos, o caderno em 3 partes iguais. Com 10 ou mais, cada bateria continua com
   // 1/4 do caderno (como quando eram 4 baterias): as quantidades não são redistribuídas e o restante fica fora da sequência.
+  // No Pós-Edital, o caderno em 2 metades.
   function divisaoPadrao(disciplinaId, total) {
+    if (posEdital(disciplinaId)) return divisaoIgual(total, 2);
     return divisaoIgual(total, blocosDe(disciplinaId).length >= 10 ? 4 : 3).slice(0, 3);
   }
 
@@ -1209,6 +1361,10 @@ var Dados = (function () {
     var c = cache();
     if (c.arvores[disciplinaId] !== undefined) return c.arvores[disciplinaId];
     var incs = incidenciasDe(disciplinaId);
+    // No Pós-Edital vale só a banca do edital, que faz o papel de referência (guardada como 'todas' na árvore).
+    var ref = posEdital(disciplinaId) ? bancaReferencia() : 'todas';
+    if (ref !== 'todas') incs = incs.filter(function (i) { return i.banca === ref; }).map(function (i) { return Object.assign({}, i, { banca: 'todas' }); });
+    else if (posEdital(disciplinaId)) incs = incs.filter(function (i) { return i.banca === 'todas'; });
     if (!incs.length) return (c.arvores[disciplinaId] = null);
     var nos = {}, totais = {};
     incs.forEach(function (inc) {
@@ -1223,7 +1379,7 @@ var Dados = (function () {
     Object.keys(nos).forEach(function (k) { var n = nos[k], p = n.pai && nos[n.pai]; (p ? p.filhos : raizes).push(n); });
     Object.keys(nos).forEach(function (k) { nos[k].filhos.sort(compararCodigo); });
     raizes.sort(compararCodigo);
-    return (c.arvores[disciplinaId] = { nos: nos, raizes: raizes, totais: totais });
+    return (c.arvores[disciplinaId] = { nos: nos, raizes: raizes, totais: totais, referencia: ref });
   }
 
   // Assuntos descendentes (todos os níveis) de um nó da árvore.
@@ -1389,6 +1545,13 @@ var Dados = (function () {
   function limpar() { db = vazio(); salvar(); }
 
   function estaVazio() { return db.disciplinas.length === 0; }
+  // Sem nenhuma matéria em fase alguma (para a sincronização: dados vazios nunca vencem dados preenchidos).
+  function semDados(d) {
+    d = d || db;
+    if (!d || (Array.isArray(d.disciplinas) && d.disciplinas.length)) return !d;
+    var e = d.espacos || {};
+    return !Object.keys(e).some(function (k) { return e[k] && Array.isArray(e[k].disciplinas) && e[k].disciplinas.length; });
+  }
 
   function carregarExemplo() {
     var trib = criarDisciplina({ nome: 'Direito Tributário', cor: '#4f7cff', peso: 10 });
@@ -1478,6 +1641,10 @@ var Dados = (function () {
     aulasDe: aulasDe, aula: aula, aulasHistoricas: aulasHistoricas, definirAulaConcluida: definirAulaConcluida, ultimoEstudoAula: ultimoEstudoAula, nomeAula: nomeAula,
     TIPOS_MATERIAL: TIPOS_MATERIAL, criarMaterial: criarMaterial, atualizarMaterial: atualizarMaterial, excluirMaterial: excluirMaterial, cursosUsados: cursosUsados,
     atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,
-    exportar: exportar, importar: importar, limpar: limpar, estaVazio: estaVazio, carregarExemplo: carregarExemplo
+    ESFERAS: ESFERAS, BANCAS_EDITAL: BANCAS_EDITAL, concurso: concurso, concursos: concursos, faseAtual: faseAtual, infoFase: infoFase,
+    posEdital: posEdital, bancaReferencia: bancaReferencia, nomeBancaEdital: nomeBancaEdital, diasParaProva: diasParaProva,
+    criarConcurso: criarConcurso, atualizarConcurso: atualizarConcurso, excluirConcurso: excluirConcurso, trocarFase: trocarFase,
+    espacoDe: espacoDe, idsDasFases: idsDasFases, comTodosOsEspacos: comTodosOsEspacos, estaMesclado: estaMesclado, faseDe: faseDe,
+    exportar: exportar, importar: importar, limpar: limpar, estaVazio: estaVazio, semDados: semDados, carregarExemplo: carregarExemplo
   };
 })();

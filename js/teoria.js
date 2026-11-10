@@ -212,12 +212,16 @@ var Teoria = (function () {
     var arquivo = el('input', { type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', hidden: true,
       onchange: function () { importarIncidencia(d, bancaAlvo, arquivo.files[0]); arquivo.value = ''; } });
     function escolher(banca) { bancaAlvo = banca; arquivo.value = ''; arquivo.click(); }
-    var cartoes = Dados.BANCAS.map(function (x) {
+    // No Pós-Edital só interessa a banca do edital (ou todas, se a banca não estiver entre as do TEC).
+    var pos = Dados.posEdital(), ref = Dados.bancaReferencia();
+    var bancas = pos ? Dados.BANCAS.filter(function (x) { return x[0] === ref; }) : Dados.BANCAS;
+    var cartoes = bancas.map(function (x) {
       var inc = Dados.incidencia(d.id, x[0]);
-      return el('div', { class: 'inc-banca' + (inc ? ' ok' : '') + (x[0] === 'todas' ? ' inc-referencia' : '') }, [
+      var referencia = x[0] === ref;
+      return el('div', { class: 'inc-banca' + (inc ? ' ok' : '') + (referencia ? ' inc-referencia' : '') }, [
         el('div', { class: 'inc-banca-nome' }, [inc ? UI.icone('check') : null, el('span', { text: x[0] === 'todas' ? 'Todas as bancas' : x[1] })]),
         el('div', { class: 'inc-banca-info', text: inc ? UI.fmtNum(inc.total) + ' questões · ' + inc.assuntos.length + ' assuntos · ' + new Date(inc.importadoEm).toLocaleDateString('pt-BR')
-          : x[0] === 'todas' ? 'Base das estrelas dos blocos' : 'Não importada' }),
+          : referencia ? 'Base das estrelas dos blocos' : 'Não importada' }),
         el('div', { class: 'inc-banca-acoes' }, [
           el('button', { type: 'button', class: 'link', text: inc ? 'Substituir' : 'Importar', onclick: function () { escolher(x[0]); } }),
           inc ? el('button', { type: 'button', class: 'link link-perigo', text: 'Excluir', onclick: function () {
@@ -228,17 +232,22 @@ var Teoria = (function () {
         ])
       ]);
     });
+    var c = Dados.faseAtual().concurso;
     return el('div', { class: 'painel-incidencia' }, [
       el('div', { class: 'grafico-topo' }, [
         el('h3', { class: 'secao-titulo', text: 'Incidência dos assuntos (TEC)' }),
-        el('span', { class: 'data-fraca', text: 'Planilha do índice de um caderno da matéria no TEC, uma por banca' })
+        el('span', { class: 'data-fraca', text: pos
+          ? 'Pós-Edital (' + c.nome + '): vale só a planilha ' + (ref === 'todas' ? 'de todas as bancas, porque a banca ' + Dados.nomeBancaEdital(c) + ' não está no TEC' : 'da banca do edital, ' + Dados.NOME_BANCA[ref])
+          : 'Planilha do índice de um caderno da matéria no TEC, uma por banca' })
       ]),
-      el('div', { class: 'inc-bancas' }, cartoes),
+      el('div', { class: 'inc-bancas' + (pos ? ' inc-uma' : '') }, cartoes),
       arquivo
     ]);
   }
 
   function fmtPct1(v) { return UI.fmtPct(Math.round((v || 0) * 10) / 10); }
+  // Nome da referência das estrelas: "todas as bancas" ou, no Pós-Edital, a banca do edital.
+  function nomeRef() { var r = Dados.posEdital() ? Dados.bancaReferencia() : 'todas'; return r === 'todas' ? 'todas as bancas' : Dados.NOME_BANCA[r]; }
 
   // Peso de uma banca em relação a "Todas": 'mais' (30% acima ou mais), 'menos' (30% abaixo ou mais) ou ''.
   function pesoBanca(pctBanca, pctTodas) {
@@ -261,7 +270,7 @@ var Teoria = (function () {
   function estrelasBloco(b) {
     var n = Dados.relevancia(b), inc = Dados.incidenciaBloco(b);
     if (inc && inc.auto) {
-      return el('span', { class: 'estrelas auto', title: 'Automática: ' + fmtPct1(inc.pct.todas) + ' das questões da matéria (todas as bancas) · ' +
+      return el('span', { class: 'estrelas auto', title: 'Automática: ' + fmtPct1(inc.pct.todas) + ' das questões da matéria (' + nomeRef() + ') · ' +
         (Math.round(inc.razao * 100) / 100).toString().replace('.', ',') + ' vezes a média dos blocos', 'aria-label': 'Relevância ' + n + ' de 5' },
         [1, 2, 3, 4, 5].map(function (i) { return el('span', { class: 'estrela' + (i <= n ? ' cheia' : ''), text: '★' }); }));
     }
@@ -391,7 +400,7 @@ var Teoria = (function () {
         el('div', { class: 'bloco-nome', text: b.nome })
       ]),
       el('div', { class: 'bloco-direita' }, [
-        inc && inc.pct.todas != null ? el('span', { class: 'bloco-incidencia', title: 'Questões da matéria (todas as bancas) que caem nos assuntos deste bloco', text: fmtPct1(inc.pct.todas) + ' das questões' }) : null,
+        inc && inc.pct.todas != null ? el('span', { class: 'bloco-incidencia', title: 'Questões da matéria (' + nomeRef() + ') que caem nos assuntos deste bloco', text: fmtPct1(inc.pct.todas) + ' das questões' }) : null,
         estrelasBloco(b),
         el('span', { class: 'pilula' + (pb.total && pb.pct >= 100 ? ' completo' : ''), text: pb.total ? pb.feitos + '/' + pb.total + (pb.total === 1 ? ' aula' : ' aulas') + ' • ' + UI.fmtPct(pb.pct) : 'sem aulas' }),
         UI.botaoEngrenagem(function () { editarBloco(d, b); }, 'Editar bloco')
@@ -499,7 +508,7 @@ var Teoria = (function () {
       var termo = Planilha.normalizar(busca.value);
       lista.innerHTML = '';
       lista.appendChild(el('div', { class: 'at-linha at-cabecalho' }, [el('span'), el('span', { text: 'Assunto' }),
-        el('div', { class: 'at-nums' }, bancas.map(function (x) { return el('span', { class: 'at-num', text: x[0] === 'todas' ? 'Todas' : x[1] }); }))]));
+        el('div', { class: 'at-nums' }, bancas.map(function (x) { return el('span', { class: 'at-num', text: x[0] === 'todas' ? (Dados.posEdital() && Dados.bancaReferencia() !== 'todas' ? Dados.NOME_BANCA[Dados.bancaReferencia()] : 'Todas') : x[1] }); }))]));
       arv.raizes.forEach(function (n) { linha(n, 0, termo).forEach(function (x) { lista.appendChild(x); }); });
       // Totalizador: % do bloco e as estrelas que ele teria.
       var s = Dados.somarIncidencia(arv, sel);
@@ -511,7 +520,7 @@ var Teoria = (function () {
       }
       total.innerHTML = '';
       total.appendChild(el('span', null, [el('strong', { text: sel.length + (sel.length === 1 ? ' assunto' : ' assuntos') }),
-        sel.length ? ' · ' + (s.pct.todas != null ? fmtPct1(s.pct.todas) + ' das questões (todas as bancas)' : '') : '']));
+        sel.length ? ' · ' + (s.pct.todas != null ? fmtPct1(s.pct.todas) + ' das questões (' + nomeRef() + ')' : '') : '']));
       if (estrelas) total.appendChild(el('span', { class: 'estrelas auto', title: 'Estrelas previstas para o bloco' }, [1, 2, 3, 4, 5].map(function (i) { return el('span', { class: 'estrela' + (i <= estrelas ? ' cheia' : ''), text: '★' }); })));
       if (sel.length) total.appendChild(el('span', { class: 'bloco-bancas' }, chipsBancas(s.pct)));
     }

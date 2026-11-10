@@ -188,8 +188,9 @@ var Dashboard = (function () {
   function cartaoPeriodo(grafico, titulo, montar) {
     var tipo = periodoSalvo(grafico);
     var cartao = el('section', { class: 'painel cartao-grafico' });
+    var tudo = Dados.estaMesclado(); // visão de todas as fases: o redesenho também junta as fases
     function desenhar() {
-      var p = PERIODOS[tipo], m = montar(tipo);
+      var p = PERIODOS[tipo], m = tudo ? Dados.comTodosOsEspacos(function () { return montar(tipo); }) : montar(tipo);
       cartao.innerHTML = '';
       cartao.appendChild(el('div', { class: 'grafico-topo' }, [
         el('div', null, [
@@ -1305,6 +1306,7 @@ var Dashboard = (function () {
     try { f = JSON.parse(localStorage.getItem(CHAVE_FILTRO) || '{}') || {}; } catch (e) { f = {}; }
     var m = f.mapa || {};
     return {
+      fase: f.fase === 'tudo' ? 'tudo' : 'atual',
       materia: f.materia && Dados.disciplina(f.materia) ? f.materia : '',
       periodo: OPCOES_PERIODO.some(function (o) { return o[0] === f.periodo; }) ? f.periodo : '7',
       de: f.de || '', ate: f.ate || '',
@@ -1651,7 +1653,7 @@ var Dashboard = (function () {
     }));
     var materia = el('select', { class: 'dash-materia', 'aria-label': 'Matéria do mapa', onchange: function () { fm.materia = materia.value; mudar(); } },
       [el('option', { value: '', text: 'Todas as matérias', selected: !disc })].concat(Dados.disciplinas().map(function (d) {
-        return el('option', { value: d.id, text: d.nome, selected: d.id === disc });
+        return el('option', { value: d.id, text: nomeComFase(d), selected: d.id === disc });
       })));
     var periodo = fonte === 'programa' ? el('div', { class: 'alternar', role: 'group', 'aria-label': 'Período do mapa' }, OPCOES_MAPA.map(function (o) {
       return el('button', { type: 'button', class: o[0] === fm.periodo ? 'ativo' : '', text: o[1], 'aria-pressed': String(o[0] === fm.periodo),
@@ -1691,8 +1693,13 @@ var Dashboard = (function () {
     function mudar() { salvarFiltro(f); App.atualizar(); }
     var materia = el('select', { class: 'dash-materia', 'aria-label': 'Matéria', onchange: function () { f.materia = materia.value; mudar(); } },
       [el('option', { value: '', text: 'Todas as matérias', selected: !f.materia })].concat(Dados.disciplinas().map(function (d) {
-        return el('option', { value: d.id, text: d.nome, selected: d.id === f.materia });
+        return el('option', { value: d.id, text: nomeComFase(d), selected: d.id === f.materia });
       })));
+    // Fase: só a atual ou o acumulado de todas (aparece quando existe mais de uma fase).
+    var fase = Dados.idsDasFases().length > 1 ? el('select', { class: 'dash-materia', 'aria-label': 'Fase', onchange: function () { f.fase = fase.value; f.materia = ''; mudar(); } }, [
+      el('option', { value: 'atual', text: 'Fase atual: ' + Dados.faseAtual().nome, selected: f.fase !== 'tudo' }),
+      el('option', { value: 'tudo', text: 'Tudo (todas as fases)', selected: f.fase === 'tudo' })
+    ]) : null;
     var periodo = el('div', { class: 'dash-periodos', role: 'group', 'aria-label': 'Período' }, OPCOES_PERIODO.map(function (o) {
       return el('button', { type: 'button', class: o[0] === f.periodo ? 'ativo' : '', text: o[1], 'aria-pressed': String(o[0] === f.periodo),
         onclick: function () { if (o[0] === f.periodo) return; f.periodo = o[0]; if (o[0] === 'pers' && !f.de) { f.de = iv.de; f.ate = iv.ate; } mudar(); } });
@@ -1703,10 +1710,19 @@ var Dashboard = (function () {
       el('span', { text: 'até' }),
       el('input', { type: 'date', value: iv.ate, max: UI.hoje(), onchange: function (e) { f.ate = e.target.value; mudar(); } })
     ]) : null;
-    return el('div', { class: 'dash-controles' }, [el('div', { class: 'dash-controles-linha' }, [periodo, imprimir]), el('div', { class: 'dash-controles-linha' }, [datas, materia])]);
+    return el('div', { class: 'dash-controles' }, [el('div', { class: 'dash-controles-linha' }, [periodo, imprimir]), el('div', { class: 'dash-controles-linha' }, [datas, fase, materia])]);
   }
 
+  // Nome da matéria com a fase, na visão de todas as fases (a mesma matéria pode existir em várias).
+  function nomeComFase(d) { return Dados.estaMesclado() ? d.nome + ' · ' + Dados.faseDe(d.id).nome : d.nome; }
+
   function render(raiz) {
+    var tudo = false;
+    try { tudo = (JSON.parse(localStorage.getItem(CHAVE_FILTRO) || '{}') || {}).fase === 'tudo'; } catch (e) { tudo = false; }
+    if (tudo && Dados.idsDasFases().length > 1) return Dados.comTodosOsEspacos(function () { renderPainel(raiz); });
+    renderPainel(raiz);
+  }
+  function renderPainel(raiz) {
     var f = filtroSalvo(), iv = intervalo(f), disc = f.materia;
     var d = disc ? Dados.disciplina(disc) : null;
     if (Dados.estaVazio()) {
@@ -1718,7 +1734,7 @@ var Dashboard = (function () {
     var dias = diasEstudados(iv.de, iv.ate, disc);
     raiz.appendChild(el('div', { class: 'dash-cabeca' }, [
       el('div', { class: 'dash-titulos' }, [
-        el('div', { class: 'dash-chamada' }, [el('span', { class: 'dash-ponto' }), ROTULO_RELATORIO[f.periodo] + (d ? ' · ' + d.nome : '')]),
+        el('div', { class: 'dash-chamada' }, [el('span', { class: 'dash-ponto' }), ROTULO_RELATORIO[f.periodo] + (Dados.estaMesclado() ? ' · todas as fases' : '') + (d ? ' · ' + nomeComFase(d) : '')]),
         el('h1', { class: 'dash-titulo', text: tituloPeriodo(iv) }),
         el('div', { class: 'dash-sub', text: dias + ' de ' + qtdDias(iv.dias) + ' estudados.' })
       ]),
