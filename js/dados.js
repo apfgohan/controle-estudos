@@ -8,8 +8,10 @@ var Dados = (function () {
     return {
       versao: VERSAO,
       disciplinas: [],   // { id, nome, cor, peso, ordem }
-      blocos: [],        // { id, disciplinaId, nome, ordem }
-      topicos: [],       // { id, blocoId, nome, link, ordem, concluido, dataConclusao, revisaoAgendada, ultimaRevisao }
+      blocos: [],        // { id, disciplinaId, nome, ordem, relevancia, materiais: [{ id, tipo, nome, curso, link }], herancaTeoria }
+      // tec: { chave, codigo } quando o tópico é um assunto da incidência do TEC; arquivado: tópico antigo (fora da tela,
+      // mas no Histórico e no XP); herdado: concluído por herança do bloco (não rende XP).
+      topicos: [],       // { id, blocoId, nome, tec, ordem, concluido, dataConclusao, revisaoAgendada, ultimaRevisao, arquivado, herdado }
       pastas: [],        // { id, disciplinaId, nome, ordem }
       cadernos: [],      // { id, pastaId, nome, assunto, link, prioridade, totalQuestoes, ordem }
       sessoes: [],       // { id, data, disciplinaId, segundos, tipo, topicoIds, cadernos:[{cadernoId,acertos,erros}], anotacao, criadoEm }
@@ -17,6 +19,9 @@ var Dados = (function () {
       // Histórico importado do TecConcursos: usado SÓ na aba Estatísticas (não entra em sessões nem cadernos).
       importacoes: [],   // { id, inicio, fim, nomeArquivo, importadoEm, disciplinas: [{ disciplinaId, nomePlanilha, feitas, acertos, erros, topicos: [{ codigo, nome, caminho, feitas, acertos, erros }] }] }
       apelidos: {},      // nome da disciplina na planilha (normalizado) -> disciplinaId ou 'ignorar'
+      // Incidência dos assuntos nas provas (planilha do TEC), uma por disciplina e banca.
+      incidencias: [],   // { id, disciplinaId, banca, nomeArquivo, importadoEm, total, assuntos: [{ chave, codigo, nome, caminho, qtd }] }
+      migracoes: { tec1: true },
       // Pontos fracos (das Estatísticas) marcados como revistos numa sessão de Revisão.
       // 'disciplinaId|chaveDoAssunto' -> { data, ate } ; 'ate' = fim da última planilha quando foi marcado.
       revistos: {},
@@ -49,12 +54,35 @@ var Dados = (function () {
     salvar();
   }
 
+  var migrouAgora = false;
   function normalizar(d) {
+    var migrar = !(d.migracoes && d.migracoes.tec1);
     var base = vazio();
     for (var k in base) if (d[k] == null) d[k] = base[k];
     d.versao = VERSAO;
     garantirPastasTeoria(d);
+    (d.blocos || []).forEach(function (b) { if (!Array.isArray(b.materiais)) b.materiais = []; });
+    (d.incidencias || []).forEach(function (i) { if (!Array.isArray(i.assuntos)) i.assuntos = []; });
+    if (migrar) { migrarParaTec(d); d.migracoes = Object.assign({}, d.migracoes, { tec1: true }); migrouAgora = true; }
+    cacheRel = null;
     return d;
+  }
+
+  // Migração única (2026-11-10): os tópicos digitados à mão são arquivados (somem da tela, mas continuam no Histórico
+  // e no XP) e os links deles são descartados. Cada bloco guarda como estava a teoria, para os assuntos do TEC herdarem.
+  function migrarParaTec(d) {
+    (d.blocos || []).forEach(function (b) {
+      var ts = (d.topicos || []).filter(function (t) { return t.blocoId === b.id && !t.arquivado; });
+      if (!ts.length) return;
+      var ids = ts.map(function (t) { return t.id; });
+      var feitos = ts.filter(function (t) { return t.concluido; });
+      var estudado = (d.sessoes || []).some(function (s) { return (s.topicoIds || []).some(function (id) { return ids.indexOf(id) >= 0; }); });
+      b.herancaTeoria = {
+        concluida: feitos.length === ts.length, iniciada: !!feitos.length || estudado, qtd: ts.length, feitos: feitos.length,
+        data: feitos.reduce(function (m, t) { return t.dataConclusao && (!m || t.dataConclusao > m) ? t.dataConclusao : m; }, null)
+      };
+    });
+    (d.topicos || []).forEach(function (t) { t.arquivado = true; delete t.link; });
   }
 
   // ---------- Pastas fixas "Cadernos de Teoria" e "Cadernos de Erros" ----------
@@ -105,6 +133,7 @@ var Dados = (function () {
 
   // Salva no navegador (cópia rápida) e avisa a pasta de dados e a nuvem para gravarem também.
   function salvar() {
+    cacheRel = null;
     db.atualizadoEm = Date.now();
     gravarNoNavegador();
     if (window.Armazenamento) Armazenamento.agendar();
@@ -125,10 +154,12 @@ var Dados = (function () {
   // Troca todos os dados por uma versão mais recente vinda da pasta ('arquivo') ou da nuvem ('nuvem')
   // e repassa ao outro destino, sem regravar a origem.
   function substituir(dados, origem) {
+    migrouAgora = false;
     db = normalizar(dados);
     gravarNoNavegador();
     if (origem !== 'arquivo' && window.Armazenamento) Armazenamento.agendar();
-    if (origem !== 'nuvem' && window.Nuvem) Nuvem.agendar();
+    // Dados vindos da nuvem que acabaram de ser migrados voltam para a nuvem já migrados.
+    if ((origem !== 'nuvem' || migrouAgora) && window.Nuvem) Nuvem.agendar();
   }
 
   function novoId() {
@@ -209,6 +240,7 @@ var Dados = (function () {
     var blocoIds = db.blocos.filter(function (b) { return b.disciplinaId === id; }).map(function (b) { return b.id; });
     var pastaIds = db.pastas.filter(function (p) { return p.disciplinaId === id; }).map(function (p) { return p.id; });
     remover('topicos', function (t) { return blocoIds.indexOf(t.blocoId) >= 0; });
+    remover('incidencias', function (i) { return i.disciplinaId === id; });
     remover('cadernos', function (c) { return pastaIds.indexOf(c.pastaId) >= 0; });
     remover('blocos', function (b) { return b.disciplinaId === id; });
     remover('pastas', function (p) { return p.disciplinaId === id; });
@@ -246,8 +278,13 @@ var Dados = (function () {
     salvar();
   }
 
-  // Relevância do bloco de teoria (1 a 5 estrelas); sem valor gravado, vale 3.
-  function relevancia(b) { var n = b && Number(b.relevancia); return n >= 1 && n <= 5 ? n : 3; }
+  // Relevância do bloco de teoria (1 a 5 estrelas). Com assuntos do TEC e a incidência de "Todas as bancas", é automática;
+  // senão vale a marcada à mão (sem valor gravado, 3).
+  function relevancia(b) {
+    var inc = b ? incidenciaBloco(b) : null;
+    if (inc && inc.auto) return inc.estrelas;
+    var n = b && Number(b.relevancia); return n >= 1 && n <= 5 ? n : 3;
+  }
   function definirRelevancia(id, n) {
     var b = bloco(id);
     if (!b) return;
@@ -267,10 +304,17 @@ var Dados = (function () {
   }
 
   // ---------- Tópicos ----------
+  // Só os tópicos ativos (os arquivados ficam fora da tela, do progresso e do plano).
   function topicosDe(blocoId) {
-    return db.topicos.filter(function (t) { return t.blocoId === blocoId; }).sort(porOrdem);
+    return db.topicos.filter(function (t) { return t.blocoId === blocoId && !t.arquivado; }).sort(porOrdem);
   }
   function topico(id) { return buscar(db.topicos, id); }
+
+  // Tópicos que contam para o histórico (XP, ritmo, último estudo): ativos e arquivados, menos os concluídos por herança.
+  function topicosHistoricos(disciplinaId) {
+    var ids = disciplinaId ? blocosDe(disciplinaId).map(function (b) { return b.id; }) : null;
+    return db.topicos.filter(function (t) { return !t.herdado && (!ids || ids.indexOf(t.blocoId) >= 0); });
+  }
 
   function topicosDaDisciplina(disciplinaId) {
     var r = [];
@@ -293,7 +337,7 @@ var Dados = (function () {
     var t = topico(id);
     if (!t) return;
     if (campos.nome) t.nome = campos.nome;
-    if (campos.link != null) t.link = normalizarLink(campos.link);
+    if (campos.tec !== undefined) { if (campos.tec) t.tec = { chave: campos.tec.chave, codigo: campos.tec.codigo || '' }; else delete t.tec; }
     if (campos.blocoId && campos.blocoId !== t.blocoId) {
       t.blocoId = campos.blocoId;
       t.ordem = proximaOrdem(topicosDe(campos.blocoId).filter(function (x) { return x !== t; }));
@@ -305,6 +349,7 @@ var Dados = (function () {
   function definirConcluido(id, concluido, data) {
     var t = topico(id);
     if (!t) return;
+    if (t.herdado) { delete t.herdado; t.dataConclusao = null; } // marcado por você: passa a valer como estudo seu
     t.concluido = !!concluido;
     t.dataConclusao = concluido ? (t.dataConclusao || data || UI.hoje()) : null;
     salvar();
@@ -573,7 +618,8 @@ var Dados = (function () {
       var cad = cadernoDoBloco(b.id);
       return {
         bloco: b, topicos: ts,
-        teoriaConcluida: ts.length > 0 && ts.every(function (t) { return t.concluido; }),
+        // Bloco sem tópicos ativos (antes de escolher os assuntos do TEC) segue como estava antes da troca.
+        teoriaConcluida: ts.length ? ts.every(function (t) { return t.concluido; }) : !!(b.herancaTeoria && b.herancaTeoria.concluida),
         caderno: cad, baterias: cad ? bateriasCaderno(cad, nb) : null
       };
     });
@@ -586,7 +632,7 @@ var Dados = (function () {
         if (passo > 1) ORDEM_FAVORITAS.forEach(function (g) {
           var cf = cadernoFavorito(disciplinaId, g);
           var rod = cf ? rodadaFavorita(cf.id, pb.bloco.id) : null;
-          if ((g !== GRUPO_FAVORITAS_LEITURA || teoriaIniciada(pb.topicos)) && !(rod && rod.concluida)) return;
+          if ((g !== GRUPO_FAVORITAS_LEITURA || teoriaIniciada(pb.topicos) || (pb.bloco.herancaTeoria && pb.bloco.herancaTeoria.iniciada)) && !(rod && rod.concluida)) return;
           itens.push({
             tipo: 'favoritas', passo: passo, indice: passo, bloco: pb.bloco, grupo: g, caderno: cf, rodada: rod,
             feitas: rod ? rod.feitas : 0, qtd: rod ? rod.total : null, concluido: !!(rod && rod.concluida)
@@ -1034,7 +1080,7 @@ var Dados = (function () {
     var data = s ? s.data : null;
     if (tipo !== 'questoes') {
       // Sem sessões lançadas, usa a data em que algum tópico foi marcado como concluído.
-      topicosDaDisciplina(disciplinaId).forEach(function (t) {
+      topicosHistoricos(disciplinaId).forEach(function (t) {
         if (t.dataConclusao && (!data || t.dataConclusao > data)) data = t.dataConclusao;
       });
     }
@@ -1087,6 +1133,167 @@ var Dados = (function () {
   function excluirImportacao(id) {
     remover('importacoes', function (i) { return i.id === id; });
     salvar();
+  }
+
+  // ---------- Incidência dos assuntos nas provas (planilha do TEC) ----------
+  var BANCAS = [['todas', 'Todas as bancas'], ['cebraspe', 'Cebraspe'], ['fcc', 'FCC'], ['fgv', 'FGV']];
+  var NOME_BANCA = {}; BANCAS.forEach(function (b) { NOME_BANCA[b[0]] = b[1]; });
+  var cacheRel = null; // árvores e relevâncias calculadas; zera a cada gravação
+
+  function incidenciasDe(disciplinaId) {
+    return db.incidencias.filter(function (i) { return !disciplinaId || i.disciplinaId === disciplinaId; }).sort(function (a, b) {
+      var da = disciplina(a.disciplinaId), dbb = disciplina(b.disciplinaId);
+      return (da ? da.ordem || 0 : 0) - (dbb ? dbb.ordem || 0 : 0) || ordemBanca(a.banca) - ordemBanca(b.banca);
+    });
+  }
+  function ordemBanca(id) { for (var i = 0; i < BANCAS.length; i++) if (BANCAS[i][0] === id) return i; return 99; }
+  function incidencia(disciplinaId, banca) {
+    return db.incidencias.filter(function (i) { return i.disciplinaId === disciplinaId && i.banca === banca; })[0] || null;
+  }
+
+  // Uma por disciplina e banca: a nova substitui a anterior.
+  function salvarIncidencia(imp) {
+    remover('incidencias', function (i) { return i.disciplinaId === imp.disciplinaId && i.banca === imp.banca; });
+    db.incidencias.push({
+      id: novoId(), disciplinaId: imp.disciplinaId, banca: imp.banca, nomeArquivo: imp.nomeArquivo || '', importadoEm: Date.now(),
+      total: Number(imp.total) || 0, assuntos: imp.assuntos.map(function (a) {
+        return { chave: a.chave, pai: a.pai || '', codigo: a.codigo || '', nome: a.nome, caminho: (a.caminho || []).slice(), qtd: Number(a.qtd) || 0 };
+      })
+    });
+    salvar();
+  }
+  function excluirIncidencia(id) { remover('incidencias', function (i) { return i.id === id; }); salvar(); }
+
+  function compararCodigo(a, b) { return String(a.codigo || '').localeCompare(String(b.codigo || ''), 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome, 'pt-BR'); }
+
+  function cache() { return cacheRel || (cacheRel = { arvores: {}, rel: {} }); }
+
+  // Árvore dos assuntos de uma disciplina, juntando as bancas importadas:
+  // { nos: { chave: { chave, pai, codigo, nome, caminho, bancas: { banca: { qtd, pct } }, filhos } }, raizes, totais: { banca: total } }
+  function arvoreIncidencia(disciplinaId) {
+    var c = cache();
+    if (c.arvores[disciplinaId] !== undefined) return c.arvores[disciplinaId];
+    var incs = incidenciasDe(disciplinaId);
+    if (!incs.length) return (c.arvores[disciplinaId] = null);
+    var nos = {}, totais = {};
+    incs.forEach(function (inc) {
+      totais[inc.banca] = inc.total;
+      inc.assuntos.forEach(function (a) {
+        var n = nos[a.chave] || (nos[a.chave] = { chave: a.chave, pai: a.pai, codigo: a.codigo, nome: a.nome, caminho: a.caminho, bancas: {}, filhos: [] });
+        if (inc.banca === 'todas') { n.codigo = a.codigo; n.nome = a.nome; }
+        n.bancas[inc.banca] = { qtd: a.qtd, pct: inc.total ? a.qtd / inc.total * 100 : 0 };
+      });
+    });
+    var raizes = [];
+    Object.keys(nos).forEach(function (k) { var n = nos[k], p = n.pai && nos[n.pai]; (p ? p.filhos : raizes).push(n); });
+    Object.keys(nos).forEach(function (k) { nos[k].filhos.sort(compararCodigo); });
+    raizes.sort(compararCodigo);
+    return (c.arvores[disciplinaId] = { nos: nos, raizes: raizes, totais: totais });
+  }
+
+  // Assuntos descendentes (todos os níveis) de um nó da árvore.
+  function descendentes(no) {
+    var r = [];
+    (no.filhos || []).forEach(function (f) { r.push(f); r = r.concat(descendentes(f)); });
+    return r;
+  }
+
+  // Soma a incidência de um conjunto de chaves sem contar duas vezes um assunto cujo pai também está no conjunto.
+  function somarIncidencia(arv, chaves) {
+    var raiz = chaves.filter(function (c) { return arv.nos[c] && !chaves.some(function (o) { return o !== c && c.indexOf(o + ' > ') === 0; }); });
+    var pct = {}, qtd = {};
+    Object.keys(arv.totais).forEach(function (banca) {
+      var q = 0;
+      raiz.forEach(function (c) { var x = arv.nos[c].bancas[banca]; if (x) q += x.qtd; });
+      qtd[banca] = q;
+      pct[banca] = arv.totais[banca] ? q / arv.totais[banca] * 100 : 0;
+    });
+    return { pct: pct, qtd: qtd };
+  }
+
+  // Estrelas pela razão entre a incidência do bloco e a média dos blocos da matéria que têm assuntos do TEC.
+  function estrelasPorRazao(r) { return r >= 1.75 ? 5 : r >= 1.25 ? 4 : r >= 0.75 ? 3 : r >= 0.4 ? 2 : 1; }
+
+  // Incidência de cada bloco de uma disciplina: { blocoId: { pct, qtd, razao, estrelas, auto } }
+  function relevanciasDaDisciplina(disciplinaId) {
+    var c = cache();
+    if (c.rel[disciplinaId]) return c.rel[disciplinaId];
+    var arv = arvoreIncidencia(disciplinaId), r = {};
+    if (arv) {
+      blocosDe(disciplinaId).forEach(function (b) {
+        var chaves = topicosDe(b.id).filter(function (t) { return t.tec && arv.nos[t.tec.chave]; }).map(function (t) { return t.tec.chave; });
+        if (chaves.length) r[b.id] = somarIncidencia(arv, chaves);
+      });
+      var comTodas = Object.keys(r).filter(function () { return arv.totais.todas != null; });
+      var media = comTodas.length ? comTodas.reduce(function (s, id) { return s + r[id].pct.todas; }, 0) / comTodas.length : 0;
+      Object.keys(r).forEach(function (id) {
+        r[id].auto = arv.totais.todas != null && media > 0;
+        r[id].razao = media > 0 ? r[id].pct.todas / media : null;
+        r[id].estrelas = r[id].auto ? estrelasPorRazao(r[id].razao) : null;
+      });
+    }
+    return (c.rel[disciplinaId] = r);
+  }
+  function incidenciaBloco(b) { return b ? relevanciasDaDisciplina(b.disciplinaId)[b.id] || null : null; }
+
+  function usadoEmSessao(topicoId) {
+    return db.sessoes.some(function (s) { return (s.topicoIds || []).indexOf(topicoId) >= 0; });
+  }
+
+  // Assuntos do TEC de um bloco: cria os novos (na ordem do código) e tira os desmarcados. Desmarcado que já tem
+  // estudo, conclusão ou revisão é arquivado, não apagado. Os novos herdam a teoria concluída do bloco.
+  function definirAssuntosTec(blocoId, chaves) {
+    var b = bloco(blocoId), arv = b && arvoreIncidencia(b.disciplinaId);
+    if (!b || !arv) return;
+    var atuais = topicosDe(blocoId).filter(function (t) { return t.tec; });
+    var tirar = atuais.filter(function (t) { return chaves.indexOf(t.tec.chave) < 0; });
+    tirar.forEach(function (t) {
+      if ((t.concluido && !t.herdado) || t.revisaoAgendada || t.ultimaRevisao || usadoEmSessao(t.id)) t.arquivado = true;
+      else remover('topicos', function (x) { return x.id === t.id; });
+    });
+    var ja = atuais.map(function (t) { return t.tec.chave; });
+    var h = b.herancaTeoria, herda = !!(h && h.concluida);
+    chaves.forEach(function (c) {
+      var n = arv.nos[c];
+      if (!n || ja.indexOf(c) >= 0) return;
+      var t = { id: novoId(), blocoId: blocoId, nome: n.nome, tec: { chave: c, codigo: n.codigo }, ordem: 0,
+        concluido: herda, dataConclusao: herda ? (h.data || UI.hoje()) : null, revisaoAgendada: null, ultimaRevisao: null };
+      if (herda) t.herdado = true;
+      db.topicos.push(t);
+    });
+    // Ordem: assuntos do TEC pelo código; depois os tópicos manuais, na ordem em que estavam.
+    var lista = topicosDe(blocoId);
+    var tec = lista.filter(function (t) { return t.tec; }).sort(function (x, y) { return compararCodigo({ codigo: x.tec.codigo, nome: x.nome }, { codigo: y.tec.codigo, nome: y.nome }); });
+    tec.concat(lista.filter(function (t) { return !t.tec; })).forEach(function (t, i) { t.ordem = i + 1; });
+    salvar();
+  }
+
+  // ---------- Materiais do bloco (um material pode cobrir vários assuntos) ----------
+  var TIPOS_MATERIAL = [['pdf', 'PDF'], ['video', 'Videoaula'], ['resumo', 'Resumo'], ['lei', 'Lei Seca']];
+  function camposMaterial(campos) {
+    var tipo = TIPOS_MATERIAL.some(function (x) { return x[0] === campos.tipo; }) ? campos.tipo : 'pdf';
+    return { tipo: tipo, nome: (campos.nome || '').trim(), curso: (campos.curso || '').trim(), link: normalizarLink(campos.link) };
+  }
+  function criarMaterial(blocoId, campos) {
+    var b = bloco(blocoId); if (!b) return;
+    b.materiais = b.materiais || [];
+    b.materiais.push(Object.assign({ id: novoId() }, camposMaterial(campos)));
+    salvar();
+  }
+  function atualizarMaterial(blocoId, id, campos) {
+    var b = bloco(blocoId), m = b && buscar(b.materiais || [], id); if (!m) return;
+    Object.assign(m, camposMaterial(campos));
+    salvar();
+  }
+  function excluirMaterial(blocoId, id) {
+    var b = bloco(blocoId); if (!b) return;
+    b.materiais = (b.materiais || []).filter(function (m) { return m.id !== id; });
+    salvar();
+  }
+  function cursosUsados() {
+    var r = {};
+    db.blocos.forEach(function (b) { (b.materiais || []).forEach(function (m) { if (m.curso) r[m.curso] = true; }); });
+    return Object.keys(r).sort(function (a, b) { return a.localeCompare(b, 'pt-BR'); });
   }
 
   function definirApelido(nomeNormalizado, valor) {
@@ -1189,6 +1396,11 @@ var Dados = (function () {
     ultimaAnotacao: ultimaAnotacao, ultimoEstudoTopico: ultimoEstudoTopico, revisoesPendentes: revisoesPendentes,
     importacoes: importacoes, fimUltimaImportacao: fimUltimaImportacao, adicionarImportacao: adicionarImportacao,
     excluirImportacao: excluirImportacao, definirApelido: definirApelido,
+    BANCAS: BANCAS, NOME_BANCA: NOME_BANCA, incidenciasDe: incidenciasDe, incidencia: incidencia, salvarIncidencia: salvarIncidencia,
+    excluirIncidencia: excluirIncidencia, arvoreIncidencia: arvoreIncidencia, descendentes: descendentes, somarIncidencia: somarIncidencia,
+    estrelasPorRazao: estrelasPorRazao, relevanciasDaDisciplina: relevanciasDaDisciplina, incidenciaBloco: incidenciaBloco,
+    definirAssuntosTec: definirAssuntosTec, topicosHistoricos: topicosHistoricos,
+    TIPOS_MATERIAL: TIPOS_MATERIAL, criarMaterial: criarMaterial, atualizarMaterial: atualizarMaterial, excluirMaterial: excluirMaterial, cursosUsados: cursosUsados,
     atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,
     exportar: exportar, importar: importar, limpar: limpar, estaVazio: estaVazio, carregarExemplo: carregarExemplo
   };

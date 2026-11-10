@@ -8,6 +8,8 @@ var Estatisticas = (function () {
 
   // Estado da tela (sobrevive às re-renderizações)
   var periodo = { inicio: '', fim: '' };
+  var tipoImportacao = 'historico'; // 'historico' (pontos fracos) ou 'incidencia' (assuntos nas provas)
+  var bancaImportacao = 'todas';
   var previa = null;            // planilha lida, aguardando confirmação
   var filtros = { importacao: '', disciplina: '', soImportantes: false };
   var abertos = {};             // nós expandidos da árvore
@@ -89,11 +91,18 @@ var Estatisticas = (function () {
   }
 
   function lerArquivo(arquivo, mostrarErro) {
-    var erro = validarPeriodo();
+    var incid = tipoImportacao === 'incidencia';
+    var erro = incid ? null : validarPeriodo();
     if (erro) return mostrarErro(erro);
     if (!arquivo) return mostrarErro('Escolha o arquivo .xlsx exportado do TecConcursos.');
     Planilha.ler(arquivo).then(function (r) {
+      if (r.tipo !== tipoImportacao) {
+        return mostrarErro(r.tipo === 'incidencia'
+          ? 'Esta planilha é de incidência (colunas Quantidade e Porcentagem). Escolha o tipo "Incidência" para importá-la.'
+          : 'Esta planilha é de histórico de desempenho (questões resolvidas, acertos e erros). Escolha o tipo "Histórico" para importá-la.');
+      }
       previa = {
+        tipo: r.tipo, banca: bancaImportacao,
         nomeArquivo: arquivo.name, inicio: periodo.inicio, fim: periodo.fim,
         disciplinas: r.disciplinas.map(function (d) {
           var c = corresponder(d.nomePlanilha);
@@ -112,6 +121,7 @@ var Estatisticas = (function () {
     if (pendentes.length) {
       return mostrarErro('Escolha o que fazer com: ' + pendentes.map(function (d) { return d.nomePlanilha; }).join(', ') + '.');
     }
+    if (previa.tipo === 'incidencia') return confirmarIncidencia();
     var mantidas = [];
     previa.disciplinas.forEach(function (d) {
       var chave = Planilha.normalizar(d.nomePlanilha);
@@ -127,6 +137,22 @@ var Estatisticas = (function () {
     periodo = { inicio: '', fim: '' };
     App.atualizar();
     UI.aviso('Histórico importado: ' + UI.fmtNum(total) + ' questões de ' + mantidas.length + ' disciplinas');
+  }
+
+  function confirmarIncidencia() {
+    var n = 0, q = 0, banca = previa.banca;
+    previa.disciplinas.forEach(function (d) {
+      var chave = Planilha.normalizar(d.nomePlanilha);
+      if (d.escolha === 'ignorar') { Dados.definirApelido(chave, 'ignorar'); return; }
+      var id = d.escolha;
+      if (id === 'nova') id = Dados.criarDisciplina({ nome: nomeSemParenteses(d.nomePlanilha) }).id;
+      Dados.definirApelido(chave, id);
+      Dados.salvarIncidencia({ disciplinaId: id, banca: banca, nomeArquivo: previa.nomeArquivo, total: d.total, assuntos: d.topicos });
+      n++; q += d.total;
+    });
+    previa = null;
+    App.atualizar();
+    UI.aviso('Incidência importada (' + Dados.NOME_BANCA[banca] + '): ' + UI.fmtNum(q) + ' questões de ' + n + (n === 1 ? ' disciplina' : ' disciplinas'));
   }
 
   // ---------- Agregação ----------
@@ -202,18 +228,35 @@ var Estatisticas = (function () {
     if (previa) return painelPrevia(erro, mostrarErro);
 
     var ultimo = Dados.fimUltimaImportacao();
+    var incid = tipoImportacao === 'incidencia';
     var inicio = el('input', { type: 'date', value: periodo.inicio, min: ultimo ? UI.somarDias(ultimo, 1) : null, max: UI.hoje(), oninput: function () { periodo.inicio = inicio.value; } });
     var fim = el('input', { type: 'date', value: periodo.fim, max: UI.hoje(), oninput: function () { periodo.fim = fim.value; } });
     var arquivo = el('input', { type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var tipos = el('div', { class: 'segmentado' }, [['historico', 'Histórico'], ['incidencia', 'Incidência']].map(function (x) {
+      return el('button', { type: 'button', class: tipoImportacao === x[0] ? 'ativo' : '', text: x[1], onclick: function () { tipoImportacao = x[0]; App.atualizar(); } });
+    }));
+    var bancas = el('div', { class: 'segmentado' }, Dados.BANCAS.map(function (x) {
+      return el('button', { type: 'button', class: bancaImportacao === x[0] ? 'ativo' : '', text: x[0] === 'todas' ? 'Todas' : x[1], onclick: function () { bancaImportacao = x[0]; App.atualizar(); } });
+    }));
+    var n = 1;
+    function passo(titulo, corpo) {
+      return el('div', { class: 'passo' }, [el('div', { class: 'passo-num', text: String(n++) }), el('div', { class: 'passo-corpo' }, [el('div', { class: 'passo-titulo', text: titulo })].concat(corpo))]);
+    }
 
     return el('section', { class: 'painel painel-importar' }, [
       el('div', { class: 'grafico-topo' }, [
-        el('h2', { class: 'secao-titulo', text: 'Importar histórico do TecConcursos' }),
-        el('span', { class: 'data-fraca', text: ultimo ? 'Último período importado termina em ' + UI.fmtData(ultimo) : 'Nenhuma importação ainda' })
+        el('h2', { class: 'secao-titulo', text: 'Importar do TecConcursos' }),
+        el('span', { class: 'data-fraca', text: incid ? (Dados.incidenciasDe().length ? Dados.incidenciasDe().length + ' incidências importadas' : 'Nenhuma incidência importada ainda')
+          : ultimo ? 'Último período importado termina em ' + UI.fmtData(ultimo) : 'Nenhuma importação ainda' })
       ]),
       el('div', { class: 'passos-importar' }, [
-        el('div', { class: 'passo' }, [
-          el('div', { class: 'passo-num', text: '1' }),
+        passo('Tipo de importação', [tipos, el('div', { class: 'campo-ajuda', text: incid
+          ? 'Incidência: quanto cada assunto cai nas provas. Serve para escolher os assuntos dos blocos na Teoria e calcular as estrelas.'
+          : 'Histórico: as suas questões resolvidas no TEC. Serve para achar os pontos fracos.' })]),
+        incid ? passo('Banca', [bancas, el('div', { class: 'campo-ajuda', text: 'A incidência de "Todas" é a referência principal, inclusive para as estrelas dos blocos.' })]) : null,
+        incid ? passo('Planilha (.xlsx)', [arquivo, el('div', { class: 'campo-ajuda', text: 'No TecConcursos: o índice de um caderno da matéria, exportado para Excel. Importar de novo a mesma matéria e banca substitui a anterior.' })]) : null,
+        incid ? null : el('div', { class: 'passo' }, [
+          el('div', { class: 'passo-num', text: String(n++) }),
           el('div', { class: 'passo-corpo' }, [
             el('div', { class: 'passo-titulo', text: 'Período do histórico' }),
             el('div', { class: 'campos-linha' }, [UI.campo('De', inicio), UI.campo('Até', fim)]),
@@ -222,8 +265,8 @@ var Estatisticas = (function () {
               : 'A planilha não traz datas: informe a quais dias ela se refere.' })
           ])
         ]),
-        el('div', { class: 'passo' }, [
-          el('div', { class: 'passo-num', text: '2' }),
+        incid ? null : el('div', { class: 'passo' }, [
+          el('div', { class: 'passo-num', text: String(n++) }),
           el('div', { class: 'passo-corpo' }, [
             el('div', { class: 'passo-titulo', text: 'Planilha (.xlsx)' }),
             arquivo,
@@ -237,6 +280,7 @@ var Estatisticas = (function () {
   }
 
   function painelPrevia(erro, mostrarErro) {
+    if (previa.tipo === 'incidencia') return painelPreviaIncidencia(erro, mostrarErro);
     var discs = Dados.disciplinas();
     var semCorresp = previa.disciplinas.filter(function (d) { return d.status === 'sem'; });
     var total = previa.disciplinas.reduce(function (s, d) { return s + d.feitas; }, 0);
@@ -283,6 +327,85 @@ var Estatisticas = (function () {
         UI.botao('Cancelar', function () { previa = null; App.atualizar(); }, 'btn-secundario'),
         UI.botao('Confirmar importação', function () { erro.hidden = true; confirmarImportacao(mostrarErro); }, 'btn-primario')
       ])
+    ]);
+  }
+
+  // Seletor "corresponde a" da prévia (as escolhas ficam lembradas nos apelidos).
+  function seletorCorrespondencia(d, aoMudar) {
+    var sel = el('select', { class: !d.escolha ? 'pendente' : '', onchange: function () { d.escolha = sel.value; sel.classList.toggle('pendente', !sel.value); if (aoMudar) aoMudar(); } }, [
+      el('option', { value: '', text: '— escolha —', selected: !d.escolha }),
+      el('optgroup', { label: 'Disciplinas cadastradas' }, Dados.disciplinas().map(function (x) {
+        return el('option', { value: x.id, text: x.nome, selected: d.escolha === x.id });
+      })),
+      el('option', { value: 'nova', text: '➕ Criar nova disciplina "' + nomeSemParenteses(d.nomePlanilha) + '"', selected: d.escolha === 'nova' }),
+      el('option', { value: 'ignorar', text: '🚫 Ignorar os dados desta matéria', selected: d.escolha === 'ignorar' })
+    ]);
+    return sel;
+  }
+
+  function painelPreviaIncidencia(erro, mostrarErro) {
+    var banca = previa.banca;
+    var linhas = previa.disciplinas.map(function (d) {
+      var situacao = el('td');
+      function atualizar() {
+        situacao.innerHTML = '';
+        var ja = d.escolha && d.escolha !== 'nova' && d.escolha !== 'ignorar' ? Dados.incidencia(d.escolha, banca) : null;
+        situacao.appendChild(ja ? UI.selo('Substitui a de ' + new Date(ja.importadoEm).toLocaleDateString('pt-BR'), 'aviso')
+          : d.status === 'sem' ? UI.selo('Sem correspondência', 'aviso') : d.status === 'lembrada' ? UI.selo('Lembrada', 'neutro') : UI.selo('Identificada', 'sucesso'));
+      }
+      atualizar();
+      return el('tr', { class: d.status === 'sem' ? 'linha-alerta' : '' }, [
+        el('td', null, [el('div', { class: 'data-forte', text: d.nomePlanilha }), el('div', { class: 'data-fraca', text: d.topicos.length + ' assuntos' })]),
+        el('td', { text: UI.fmtNum(d.total) }),
+        el('td', { class: 'col-corresp' }, seletorCorrespondencia(d, atualizar)),
+        situacao
+      ]);
+    });
+    return el('section', { class: 'painel painel-importar' }, [
+      el('div', { class: 'grafico-topo' }, [
+        el('h2', { class: 'secao-titulo', text: 'Conferir incidência · ' + Dados.NOME_BANCA[banca] }),
+        el('span', { class: 'data-fraca', text: previa.nomeArquivo })
+      ]),
+      el('p', { class: 'data-fraca', text: 'Confira a qual disciplina cadastrada corresponde cada matéria da planilha. Se a matéria já tiver incidência desta banca, a nova substitui a anterior.' }),
+      el('div', { class: 'tabela-rolagem' }, el('table', { class: 'tabela' }, [
+        el('thead', null, el('tr', null, ['Matéria na planilha', 'Questões', 'Corresponde a', ''].map(function (h) { return el('th', { text: h }); }))),
+        el('tbody', null, linhas)
+      ])),
+      erro,
+      el('div', { class: 'acoes-direita' }, [
+        UI.botao('Cancelar', function () { previa = null; App.atualizar(); }, 'btn-secundario'),
+        UI.botao('Confirmar importação', function () { erro.hidden = true; confirmarImportacao(mostrarErro); }, 'btn-primario')
+      ])
+    ]);
+  }
+
+  function painelIncidencias() {
+    var incs = Dados.incidenciasDe();
+    if (!incs.length) return null;
+    return el('section', { class: 'painel' }, [
+      el('div', { class: 'grafico-topo' }, [
+        el('h2', { class: 'secao-titulo', text: 'Incidências importadas' }),
+        el('span', { class: 'data-fraca', text: 'Usadas na Teoria para escolher os assuntos dos blocos e calcular as estrelas' })
+      ]),
+      el('div', { class: 'tabela-rolagem' }, el('table', { class: 'tabela' }, [
+        el('thead', null, el('tr', null, ['Matéria', 'Banca', 'Questões', 'Assuntos', 'Importado em', ''].map(function (h) { return el('th', { text: h }); }))),
+        el('tbody', null, incs.map(function (i) {
+          var d = Dados.disciplina(i.disciplinaId);
+          return el('tr', null, [
+            el('td', { class: 'data-forte', text: d ? d.nome : '(disciplina excluída)' }),
+            el('td', null, UI.selo(Dados.NOME_BANCA[i.banca] || i.banca, i.banca === 'todas' ? 'info' : 'neutro')),
+            el('td', { text: UI.fmtNum(i.total) }),
+            el('td', { text: UI.fmtNum(i.assuntos.length) }),
+            el('td', { class: 'data-fraca', text: new Date(i.importadoEm).toLocaleDateString('pt-BR') }),
+            el('td', null, el('button', { type: 'button', class: 'link link-perigo', text: 'Excluir', onclick: function () {
+              UI.confirmar('Excluir a incidência de ' + (d ? d.nome : 'esta matéria') + ' (' + Dados.NOME_BANCA[i.banca] + ')? Os assuntos já escolhidos nos blocos continuam, mas sem os números desta banca.', function () {
+                Dados.excluirIncidencia(i.id);
+                App.atualizar();
+              });
+            } }))
+          ]);
+        }))
+      ]))
     ]);
   }
 
@@ -458,7 +581,7 @@ var Estatisticas = (function () {
   function render(raiz) {
     raiz.appendChild(el('div', { class: 'pagina-topo' }, el('div', null, [
       el('h1', { class: 'pagina-titulo', text: 'Estatísticas' }),
-      el('div', { class: 'pagina-subtitulo', text: 'Pontos fracos a partir do histórico do TecConcursos. Estes dados não entram nas horas, no XP nem no Controle de Questões; no Dashboard, aparecem só no Mapa de dificuldades (fonte TEC).' })
+      el('div', { class: 'pagina-subtitulo', text: 'Pontos fracos a partir do histórico do TecConcursos e incidência dos assuntos nas provas. Estes dados não entram nas horas, no XP nem no Controle de Questões.' })
     ])));
 
     if (!Dados.disciplinas().length) {
@@ -471,6 +594,8 @@ var Estatisticas = (function () {
     }
 
     raiz.appendChild(painelImportar());
+    var pInc = painelIncidencias();
+    if (pInc) raiz.appendChild(pInc);
 
     if (filtros.importacao && !Dados.importacoes().some(function (i) { return i.id === filtros.importacao; })) filtros.importacao = '';
     if (!Dados.importacoes().length) {

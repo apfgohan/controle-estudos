@@ -95,7 +95,7 @@ var Patentes = (function () {
     });
     var primeira = Object.keys(dias).sort()[0];
     db.topicos.forEach(function (t) {
-      if (!t.concluido) return;
+      if (!t.concluido || t.herdado) return; // concluído por herança do bloco já rendeu XP no tópico antigo
       var g = dia(t.dataConclusao || primeira || UI.hoje());
       g.topicos++;
       // O tópico vai para o estudo de teoria do mesmo dia que o marcou; sem ele, aparece à parte.

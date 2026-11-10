@@ -19,7 +19,7 @@ var Previsao = (function () {
         m.erros += Number(l.erros) || 0;
       });
     });
-    (disciplinaId ? Dados.topicosDaDisciplina(disciplinaId) : Dados.db.topicos).forEach(function (t) { if (t.concluido) m.topicos++; });
+    Dados.topicosHistoricos(disciplinaId).forEach(function (t) { if (t.concluido) m.topicos++; });
     return m;
   }
 
@@ -81,7 +81,9 @@ var Previsao = (function () {
 
     plano.pendentes.forEach(function (it) {
       if (it.tipo === 'teoria') {
-        var faltam = it.topicos.filter(function (t) { return !t.concluido; }).length;
+        // Bloco ainda sem os assuntos do TEC: estima pelo que faltava nos tópicos antigos.
+        var h = it.bloco.herancaTeoria;
+        var faltam = it.topicos.length ? it.topicos.filter(function (t) { return !t.concluido; }).length : h ? h.qtd - h.feitos : 0;
         etapas.teoria += faltam; // na teoria, cada assunto (tópico) conta como uma etapa
         horas += faltam * horasTopico;
         return;
@@ -102,7 +104,10 @@ var Previsao = (function () {
     });
     // O que já foi concluído: assuntos de teoria e etapas de questões do plano.
     var feitas = etapasVazias();
-    feitas.teoria = Dados.topicosDaDisciplina(d.id).filter(function (t) { return t.concluido; }).length;
+    Dados.blocosDe(d.id).forEach(function (b) {
+      var ts = Dados.topicosDe(b.id);
+      feitas.teoria += ts.length ? ts.filter(function (t) { return t.concluido; }).length : b.herancaTeoria ? b.herancaTeoria.feitos : 0;
+    });
     plano.itens.forEach(function (it) { if (it.concluido && it.tipo !== 'teoria') feitas[it.tipo]++; });
     return { horas: horas, modo: m.modo, etapas: etapas, feitas: feitas };
   }
@@ -130,7 +135,7 @@ var Previsao = (function () {
       return null;
     }
     Dados.disciplinas().forEach(function (d) {
-      Dados.topicosDaDisciplina(d.id).forEach(function (t) {
+      Dados.topicosHistoricos(d.id).forEach(function (t) {
         if (t.concluido && t.dataConclusao && t.dataConclusao >= de) contagem.teoria++;
       });
       Dados.planoTeoria(d.id).itens.forEach(function (it) {

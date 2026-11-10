@@ -1,4 +1,5 @@
-// Leitura da planilha de desempenho exportada pelo TecConcursos (.xlsx), sem bibliotecas externas.
+// Leitura das planilhas exportadas pelo TecConcursos (.xlsx), sem bibliotecas externas: o desempenho (histórico)
+// e o índice de um caderno (incidência: Hierarquia | Índice | Quantidade | Porcentagem).
 // Um .xlsx é um .zip com arquivos XML; o navegador descompacta com DecompressionStream.
 //
 // Formato esperado (aba "Desempenho"):
@@ -115,10 +116,13 @@ var Planilha = (function () {
         else if (t.indexOf('quantidade de erros') === 0) mapa.erros = col;
         else if (t.indexOf('acertos (%)') === 0) mapa.pctAcerto = col;
         else if (t.indexOf('erros (%)') === 0) mapa.pctErro = col;
+        else if (t === 'quantidade') mapa.qtd = col;
+        else if (t === 'porcentagem') mapa.pct = col;
       }
-      if (mapa.nome && mapa.feitas) return { linhaCabecalho: i, colunas: Object.assign({}, padrao, mapa) };
+      if (mapa.nome && mapa.feitas) return { tipo: 'historico', linhaCabecalho: i, colunas: Object.assign({}, padrao, mapa) };
+      if (mapa.nome && mapa.qtd) return { tipo: 'incidencia', linhaCabecalho: i, colunas: Object.assign({ codigo: 'A' }, mapa) };
     }
-    return { linhaCabecalho: -1, colunas: padrao };
+    return { tipo: 'historico', linhaCabecalho: -1, colunas: padrao };
   }
 
   function numero(celulas, col) {
@@ -130,6 +134,7 @@ var Planilha = (function () {
   // ---------- Montagem: disciplinas e seus assuntos ----------
   function montar(linhas) {
     var m = mapearColunas(linhas);
+    if (m.tipo === 'incidencia') return { tipo: 'incidencia', disciplinas: montarIncidencia(linhas, m) };
     var col = m.colunas;
     var corpo = linhas.slice(m.linhaCabecalho + 1);
     var algumNegrito = corpo.some(function (l) { return l[col.nome] && l[col.nome].negrito; });
@@ -175,11 +180,41 @@ var Planilha = (function () {
       });
     });
 
+    return { tipo: 'historico', disciplinas: disciplinas };
+  }
+
+  // Incidência: a linha sem código é a disciplina (com o total); as demais são os assuntos, com a quantidade de questões.
+  // chave = caminho normalizado (mesmo critério das Estatísticas); pai = chave do assunto acima.
+  function montarIncidencia(linhas, m) {
+    var col = m.colunas, disciplinas = [], atual = null, nomesPorCodigo = {};
+    linhas.slice(m.linhaCabecalho + 1).forEach(function (l) {
+      var nomeCel = l[col.nome];
+      if (!nomeCel || !nomeCel.valor) return;
+      var codigo = l[col.codigo] ? l[col.codigo].valor : '';
+      var qtd = numero(l, col.qtd) || 0;
+      if (!codigo && normalizar(nomeCel.valor) !== 'sem classificacao') {
+        atual = { nomePlanilha: nomeCel.valor, total: qtd, topicos: [] };
+        disciplinas.push(atual);
+        nomesPorCodigo = {};
+        return;
+      }
+      if (!atual) return;
+      var partes = codigo ? codigo.split('.') : [], caminho = [];
+      for (var i = 1; i < partes.length; i++) {
+        var pai = nomesPorCodigo[partes.slice(0, i).join('.')];
+        if (pai) caminho.push(pai);
+      }
+      if (codigo) nomesPorCodigo[codigo] = nomeCel.valor;
+      atual.topicos.push({
+        codigo: codigo, nome: nomeCel.valor, caminho: caminho, qtd: qtd,
+        chave: normalizar(caminho.concat(nomeCel.valor).join(' > ')), pai: caminho.length ? normalizar(caminho.join(' > ')) : ''
+      });
+    });
     return disciplinas;
   }
 
   // ---------- Entrada principal ----------
-  // Recebe um File (.xlsx) e devolve { disciplinas: [...] }.
+  // Recebe um File (.xlsx) e devolve { tipo: 'historico' | 'incidencia', disciplinas: [...] }.
   function ler(arquivo) {
     return arquivo.arrayBuffer().then(function (buffer) {
       var zip = abrirZip(buffer);
@@ -191,9 +226,9 @@ var Planilha = (function () {
         ? tags(xml(textos[2]), 'si').map(function (si) { return tags(si, 't').map(function (t) { return t.textContent; }).join(''); })
         : [];
       var linhas = lerLinhas(xml(textos[0]), compartilhadas, estilosNegrito(textos[1] && xml(textos[1])));
-      var disciplinas = montar(linhas);
-      if (!disciplinas.length) throw new Error('Não encontrei disciplinas na planilha. Confira se é o arquivo de desempenho exportado do TecConcursos.');
-      return { disciplinas: disciplinas };
+      var r = montar(linhas);
+      if (!r.disciplinas.length) throw new Error('Não encontrei disciplinas na planilha. Confira se é um arquivo exportado do TecConcursos.');
+      return r;
     });
   }
 

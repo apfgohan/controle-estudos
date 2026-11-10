@@ -254,7 +254,6 @@ var Dashboard = (function () {
     var p = Dados.progressoTeoria(d.id);
     var q = Dados.statsQuestoes(d.id);
     var anot = Dados.ultimaAnotacao(d.id);
-    var revisoes = Dados.revisoesPendentes(d.id).filter(function (t) { return t.revisaoAgendada <= UI.hoje(); }).length;
     var modo = Dados.modoDeEstudo(d.id);
     var rec = recomendacao(d, modo), opMeta = rec ? rec.opMeta : null;
     var semMeta = 'Faça primeiro o cadastro indicado na recomendação';
@@ -278,8 +277,7 @@ var Dashboard = (function () {
       el('div', { class: 'proxima-metricas' }, [
         UI.metrica('Teoria', UI.fmtPct(p.pct) + ' (' + p.feitos + '/' + p.total + ')'),
         el('div', { class: 'metrica' }, [el('div', { class: 'metrica-rotulo', text: 'Acerto' }), el('div', { class: 'metrica-valor' }, q.feitas ? [UI.acerto(q.pct, q.feitas), ' · ' + UI.fmtNum(q.feitas)] : '—')]),
-        UI.metrica('Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id))),
-        UI.metrica('Revisões para hoje', revisoes ? String(revisoes) : '—', revisoes ? 'alerta' : '')
+        UI.metrica('Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id)))
       ]),
       rec,
       anot ? UI.blocoAnotacao(anot, { teoria: 'Teoria', questoes: 'Questões', revisao: 'Revisão' }[anot.tipo]) : el('div', { class: 'sem-anotacao', text: 'Nenhuma anotação deixada na última sessão desta matéria.' }),
@@ -823,9 +821,10 @@ var Dashboard = (function () {
     var dias = primeiro ? UI.diasEntre(primeiro, hoje) + 1 : 0;
     var mediaDia = dias ? total.segundos / dias : 0;
 
-    var feitos = Dados.db.topicos.filter(function (t) { return t.concluido; }).length;
-    var totalTopicos = Dados.db.topicos.length;
-    var semanaTopicos = Dados.db.topicos.filter(function (t) { return t.concluido && t.dataConclusao && t.dataConclusao >= iniSemana; }).length;
+    var ativos = Dados.db.topicos.filter(function (t) { return !t.arquivado; });
+    var feitos = ativos.filter(function (t) { return t.concluido; }).length;
+    var totalTopicos = ativos.length;
+    var semanaTopicos = Dados.topicosHistoricos().filter(function (t) { return t.concluido && t.dataConclusao && t.dataConclusao >= iniSemana; }).length;
     function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
     function semanaRodape(texto) { return [el('span', { class: 'caixa-semana', text: 'Nesta semana' }), ' ', texto]; }
 
