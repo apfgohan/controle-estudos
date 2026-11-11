@@ -118,6 +118,19 @@ var Teoria = (function () {
     ]);
   }
 
+  // Parte das questões da matéria que cai nos assuntos escolhidos em todos os blocos (sem contar duas vezes
+  // um assunto e o pai dele, mesmo em blocos diferentes). null sem incidência de referência importada.
+  function coberturaTec(disciplinaId) {
+    var arv = Dados.arvoreIncidencia(disciplinaId);
+    if (!arv || arv.totais.todas == null) return null;
+    var chaves = [];
+    Dados.blocosDe(disciplinaId).forEach(function (b) {
+      Dados.topicosDe(b.id).forEach(function (t) { if (t.tec && arv.nos[t.tec.chave] && chaves.indexOf(t.tec.chave) < 0) chaves.push(t.tec.chave); });
+    });
+    var s = Dados.somarIncidencia(arv, chaves);
+    return { pct: s.pct.todas || 0, qtd: s.qtd.todas || 0, total: arv.totais.todas, assuntos: chaves.length };
+  }
+
   function renderDisciplina(raiz, id) {
     var d = Dados.disciplina(id);
     if (!d) { location.hash = '#/teoria'; return; }
@@ -128,6 +141,16 @@ var Teoria = (function () {
       : anot && anot.topicoIds && anot.topicoIds.length
         ? 'Tópico: ' + anot.topicoIds.map(function (t) { var x = Dados.topico(t); return x ? x.nome : ''; }).filter(Boolean).join('; ')
         : '';
+    var cob = coberturaTec(d.id);
+    // Faixa de cobertura: quanto das questões cobradas da matéria cai nos assuntos escolhidos nos blocos.
+    var ref = Dados.posEdital() ? Dados.bancaReferencia() : 'todas';
+    var cobertura = cob ? el('div', { class: 'cobertura-tec' + (Dados.posEdital() ? ' pos' : ''), title: 'Soma da incidência dos assuntos do TEC escolhidos nos blocos (um assunto e o pai dele contam uma vez só)' }, [
+      el('div', { class: 'cobertura-topo' }, [
+        el('span', { class: 'cobertura-rotulo', text: 'Cobertura dos assuntos cobrados na Área Fiscal' + (ref !== 'todas' ? ' pela ' + Dados.NOME_BANCA[ref] : '') }),
+        el('strong', { class: 'cobertura-valor', text: fmtPct1(cob.pct) })
+      ]),
+      el('div', { class: 'cobertura-barra' }, el('div', { style: { width: Math.min(100, cob.pct) + '%' } }))
+    ]) : null;
 
     raiz.appendChild(el('section', { class: 'painel' }, [
       el('div', { class: 'pagina-topo' }, [
@@ -146,6 +169,7 @@ var Teoria = (function () {
         UI.cartao('info', 'Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id, 'teoria'))),
         UI.cartao('relogio', 'Tempo acumulado', UI.fmtDuracao(Dados.tempoAcumulado(d.id, 'teoria')))
       ]),
+      cobertura,
       painelModo(d),
       UI.blocoAnotacao(anot, detalheAnot)
     ]));
@@ -469,7 +493,15 @@ var Teoria = (function () {
       if (marcado || !n.filhos.length) return null;
       var c = cobertura(n);
       if (!c.blocos.length) return null;
-      return { texto: (c.total ? 'no ' : 'em parte no ') + c.blocos.join(' e no '), classe: c.total ? 'at-outro' : 'at-parcial' };
+      return { texto: (c.total ? '' : 'em parte ') + textoBlocos(c.blocos), classe: c.total ? 'at-outro' : 'at-parcial' };
+    }
+    // "no Bloco 02"; vários: "nos blocos 02 e 09", "nos blocos 02, 05 e 09" (nomes fora do padrão: "no A e no B").
+    function textoBlocos(nomes) {
+      if (nomes.length === 1) return 'no ' + nomes[0];
+      function juntar(l) { return l.slice(0, -1).join(', ') + ' e ' + l[l.length - 1]; }
+      var nums = nomes.map(function (n) { var m = /^bloco\s+(.+)$/i.exec(n); return m ? m[1] : null; });
+      if (nums.every(function (x) { return x != null; })) return 'nos blocos ' + juntar(nums);
+      return juntar(nomes.map(function (n) { return 'no ' + n; }));
     }
     function incluidoPorPai(n) {
       for (var p = n.pai && arv.nos[n.pai]; p; p = p.pai && arv.nos[p.pai]) if (sel.indexOf(p.chave) >= 0) return true;
