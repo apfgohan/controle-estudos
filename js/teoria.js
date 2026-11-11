@@ -300,7 +300,11 @@ var Teoria = (function () {
       Dados.TIPOS_MATERIAL.forEach(function (x) {
         seg.appendChild(el('button', { type: 'button', class: tipo === x[0] ? 'ativo' : '', text: x[1], onclick: function () { tipo = x[0]; desenhar(); } }));
       });
+      if (campoPaginas) campoPaginas.style.display = tipo === 'pdf' ? '' : 'none';
     }
+    // Só PDF tem páginas: com elas, as metas de teoria são calculadas pelas páginas lidas por meta.
+    var paginas = el('input', { type: 'number', min: 1, step: 1, value: m && m.paginas ? m.paginas : '', placeholder: 'Ex.: 60' });
+    var campoPaginas = UI.campo('Páginas', paginas, 'Opcional. Com as páginas, a meta pede o que falta ler e a previsão usa as páginas lidas por meta (Configurações).');
     desenhar();
     var nome = el('input', { type: 'text', value: m ? m.nome : '', placeholder: 'Ex.: 00 - Atos Administrativos' });
     var idLista = 'cursos-' + b.id;
@@ -313,13 +317,14 @@ var Teoria = (function () {
     } });
     botoes.push({ texto: 'Salvar', classe: 'btn-primario', acao: function () {
       if (!nome.value.trim()) { nome.focus(); return false; }
-      var campos = { tipo: tipo, nome: nome.value, curso: curso.value, link: link.value };
+      var campos = { tipo: tipo, nome: nome.value, curso: curso.value, link: link.value, paginas: paginas.value };
       if (m) Dados.atualizarMaterial(b.id, m.id, campos); else Dados.criarMaterial(b.id, campos);
       App.atualizar();
     } });
     UI.modal(m ? 'Editar aula' : 'Nova aula — ' + b.nome, [
       UI.campo('Tipo', seg),
       UI.campo('Nome', nome, 'Sem o tipo, que já aparece antes do nome. Ex.: 00 - Atos Administrativos, ou 01 - Bancos de Dados.'),
+      campoPaginas,
       UI.campo('Curso', curso), lista,
       UI.campo('Link', link, 'Opcional: abre a aula com um clique.')
     ], botoes);
@@ -364,8 +369,10 @@ var Teoria = (function () {
 
   function linhaAula(d, b, a) {
     var ultimo = Dados.ultimoEstudoAula(a.id);
+    var lei = Dados.leituraAula(a);
     var sub = a.concluido ? 'Concluída' + (a.dataConclusao ? ' em ' + UI.fmtData(a.dataConclusao) : '') + (a.herdado ? ' (antes da troca)' : '')
-      : ultimo ? 'Pendente · último estudo em ' + UI.fmtData(ultimo) : 'Pendente';
+      : (lei.total ? (lei.lidas ? lei.lidas + ' de ' + lei.total + ' páginas lidas · ' : lei.total + ' páginas · ') : '') + (ultimo ? 'pendente · último estudo em ' + UI.fmtData(ultimo) : 'pendente');
+    sub = sub.charAt(0).toUpperCase() + sub.slice(1);
     return el('div', { class: 'aula' + (a.concluido ? ' concluida' : '') }, [
       el('button', { type: 'button', class: 'btn-check' + (a.concluido ? ' marcado' : ''), title: a.concluido ? 'Desmarcar como concluída' : 'Marcar como concluída',
         onclick: function () { Dados.definirAulaConcluida(a.id, !a.concluido); App.atualizar(); } }, UI.icone('check')),
@@ -376,7 +383,8 @@ var Teoria = (function () {
           a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', title: 'Abrir a aula', text: a.nome }) : el('span', { title: 'Sem link — cadastre na engrenagem', text: a.nome }),
           a.curso ? el('span', { class: 'aula-curso', text: '· ' + a.curso }) : null
         ]),
-        el('div', { class: 'aula-sub', text: sub })
+        el('div', { class: 'aula-sub', text: sub }),
+        lei.total && !a.concluido && lei.lidas ? el('div', { class: 'aula-paginas' }, UI.barra(lei.lidas / lei.total * 100)) : null
       ]),
       el('div', { class: 'aula-acoes' }, [
         window.Sessao ? UI.botao('Lançar estudo', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'teoria', aulaIds: [a.id] }); }, 'btn-lancar', 'play') : null,

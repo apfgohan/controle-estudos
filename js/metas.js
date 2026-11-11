@@ -28,7 +28,13 @@ var Metas = (function () {
       var p = Dados.planoRevisao(d.id);
       lista = p.faltam.map(function (e) { return { modo: 'revisao', e: e }; });
     } else {
-      lista = m.plano.pendentes.map(function (it) { return { modo: 'leitura', it: it }; });
+      // A teoria de um bloco pode levar várias metas (páginas por meta, em Configurações): cada vaga pega a meta seguinte.
+      lista = [];
+      m.plano.pendentes.forEach(function (it) {
+        var metas = it.tipo === 'teoria' && Dados.paginasPorMeta() ? Dados.metasDaTeoria(it.aulas) : [];
+        if (metas.length > 1) metas.forEach(function (u, k) { lista.push({ modo: 'leitura', it: it, meta: u, k: k, de: metas.length }); });
+        else lista.push({ modo: 'leitura', it: it, meta: metas[0] || null });
+      });
     }
     cache[d.id] = { lista: lista, usados: 0, modo: m.modo, temBlocos: !!m.plano.blocos };
     return cache[d.id];
@@ -53,7 +59,8 @@ var Metas = (function () {
     var it = x.it, tl = TIPOS_LEITURA[it.tipo] || TIPOS_LEITURA.teoria, det = '', estrelas = 0;
     if (it.tipo === 'teoria') {
       var faltam = it.aulas.filter(function (a) { return !a.concluido; });
-      det = faltam.slice(0, 3).map(function (a) { return Dados.nomeAula(a); }).join(' · ') + (faltam.length > 3 ? ' · + ' + (faltam.length - 3) : '');
+      det = x.meta ? x.meta.aulas.map(function (u) { return Dados.nomeAula(u.aula) + (u.de ? ' · págs. ' + u.de + ' a ' + u.ate : ''); }).join(' · ') + (x.de > 1 ? ' · meta ' + (x.k + 1) + ' de ' + x.de : '')
+        : faltam.slice(0, 3).map(function (a) { return Dados.nomeAula(a); }).join(' · ') + (faltam.length > 3 ? ' · + ' + (faltam.length - 3) : '');
       if (!it.aulas.length) det = 'Cadastre as aulas deste bloco';
     } else if (it.tipo === 'bateria') {
       var b = it.bateria;

@@ -78,11 +78,19 @@ var Previsao = (function () {
     var bateriaMedia = partes.length ? media(partes) : gerais.bateria;
     var rodada = mediaRodadas(d.id);
     var horas = 0, etapas = etapasVazias();
+    var ppm = Dados.paginasPorMeta(), horasMeta = ppm ? horasPorMetaTeoria(d.id, horasTopico) : 0;
 
     plano.pendentes.forEach(function (it) {
       if (it.tipo === 'teoria') {
         // Cada aula que falta é uma etapa; bloco ainda sem aulas é estimado pelo que faltava nos tópicos antigos.
         var h = it.bloco.herancaTeoria;
+        // Com páginas por meta (Configurações): cada meta que falta (pedaço de PDF ou outra aula) custa uma meta média de teoria.
+        if (ppm && it.aulas.length) {
+          var nm = Dados.metasDaTeoria(it.aulas).length;
+          etapas.teoria += nm;
+          horas += nm * horasMeta;
+          return;
+        }
         var faltam = it.aulas.length ? it.aulas.filter(function (a) { return !a.concluido; }).length : h ? h.qtd - h.feitos : 0;
         etapas.teoria += faltam;
         horas += faltam * horasTopico;
@@ -106,10 +114,28 @@ var Previsao = (function () {
     var feitas = etapasVazias();
     Dados.blocosDe(d.id).forEach(function (b) {
       var as = Dados.aulasDe(b.id);
-      feitas.teoria += as.length ? as.filter(function (a) { return a.concluido; }).length : b.herancaTeoria ? b.herancaTeoria.feitos : 0;
+      feitas.teoria += as.length ? as.reduce(function (s, a) {
+        // Com páginas por meta, um PDF conta as metas que as páginas lidas já cobriram.
+        var l = ppm ? Dados.leituraAula(a) : null;
+        if (l && l.total) return s + (a.concluido ? Math.ceil(l.total / ppm) : Math.floor(l.lidas / ppm));
+        return s + (a.concluido ? 1 : 0);
+      }, 0) : b.herancaTeoria ? b.herancaTeoria.feitos : 0;
     });
     plano.itens.forEach(function (it) { if (it.concluido && it.tipo !== 'teoria') feitas[it.tipo]++; });
     return { horas: horas, modo: m.modo, etapas: etapas, feitas: feitas };
+  }
+
+  // Duração média de uma sessão de teoria: da matéria (com 5 ou mais) ou de todas; sem histórico, a estimativa por aula.
+  function horasPorMetaTeoria(disciplinaId, padrao) {
+    function media(filtro) {
+      var seg = 0, n = 0;
+      Dados.db.sessoes.forEach(function (s) { if (s.tipo === 'teoria' && (s.segundos || 0) > 0 && filtro(s)) { seg += s.segundos; n++; } });
+      return { h: n ? seg / n / 3600 : 0, n: n };
+    }
+    var p = media(function (s) { return s.disciplinaId === disciplinaId; });
+    if (p.n >= MIN_TOPICOS) return p.h;
+    var g = media(function () { return true; });
+    return g.n ? g.h : padrao;
   }
 
   function etapasVazias() { return { teoria: 0, bateria: 0, favoritas: 0, erros: 0 }; }

@@ -378,12 +378,23 @@ var Dashboard = (function () {
       }
     } else if (atual.tipo === 'teoria') {
       var faltam = atual.aulas.filter(function (a) { return !a.concluido; });
+      // Com páginas por meta, a meta pede só o pedaço seguinte (ex.: PDF 00, págs. 21 a 40).
+      var metasT = Dados.metasDaTeoria(atual.aulas), ppm = Dados.paginasPorMeta(), estaMeta = ppm && metasT.length ? metasT[0] : null;
+      function textoAula(a) {
+        var l = Dados.leituraAula(a);
+        return Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : '') + (l.total ? ' · ' + (l.lidas ? 'faltam ' + l.faltam + ' de ' + l.total + ' págs. (da ' + l.inicio + 'ª à ' + l.total + 'ª)' : l.total + ' págs.') : '');
+      }
       detalhe = atual.aulas.length
-        ? el('ul', { class: 'rec-topicos' }, faltam.slice(0, 4).map(function (a) {
-            return el('li', null, a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', text: Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : '') }) : Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : ''));
-          }).concat(faltam.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (faltam.length - 4) + ' aulas' })] : []))
+        ? el('div', null, [
+            estaMeta ? el('p', { class: 'rec-nesta-meta' }, [el('strong', { text: 'Nesta meta: ' }), estaMeta.aulas.map(function (u) {
+              return u.de ? 'ler ' + (u.ate - u.de + 1) + ' págs. do ' + Dados.nomeAula(u.aula) + ' (da ' + u.de + 'ª à ' + u.ate + 'ª)' : Dados.nomeAula(u.aula);
+            }).join(' · ') + (metasT.length > 1 ? ' · ' + metasT.length + ' metas para terminar o bloco' : '')]) : null,
+            el('ul', { class: 'rec-topicos' }, faltam.slice(0, 4).map(function (a) {
+              return el('li', null, a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', text: textoAula(a) }) : textoAula(a));
+            }).concat(faltam.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (faltam.length - 4) + ' aulas' })] : []))
+          ])
         : el('p', { class: 'data-fraca' }, ['Este bloco ainda não tem aulas. ', el('a', { href: '#/teoria/' + d.id, text: 'Cadastre-as no Controle de Teoria' }), '.']);
-      if (atual.aulas.length) op = { tipo: 'teoria', aulaIds: faltam.map(function (a) { return a.id; }) };
+      if (atual.aulas.length) op = { tipo: 'teoria', aulaIds: (estaMeta ? estaMeta.aulas.map(function (u) { return u.aula; }) : faltam).map(function (a) { return a.id; }) };
     } else if (!atual.caderno) {
       detalhe = el('p', { class: 'data-fraca' }, ['Este bloco ainda não tem caderno. ',
         el('a', { href: '#/questoes/' + d.id, text: 'Cadastre-o na pasta "' + Dados.NOME_PASTA_TEORIA + '"' }), '.']);
@@ -1689,6 +1700,72 @@ var Dashboard = (function () {
     ]);
   }
 
+  // ---------- Leitura: páginas lidas e aulas vistas ----------
+  function paginasNoPeriodo(de, ate, disc) {
+    var p = 0, sessoes = 0;
+    Dados.db.sessoes.forEach(function (s) {
+      if (s.tipo !== 'teoria' || !s.paginas || s.data < de || s.data > ate || (disc && s.disciplinaId !== disc)) return;
+      var n = 0; for (var id in s.paginas) n += Number(s.paginas[id]) || 0;
+      if (n > 0) { p += n; sessoes++; }
+    });
+    return { paginas: p, sessoes: sessoes };
+  }
+  // Situação das aulas de uma matéria (ou de todas): aulas vistas, PDFs vistos, páginas lidas e cadastradas.
+  function situacaoAulas(disc) {
+    var r = { aulas: 0, vistas: 0, pdfs: 0, pdfsVistos: 0, paginas: 0, lidas: 0 };
+    Dados.db.blocos.forEach(function (b) {
+      if (disc && b.disciplinaId !== disc) return;
+      (b.materiais || []).forEach(function (a) {
+        r.aulas++; if (a.concluido) r.vistas++;
+        if (a.tipo === 'pdf') { r.pdfs++; if (a.concluido) r.pdfsVistos++; }
+        var l = Dados.leituraAula(a);
+        if (l.total) { r.paginas += l.total; r.lidas += a.concluido ? l.total : l.lidas; }
+      });
+    });
+    return r;
+  }
+  function painelLeitura(iv, disc, f) {
+    var atual = paginasNoPeriodo(iv.de, iv.ate, disc);
+    var ant = iv.tudo ? null : paginasNoPeriodo(UI.somarDias(iv.de, -iv.dias), UI.somarDias(iv.de, -1), disc);
+    var concluidas = 0;
+    Dados.db.blocos.forEach(function (b) {
+      if (disc && b.disciplinaId !== disc) return;
+      (b.materiais || []).forEach(function (a) { if (a.concluido && !a.herdado && a.dataConclusao >= iv.de && a.dataConclusao <= iv.ate) concluidas++; });
+    });
+    var sit = situacaoAulas(disc), ppm = Dados.paginasPorMeta();
+    var mediaReal = atual.sessoes ? atual.paginas / atual.sessoes : null;
+    function numero(rotulo, valor, sub) {
+      return el('div', { class: 'leitura-num' }, [el('div', { class: 'dash-num-rotulo', text: rotulo }), el('div', { class: 'leitura-valor', text: valor }), sub ? el('div', { class: 'dash-num-sub' }, sub) : null]);
+    }
+    var dif = ant ? atual.paginas - ant.paginas : null;
+    var linhas = [];
+    if (!disc) {
+      Dados.disciplinas().forEach(function (d) {
+        var s = situacaoAulas(d.id);
+        if (!s.aulas) return;
+        linhas.push(el('div', { class: 'leitura-linha' }, [
+          el('span', { class: 'leitura-materia' }, [el('span', { class: 'bolinha', style: { background: d.cor } }), el('span', { text: nomeComFase(d) })]),
+          el('span', { class: 'data-fraca', text: s.vistas + '/' + s.aulas + ' aulas' + (s.paginas ? ' · ' + UI.fmtNum(s.lidas) + '/' + UI.fmtNum(s.paginas) + ' págs.' : '') }),
+          UI.barra(s.paginas ? s.lidas / s.paginas * 100 : s.vistas / s.aulas * 100, d.cor)
+        ]));
+      });
+    }
+    return el('section', { class: 'painel cartao-grafico painel-leitura' }, [
+      el('div', { class: 'grafico-topo' }, [el('h2', { class: 'secao-titulo', text: 'Leitura' }), el('span', { class: 'data-fraca', text: 'Páginas dos PDFs e aulas vistas' })]),
+      el('div', { class: 'leitura-numeros' }, [
+        numero('Páginas lidas', UI.fmtNum(atual.paginas), dif == null ? 'no período' : [el('strong', { class: classeDiferenca(dif), text: dif ? (dif > 0 ? '+' : '−') + UI.fmtNum(Math.abs(dif)) : '=' }), ' ' + (ROTULO_ANTERIOR[f.periodo] || 'vs período anterior')]),
+        numero('Aulas concluídas', UI.fmtNum(concluidas), 'no período'),
+        numero('Páginas por meta', mediaReal == null ? '—' : String(Math.round(mediaReal * 10) / 10).replace('.', ','), ppm ? 'configurado: ' + ppm : 'sem valor em Configurações'),
+        numero('Aulas vistas', sit.aulas ? sit.vistas + '/' + sit.aulas : '—', sit.pdfs ? sit.pdfsVistos + '/' + sit.pdfs + ' PDFs' + (sit.paginas ? ' · ' + UI.fmtNum(sit.lidas) + '/' + UI.fmtNum(sit.paginas) + ' págs.' : '') : 'nenhum PDF cadastrado')
+      ]),
+      sit.aulas ? el('div', { class: 'leitura-progresso' }, [
+        el('div', { class: 'data-fraca', text: sit.paginas ? 'Páginas lidas de todos os PDFs com páginas: ' + UI.fmtPct(Math.round(sit.lidas / sit.paginas * 100)) : 'Aulas vistas: ' + UI.fmtPct(Math.round(sit.vistas / sit.aulas * 100)) }),
+        UI.barra(sit.paginas ? sit.lidas / sit.paginas * 100 : sit.vistas / sit.aulas * 100)
+      ]) : null,
+      linhas.length ? el('div', { class: 'leitura-lista' }, linhas) : null
+    ]);
+  }
+
   function filtrosDashboard(f, iv) {
     function mudar() { salvarFiltro(f); App.atualizar(); }
     var materia = el('select', { class: 'dash-materia', 'aria-label': 'Matéria', onchange: function () { f.materia = materia.value; mudar(); } },
@@ -1744,6 +1821,7 @@ var Dashboard = (function () {
     raiz.appendChild(graficoRitmo(iv, disc));
     raiz.appendChild(el('div', { class: 'grade-dois' }, [graficoQuestoes(iv, disc), horasPorMateria(iv, disc)]));
     raiz.appendChild(el('div', { class: 'grade-dois' }, [progressoEdital(disc), acertoPorMateria(iv, disc)]));
+    raiz.appendChild(painelLeitura(iv, disc, f));
     raiz.appendChild(mapaDificuldades(f));
   }
 

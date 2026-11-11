@@ -96,6 +96,8 @@ var Sessao = (function () {
         : (op.cadernoIds || []).map(function (id) { return { cadernoId: id, acertos: '', erros: '' }; }),
       segundos: existente ? existente.segundos : (op.segundos || 0),
       concluir: true,
+      // Páginas lidas de cada aula PDF nesta sessão.
+      paginas: existente ? Object.assign({}, existente.paginas || {}) : {},
       // Revisão: questões avulsas por ponto fraco { chave: { nome, acertos, erros } }
       assuntos: {}
     };
@@ -109,6 +111,7 @@ var Sessao = (function () {
       est.disciplinaId = disciplina.value;
       est.topicoIds = [];
       est.aulaIds = [];
+      est.paginas = {};
       est.linhas = [{ cadernoId: '', acertos: '', erros: '' }];
       est.assuntos = {};
       desenharArea();
@@ -156,6 +159,13 @@ var Sessao = (function () {
       if (est.tipo === 'teoria') {
         if (Dados.progressoTeoria(est.disciplinaId).total && !est.aulaIds.length) return mostrarErro('Marque a(s) aula(s) estudada(s).');
         campos.aulaIds = est.aulaIds;
+        campos.paginas = est.paginas;
+        for (var ip = 0; ip < est.aulaIds.length; ip++) {
+          var xa = Dados.aula(est.aulaIds[ip]), np = Number(est.paginas[est.aulaIds[ip]]) || 0;
+          if (!xa || !np) continue;
+          var la = Dados.leituraAula(Object.assign({}, xa.aula, { concluido: false }), est.sessaoId);
+          if (la.total && la.lidas + np > la.total) return mostrarErro(Dados.nomeAula(xa.aula) + ' tem ' + la.total + ' páginas e ' + la.lidas + ' já foram lidas: informe no máximo ' + (la.total - la.lidas) + '.');
+        }
         campos.topicoIds = est.topicoIds; // sessões antigas guardam os tópicos estudados
       } else {
         // Caderno de favoritadas pode ser finalizado mesmo sem questões (quando ele está vazio).
@@ -191,8 +201,10 @@ var Sessao = (function () {
       else Dados.criarSessao(campos);
       var vezDepois = Dados.proximaDoCiclo();
       if (est.tipo === 'teoria' && est.concluir) {
-        est.aulaIds.forEach(function (id) { var x = Dados.aula(id); if (x && !x.aula.concluido) Dados.definirAulaConcluida(id, true, data.value); });
+        // Aulas com páginas só ficam concluídas quando as páginas lidas chegam ao total.
+        est.aulaIds.forEach(function (id) { var x = Dados.aula(id); if (x && !x.aula.concluido && !Dados.totalPaginas(x.aula)) Dados.definirAulaConcluida(id, true, data.value); });
       }
+      if (est.tipo === 'teoria') Dados.concluirLidas(est.aulaIds, data.value);
       if (est.tipo === 'revisao') {
         (campos.revisados || []).forEach(function (r) { Dados.marcarRevisto(est.disciplinaId, r.chave, true, data.value); });
       }
@@ -304,25 +316,48 @@ var Sessao = (function () {
     if (!blocos.length) {
       return el('p', { class: 'aviso-suave', text: 'Esta disciplina ainda não tem aulas. Cadastre-as nos blocos do Controle de Teoria para registrar o que foi estudado.' });
     }
+    // Páginas sugeridas para um PDF: as páginas de uma meta (Configurações) ou, sem elas, tudo o que falta.
+    function leitura(a) { return Dados.leituraAula(Object.assign({}, a, { concluido: false }), est.sessaoId); }
+    function sugestao(a) { var l = leitura(a), ppm = Dados.paginasPorMeta(); return ppm ? Math.min(ppm, l.faltam) : l.faltam; }
+    est.aulaIds.forEach(function (id) {
+      var x = Dados.aula(id);
+      if (x && Dados.totalPaginas(x.aula) && est.paginas[id] == null && !est.sessaoId) est.paginas[id] = sugestao(x.aula) || '';
+    });
     var lista = el('div', { class: 'lista-topicos' }, blocos.map(function (b) {
       return el('div', { class: 'grupo-topicos' }, [
         el('div', { class: 'grupo-titulo', text: b.nome }),
         Dados.aulasDe(b.id).map(function (a) {
-          var marcado = est.aulaIds.indexOf(a.id) >= 0;
-          return el('label', { class: 'opcao-topico' + (a.concluido ? ' ja-concluido' : '') }, [
-            el('input', { type: 'checkbox', checked: marcado, onchange: function (e) {
-              if (e.target.checked) est.aulaIds.push(a.id);
-              else est.aulaIds = est.aulaIds.filter(function (x) { return x !== a.id; });
-            } }),
-            el('span', { text: Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : '') }),
-            a.concluido ? UI.selo('Concluída', 'sucesso') : null
+          var marcado = est.aulaIds.indexOf(a.id) >= 0, total = Dados.totalPaginas(a);
+          var caixaPag = el('div', { class: 'aula-paginas-lidas' });
+          function desenharPag() {
+            caixaPag.innerHTML = '';
+            caixaPag.style.display = total && est.aulaIds.indexOf(a.id) >= 0 ? '' : 'none';
+            if (!total) return;
+            var l = leitura(a);
+            caixaPag.appendChild(el('span', { text: 'Páginas lidas' }));
+            caixaPag.appendChild(el('input', { type: 'number', min: 0, max: l.faltam, step: 1, value: est.paginas[a.id] || '', 'aria-label': 'Páginas lidas de ' + Dados.nomeAula(a),
+              oninput: function (e) { est.paginas[a.id] = e.target.value; } }));
+            caixaPag.appendChild(el('span', { class: 'data-fraca', text: l.lidas ? 'já lidas ' + l.lidas + ' de ' + total + ' (falta da ' + l.inicio + 'ª à ' + total + 'ª)' : 'de ' + total + ' páginas' }));
+          }
+          desenharPag();
+          return el('div', { class: 'opcao-aula' }, [
+            el('label', { class: 'opcao-topico' + (a.concluido ? ' ja-concluido' : '') }, [
+              el('input', { type: 'checkbox', checked: marcado, onchange: function (e) {
+                if (e.target.checked) { est.aulaIds.push(a.id); if (total && !est.paginas[a.id]) est.paginas[a.id] = sugestao(a) || ''; }
+                else { est.aulaIds = est.aulaIds.filter(function (x) { return x !== a.id; }); delete est.paginas[a.id]; }
+                desenharPag();
+              } }),
+              el('span', { text: Dados.nomeAula(a) + (a.curso ? ' · ' + a.curso : '') + (total ? ' · ' + total + ' págs.' : '') }),
+              a.concluido ? UI.selo('Concluída', 'sucesso') : null
+            ]),
+            caixaPag
           ]);
         })
       ]);
     }));
     var concluir = el('label', { class: 'opcao-check' }, [
       el('input', { type: 'checkbox', checked: est.concluir, onchange: function (e) { est.concluir = e.target.checked; } }),
-      'Marcar as aulas selecionadas como concluídas'
+      'Marcar as aulas selecionadas como concluídas (os PDFs com páginas ficam concluídos ao chegar à última página)'
     ]);
     return [UI.campo('Aula(s) estudada(s)', lista), concluir];
   }
@@ -481,7 +516,10 @@ var Sessao = (function () {
   function descrever(s) {
     if (s.tipo === 'anki') return 'Revisão no Anki';
     if (s.tipo === 'teoria') {
-      var aulas = (s.aulaIds || []).map(function (id) { var x = Dados.aula(id); return x ? Dados.nomeAula(x.aula) : ''; });
+      var aulas = (s.aulaIds || []).map(function (id) {
+        var x = Dados.aula(id), p = s.paginas && Number(s.paginas[id]);
+        return x ? Dados.nomeAula(x.aula) + (p ? ' (' + p + (p === 1 ? ' pág.)' : ' págs.)') : '') : '';
+      });
       return aulas.concat((s.topicoIds || []).map(function (id) { var t = Dados.topico(id); return t ? t.nome : ''; })).filter(Boolean).join('; ') || '—';
     }
     var partes = (s.cadernos || []).map(function (c) {

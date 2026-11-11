@@ -1554,8 +1554,7 @@ a.rec-caderno:hover { text-decoration: underline; }
 .inc-banca-acoes { display: flex; gap: 12px; margin-top: auto; }
 @media (max-width: 900px) { .inc-bancas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* ---------- Configurações e fases (Pré-Edital / Pós-Edital) ---------- */
-.fase-topo { margin-left: auto; display: flex; align-items: center; min-width: 0; }
-.fase-topo + .acoes-topo { margin-left: 0; }
+.fase-topo { display: flex; align-items: center; min-width: 0; } /* fica à esquerda; os botões seguem à direita */
 .selo-fase-topo { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; max-width: 420px; overflow: hidden; border: 1px solid var(--azul-borda); background: var(--azul-claro); color: var(--azul-escuro); }
 .selo-fase-topo.pos { border-color: var(--roxo-borda); background: var(--roxo-claro); color: var(--roxo-texto); }
 .selo-fase-topo:hover { filter: brightness(1.15); }
@@ -1598,3 +1597,23 @@ a.rec-caderno:hover { text-decoration: underline; }
 .prova-ok { color: var(--verde-texto); }
 .prova-alerta { color: var(--laranja-texto); }
 @media (max-width: 600px) { .painel-prova { flex-direction: column; align-items: flex-start; gap: 12px; } .prova-contagem { flex-direction: row; gap: 8px; align-items: baseline; border-right: 0; padding-right: 0; } }
+/* ---------- Páginas dos PDFs e leitura ---------- */
+.opcao-aula { display: flex; flex-direction: column; }
+.aula-paginas-lidas { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px 30px; font-size: 13px; color: var(--texto-2); }
+.aula-paginas-lidas input { width: 84px; padding: 6px 8px; }
+.aula-paginas { margin-top: 5px; max-width: 240px; }
+.rec-nesta-meta { margin: 0 0 8px; padding: 8px 12px; border-radius: 10px; background: var(--azul-claro); border: 1px solid var(--azul-borda); color: var(--texto); font-size: 14px; }
+.rec-nesta-meta strong { color: var(--azul-escuro); }
+.config-leitura { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
+.config-leitura .campo { flex: 1; min-width: 240px; max-width: 460px; }
+.config-leitura .pasta-acoes { padding-bottom: 22px; }
+.leitura-numeros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
+.leitura-num { padding: 14px 16px; border-radius: 12px; background: var(--superficie-2); border: 1px solid var(--borda); min-width: 0; }
+.leitura-valor { font-size: 26px; font-weight: 800; margin: 4px 0; }
+.leitura-progresso { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.leitura-lista { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.leitura-linha { display: grid; grid-template-columns: minmax(0, 1.2fr) auto minmax(80px, 1fr); align-items: center; gap: 12px; font-size: 14px; }
+.leitura-materia { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.leitura-materia span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) { .leitura-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .leitura-linha { grid-template-columns: minmax(0, 1fr) auto; } .leitura-linha .barra { grid-column: 1 / -1; } }

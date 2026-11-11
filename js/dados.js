@@ -32,6 +32,8 @@ var Dados = (function () {
       metas: { horas: 30, questoes: 500 },
       // Pausas programadas das patentes: { id, inicio, fim, motivo }. Nesses dias não há falta.
       pausas: [],
+      // Leitura dos PDFs: páginas lidas, em média, numa meta de teoria (0 = sem estimativa por páginas).
+      leitura: { paginasPorMeta: 0 },
       // Fase de estudo: 'pre' (Pré-Edital) ou o id de um concurso (Pós-Edital). Cada fase é um espaço separado
       // (matérias, cadernos, estudos…): o ativo fica no topo destes dados e os outros em `espacos`.
       fases: { atual: 'pre', concursos: [] }, // concursos: { id, nome, esfera, banca, bancaOutra, dataProva, criadoEm }
@@ -1071,6 +1073,12 @@ var Dados = (function () {
       tipo: tipo,
       topicoIds: teoria ? (campos.topicoIds || []).slice() : [],
       aulaIds: teoria ? (campos.aulaIds || []).slice() : [],
+      // Páginas lidas de cada aula (PDF) nesta sessão: { aulaId: n }.
+      paginas: teoria ? (function () {
+        var p = {}, o = campos.paginas || {};
+        for (var id in o) if (Number(o[id]) > 0 && (campos.aulaIds || []).indexOf(id) >= 0) p[id] = Math.round(Number(o[id]));
+        return p;
+      })() : {},
       // finalizado: caderno de favoritadas terminado nesta sessão; assunto: questões avulsas de um ponto fraco (Revisão).
       cadernos: teoria ? [] : (campos.cadernos || []).map(function (c) {
         var l = { cadernoId: c.cadernoId || null, acertos: Number(c.acertos) || 0, erros: Number(c.erros) || 0 };
@@ -1496,10 +1504,71 @@ var Dados = (function () {
   }
   function nomeAula(a) { var t = TIPOS_MATERIAL.filter(function (x) { return x[0] === a.tipo; })[0]; return (t ? t[1] : 'Aula') + ' ' + a.nome; }
 
+  // ---------- Páginas dos PDFs ----------
+  // Páginas lidas, em média, numa meta de teoria (Configurações). 0 = sem estimativa por páginas.
+  function paginasPorMeta() { return Math.max(0, Math.round(Number((db.leitura || {}).paginasPorMeta) || 0)); }
+  function definirPaginasPorMeta(n) { db.leitura = Object.assign({}, db.leitura, { paginasPorMeta: Math.max(0, Math.round(Number(n) || 0)) }); salvar(); }
+  // Total de páginas da aula (só PDF com páginas informadas).
+  function totalPaginas(a) { return a && a.tipo === 'pdf' && Number(a.paginas) > 0 ? Math.round(Number(a.paginas)) : 0; }
+  // Páginas lidas de cada aula, somando as sessões (guardado no cache até a próxima gravação).
+  function mapaPaginas() {
+    var c = cache();
+    if (c.paginas) return c.paginas;
+    var m = {};
+    db.sessoes.forEach(function (s) { var p = s.paginas || {}; for (var id in p) m[id] = (m[id] || 0) + (Number(p[id]) || 0); });
+    return (c.paginas = m);
+  }
+  function paginasLidas(aulaId, excetoSessaoId) {
+    if (!excetoSessaoId) return mapaPaginas()[aulaId] || 0;
+    var n = 0;
+    db.sessoes.forEach(function (s) { if (s.id !== excetoSessaoId && s.paginas && s.paginas[aulaId]) n += Number(s.paginas[aulaId]) || 0; });
+    return n;
+  }
+  // { total, lidas, faltam, inicio }: inicio = primeira página que falta. Aula concluída não tem páginas pendentes.
+  function leituraAula(a, excetoSessaoId) {
+    var total = totalPaginas(a);
+    if (!total) return { total: 0, lidas: 0, faltam: 0, inicio: 1 };
+    var lidas = Math.min(total, paginasLidas(a.id, excetoSessaoId));
+    if (a.concluido) return { total: total, lidas: lidas, faltam: 0, inicio: total + 1 };
+    return { total: total, lidas: lidas, faltam: total - lidas, inicio: lidas + 1 };
+  }
+  // Metas que ainda faltam para a teoria de um bloco, em ordem. Com páginas por meta: cada PDF com páginas vira
+  // pedaços de N páginas e cada outra aula pendente é uma meta. Sem páginas por meta: o bloco inteiro é uma meta (como antes).
+  // Cada meta: { aulas: [{ aula, de, ate }] } (de/ate = páginas, só nos PDFs com páginas).
+  function metasDaTeoria(aulas) {
+    var pend = (aulas || []).filter(function (a) { return !a.concluido; });
+    var ppm = paginasPorMeta();
+    if (!pend.length) return [];
+    if (!ppm) return [{ aulas: pend.map(function (a) { var l = leituraAula(a); return l.total ? { aula: a, de: l.inicio, ate: l.total } : { aula: a }; }) }];
+    var r = [];
+    pend.forEach(function (a) {
+      var l = leituraAula(a);
+      if (!l.total) { r.push({ aulas: [{ aula: a }] }); return; }
+      for (var p = l.inicio; p <= l.total; p += ppm) r.push({ aulas: [{ aula: a, de: p, ate: Math.min(l.total, p + ppm - 1) }] });
+    });
+    return r;
+  }
+  // Depois de lançar páginas: o PDF que chegou ao total fica concluído.
+  function concluirLidas(aulaIds, data) {
+    var mudou = false;
+    cacheRel = null;
+    (aulaIds || []).forEach(function (id) {
+      var x = aula(id); if (!x || x.aula.concluido) return;
+      var l = leituraAula(x.aula);
+      if (l.total && l.lidas >= l.total) {
+        if (x.aula.herdado) delete x.aula.herdado;
+        x.aula.concluido = true; x.aula.dataConclusao = data || UI.hoje(); mudou = true;
+      }
+    });
+    if (mudou) salvar();
+  }
+
   var TIPOS_MATERIAL = [['pdf', 'PDF'], ['video', 'Videoaula'], ['resumo', 'Resumo'], ['lei', 'Lei Seca']];
   function camposMaterial(campos) {
     var tipo = TIPOS_MATERIAL.some(function (x) { return x[0] === campos.tipo; }) ? campos.tipo : 'pdf';
-    return { tipo: tipo, nome: (campos.nome || '').trim(), curso: (campos.curso || '').trim(), link: normalizarLink(campos.link) };
+    var r = { tipo: tipo, nome: (campos.nome || '').trim(), curso: (campos.curso || '').trim(), link: normalizarLink(campos.link) };
+    r.paginas = tipo === 'pdf' && Number(campos.paginas) > 0 ? Math.round(Number(campos.paginas)) : null;
+    return r;
   }
   function criarMaterial(blocoId, campos) {
     var b = bloco(blocoId); if (!b) return;
@@ -1639,6 +1708,8 @@ var Dados = (function () {
     estrelasPorRazao: estrelasPorRazao, relevanciasDaDisciplina: relevanciasDaDisciplina, incidenciaBloco: incidenciaBloco,
     definirAssuntosTec: definirAssuntosTec, topicosHistoricos: topicosHistoricos,
     aulasDe: aulasDe, aula: aula, aulasHistoricas: aulasHistoricas, definirAulaConcluida: definirAulaConcluida, ultimoEstudoAula: ultimoEstudoAula, nomeAula: nomeAula,
+    paginasPorMeta: paginasPorMeta, definirPaginasPorMeta: definirPaginasPorMeta, totalPaginas: totalPaginas, paginasLidas: paginasLidas,
+    leituraAula: leituraAula, metasDaTeoria: metasDaTeoria, concluirLidas: concluirLidas,
     TIPOS_MATERIAL: TIPOS_MATERIAL, criarMaterial: criarMaterial, atualizarMaterial: atualizarMaterial, excluirMaterial: excluirMaterial, cursosUsados: cursosUsados,
     atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,
     ESFERAS: ESFERAS, BANCAS_EDITAL: BANCAS_EDITAL, concurso: concurso, concursos: concursos, faseAtual: faseAtual, infoFase: infoFase,
