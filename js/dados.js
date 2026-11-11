@@ -1563,6 +1563,47 @@ var Dados = (function () {
     if (mudou) salvar();
   }
 
+  // ---------- Tópicos antigos como aulas ----------
+  // Matérias sem nenhuma aula cujos blocos têm tópicos antigos (arquivados na troca para o TEC): cada tópico pode
+  // virar uma aula PDF. Devolve [{ disciplina, blocos: [{ bloco, topicos }], total, concluidos }].
+  function topicosParaAulas() {
+    var r = [];
+    disciplinas().forEach(function (d) {
+      var bs = blocosDe(d.id);
+      if (bs.some(function (b) { return (b.materiais || []).length; })) return;
+      var lista = [], total = 0, concluidos = 0;
+      bs.forEach(function (b) {
+        var ts = db.topicos.filter(function (t) { return t.blocoId === b.id && t.arquivado && !t.tec && !t.herdado; }).sort(porOrdem);
+        if (!ts.length) return;
+        lista.push({ bloco: b, topicos: ts });
+        total += ts.length;
+        concluidos += ts.filter(function (t) { return t.concluido; }).length;
+      });
+      if (total) r.push({ disciplina: d, blocos: lista, total: total, concluidos: concluidos });
+    });
+    return r;
+  }
+  // Cria as aulas (PDF, curso e páginas informados). O tópico concluído vira aula concluída na mesma data, marcada
+  // como herdada: o XP já foi ganho no tópico. Os tópicos continuam arquivados (Histórico e XP intactos).
+  function converterTopicosEmAulas(disciplinaIds, campos) {
+    var n = 0;
+    topicosParaAulas().forEach(function (x) {
+      if (disciplinaIds.indexOf(x.disciplina.id) < 0) return;
+      x.blocos.forEach(function (y) {
+        y.bloco.materiais = y.bloco.materiais || [];
+        y.topicos.forEach(function (t) {
+          var a = Object.assign({ id: novoId(), concluido: !!t.concluido, dataConclusao: t.concluido ? (t.dataConclusao || null) : null, origemTopico: t.id },
+            camposMaterial({ tipo: 'pdf', nome: t.nome, curso: campos.curso, paginas: campos.paginas, link: '' }));
+          if (a.concluido) a.herdado = true;
+          y.bloco.materiais.push(a);
+          n++;
+        });
+      });
+    });
+    if (n) salvar();
+    return n;
+  }
+
   var TIPOS_MATERIAL = [['pdf', 'PDF'], ['video', 'Videoaula'], ['resumo', 'Resumo'], ['lei', 'Lei Seca']];
   function camposMaterial(campos) {
     var tipo = TIPOS_MATERIAL.some(function (x) { return x[0] === campos.tipo; }) ? campos.tipo : 'pdf';
@@ -1710,6 +1751,7 @@ var Dados = (function () {
     aulasDe: aulasDe, aula: aula, aulasHistoricas: aulasHistoricas, definirAulaConcluida: definirAulaConcluida, ultimoEstudoAula: ultimoEstudoAula, nomeAula: nomeAula,
     paginasPorMeta: paginasPorMeta, definirPaginasPorMeta: definirPaginasPorMeta, totalPaginas: totalPaginas, paginasLidas: paginasLidas,
     leituraAula: leituraAula, metasDaTeoria: metasDaTeoria, concluirLidas: concluirLidas,
+    topicosParaAulas: topicosParaAulas, converterTopicosEmAulas: converterTopicosEmAulas,
     TIPOS_MATERIAL: TIPOS_MATERIAL, criarMaterial: criarMaterial, atualizarMaterial: atualizarMaterial, excluirMaterial: excluirMaterial, cursosUsados: cursosUsados,
     atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,
     ESFERAS: ESFERAS, BANCAS_EDITAL: BANCAS_EDITAL, concurso: concurso, concursos: concursos, faseAtual: faseAtual, infoFase: infoFase,

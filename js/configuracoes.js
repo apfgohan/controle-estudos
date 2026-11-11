@@ -192,6 +192,47 @@ var Configuracoes = (function () {
     ]);
   }
 
+  // Tópicos antigos (de antes da troca para o TEC) viram aulas nas matérias que ainda não têm nenhuma aula.
+  function painelTopicosAntigos() {
+    var lista = Dados.topicosParaAulas();
+    if (!lista.length) return null;
+    var total = lista.reduce(function (s, x) { return s + x.total; }, 0);
+    return el('section', { class: 'painel' }, [
+      el('div', { class: 'grafico-topo' }, [
+        el('h3', { class: 'secao-titulo', text: 'Tópicos antigos como aulas' }),
+        el('span', { class: 'data-fraca', text: lista.length + (lista.length === 1 ? ' matéria sem aulas tem ' : ' matérias sem aulas têm ') + total + ' tópicos antigos guardados.' })
+      ]),
+      el('p', { class: 'data-fraca', text: 'Cada tópico vira uma aula PDF no mesmo bloco. Os tópicos concluídos entram como aulas concluídas na mesma data, sem XP de novo.' }),
+      UI.botao('Ver e converter…', function () { converterTopicos(lista); }, 'btn-secundario')
+    ]);
+  }
+
+  function converterTopicos(lista) {
+    var marcadas = {};
+    lista.forEach(function (x) { marcadas[x.disciplina.id] = true; });
+    var curso = el('input', { type: 'text', value: 'Estratégia' });
+    var paginas = el('input', { type: 'number', min: 1, step: 1, value: 60 });
+    var itens = el('div', { class: 'lista-topicos' }, lista.map(function (x) {
+      return el('label', { class: 'opcao-topico' }, [
+        el('input', { type: 'checkbox', checked: true, onchange: function (e) { if (e.target.checked) marcadas[x.disciplina.id] = true; else delete marcadas[x.disciplina.id]; } }),
+        el('span', { text: x.disciplina.nome + ' · ' + x.total + (x.total === 1 ? ' tópico' : ' tópicos') + ' em ' + x.blocos.length + (x.blocos.length === 1 ? ' bloco' : ' blocos') + (x.concluidos ? ' · ' + x.concluidos + ' concluídos' : '') })
+      ]);
+    }));
+    UI.modal('Tópicos antigos como aulas', [
+      UI.campo('Matérias', itens, 'Só aparecem as matérias que ainda não têm nenhuma aula cadastrada.'),
+      el('div', { class: 'campos-linha' }, [UI.campo('Curso', curso), UI.campo('Páginas de cada PDF', paginas)])
+    ], [
+      { texto: 'Cancelar', classe: 'btn-secundario' },
+      { texto: 'Criar as aulas', classe: 'btn-primario', acao: function () {
+        var ids = Object.keys(marcadas);
+        if (!ids.length) { UI.aviso('Marque pelo menos uma matéria'); return false; }
+        var n = Dados.converterTopicosEmAulas(ids, { curso: curso.value.trim(), paginas: Number(paginas.value) || null });
+        App.atualizar();
+        UI.aviso(n + (n === 1 ? ' aula criada' : ' aulas criadas'));
+      } }
+    ], { icone: 'lista', subtitulo: 'Tipo PDF, com o nome do tópico' });
+  }
+
   function render(raiz) {
     raiz.appendChild(el('div', { class: 'pagina-topo' }, el('div', null, [
       el('h1', { class: 'pagina-titulo', text: 'Configurações' }),
@@ -200,6 +241,8 @@ var Configuracoes = (function () {
     raiz.appendChild(painelPerfil());
     raiz.appendChild(painelFases());
     raiz.appendChild(painelLeitura());
+    var antigos = painelTopicosAntigos();
+    if (antigos) raiz.appendChild(antigos);
   }
 
   // Selo da fase atual no topo de todas as abas.
