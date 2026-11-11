@@ -326,9 +326,9 @@ var Teoria = (function () {
       });
       if (campoPaginas) campoPaginas.style.display = tipo === 'pdf' ? '' : 'none';
     }
-    // Só PDF tem páginas: com elas, as metas de teoria são calculadas pelas páginas lidas por meta.
+    // Só PDF tem páginas: com elas, as tarefas de teoria são calculadas pelas páginas lidas por tarefa.
     var paginas = el('input', { type: 'number', min: 1, step: 1, value: m && m.paginas ? m.paginas : '', placeholder: 'Ex.: 60' });
-    var campoPaginas = UI.campo('Páginas', paginas, 'Opcional. Com as páginas, a meta pede o que falta ler e a previsão usa as páginas lidas por meta (Configurações).');
+    var campoPaginas = UI.campo('Páginas', paginas, 'Opcional. Com as páginas, a meta mostra o que falta ler e a previsão usa as páginas lidas por tarefa (Configurações).');
     desenhar();
     var nome = el('input', { type: 'text', value: m ? m.nome : '', placeholder: 'Ex.: 00 - Atos Administrativos' });
     var idLista = 'cursos-' + b.id;

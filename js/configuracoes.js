@@ -173,22 +173,22 @@ var Configuracoes = (function () {
     function salvar(v) {
       Dados.definirPaginasPorMeta(v);
       App.atualizar();
-      UI.aviso(Number(v) > 0 ? 'Páginas por meta: ' + Math.round(Number(v)) : 'Sem estimativa por páginas');
+      UI.aviso(Number(v) > 0 ? 'Páginas por tarefa: ' + Math.round(Number(v)) : 'Sem estimativa por páginas');
     }
     return el('section', { class: 'painel' }, [
       el('div', { class: 'grafico-topo' }, [
         el('h3', { class: 'secao-titulo', text: 'Leitura dos PDFs' }),
-        el('span', { class: 'data-fraca', text: 'Com as páginas de cada PDF (na Teoria), a meta de teoria pede o pedaço seguinte e a previsão conta as metas que faltam.' })
+        el('span', { class: 'data-fraca', text: 'Com as páginas de cada PDF (na Teoria), a meta de teoria mostra a tarefa seguinte e a previsão conta as tarefas que faltam.' })
       ]),
       el('div', { class: 'config-leitura' }, [
-        UI.campo('Páginas lidas, em média, numa meta de teoria', entrada, 'Ex.: PDF de 60 páginas com 20 por meta = 3 metas. Deixe vazio para não usar páginas.'),
+        UI.campo('Páginas lidas, em média, numa tarefa de teoria', entrada, 'Cada vez que você estuda é uma tarefa; a meta (terminar a teoria do bloco) pode exigir várias. Ex.: PDF de 60 páginas com 20 por tarefa = 3 tarefas. Deixe vazio para não usar páginas.'),
         el('div', { class: 'pasta-acoes' }, [
           UI.botao('Salvar', function () { salvar(entrada.value); }, 'btn-primario'),
           real ? UI.botao('Usar a média real (' + Math.round(real.media) + ')', function () { salvar(Math.round(real.media)); }, 'btn-secundario') : null
         ])
       ]),
-      el('p', { class: 'data-fraca', text: real ? 'Média real: ' + String(Math.round(real.media * 10) / 10).replace('.', ',') + ' páginas por sessão de teoria, em ' + real.n + (real.n === 1 ? ' sessão' : ' sessões') + ' com páginas informadas (fase atual).'
-        : 'Ainda não há sessões de teoria com páginas informadas.' })
+      el('p', { class: 'data-fraca', text: real ? 'Média real: ' + String(Math.round(real.media * 10) / 10).replace('.', ',') + ' páginas por tarefa de teoria, em ' + real.n + (real.n === 1 ? ' tarefa' : ' tarefas') + ' com páginas informadas (fase atual).'
+        : 'Ainda não há tarefas de teoria com páginas informadas.' })
     ]);
   }
 

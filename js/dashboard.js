@@ -378,7 +378,7 @@ var Dashboard = (function () {
       }
     } else if (atual.tipo === 'teoria') {
       var faltam = atual.aulas.filter(function (a) { return !a.concluido; });
-      // Com páginas por meta, a meta pede só o pedaço seguinte (ex.: PDF 00, págs. 21 a 40).
+      // A meta (terminar a teoria do bloco) pode exigir várias tarefas; com páginas por tarefa, mostra só o pedaço seguinte (ex.: PDF 00, págs. 21 a 40).
       var metasT = Dados.metasDaTeoria(atual.aulas), ppm = Dados.paginasPorMeta(), estaMeta = ppm && metasT.length ? metasT[0] : null;
       function textoAula(a) {
         var l = Dados.leituraAula(a);
@@ -386,9 +386,9 @@ var Dashboard = (function () {
       }
       detalhe = atual.aulas.length
         ? el('div', null, [
-            estaMeta ? el('p', { class: 'rec-nesta-meta' }, [el('strong', { text: 'Nesta meta: ' }), estaMeta.aulas.map(function (u) {
+            estaMeta ? el('p', { class: 'rec-nesta-meta' }, [el('strong', { text: 'Nesta tarefa: ' }), estaMeta.aulas.map(function (u) {
               return u.de ? 'ler ' + (u.ate - u.de + 1) + ' págs. do ' + Dados.nomeAula(u.aula) + ' (da ' + u.de + 'ª à ' + u.ate + 'ª)' : Dados.nomeAula(u.aula);
-            }).join(' · ') + (metasT.length > 1 ? ' · ' + metasT.length + ' metas para terminar o bloco' : '')]) : null,
+            }).join(' · ') + (metasT.length > 1 ? ' · ' + metasT.length + ' tarefas estimadas para terminar a meta' : '')]) : null,
             el('ul', { class: 'rec-topicos' }, faltam.slice(0, 4).map(function (a) {
               return el('li', null, a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', text: textoAula(a) }) : textoAula(a));
             }).concat(faltam.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (faltam.length - 4) + ' aulas' })] : []))
@@ -1755,7 +1755,7 @@ var Dashboard = (function () {
       el('div', { class: 'leitura-numeros' }, [
         numero('Páginas lidas', UI.fmtNum(atual.paginas), dif == null ? 'no período' : [el('strong', { class: classeDiferenca(dif), text: dif ? (dif > 0 ? '+' : '−') + UI.fmtNum(Math.abs(dif)) : '=' }), ' ' + (ROTULO_ANTERIOR[f.periodo] || 'vs período anterior')]),
         numero('Aulas concluídas', UI.fmtNum(concluidas), 'no período'),
-        numero('Páginas por meta', mediaReal == null ? '—' : String(Math.round(mediaReal * 10) / 10).replace('.', ','), ppm ? 'configurado: ' + ppm : 'sem valor em Configurações'),
+        numero('Páginas por tarefa', mediaReal == null ? '—' : String(Math.round(mediaReal * 10) / 10).replace('.', ','), ppm ? 'configurado: ' + ppm : 'sem valor em Configurações'),
         numero('Aulas vistas', sit.aulas ? sit.vistas + '/' + sit.aulas : '—', sit.pdfs ? sit.pdfsVistos + '/' + sit.pdfs + ' PDFs' + (sit.paginas ? ' · ' + UI.fmtNum(sit.lidas) + '/' + UI.fmtNum(sit.paginas) + ' págs.' : '') : 'nenhum PDF cadastrado')
       ]),
       sit.aulas ? el('div', { class: 'leitura-progresso' }, [
