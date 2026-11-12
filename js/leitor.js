@@ -121,17 +121,17 @@ var Leitor = (function () {
     var lei = Dados.leituraAula(x.aula);
     v = {
       aulaId: x.aula.id, x: x, doc: doc, raiz: caixa, total: doc.numPages, itens: rec.itens.slice(), ultima: rec.ultimaPagina || 0,
-      zoom: 1, base: 1, paginas: [], atual: 1, desdeAtual: Date.now(), notaModo: false, filtroCor: '', textos: {}, busca: { termo: '', pos: 0 },
+      zoom: 1, base: 1, paginas: [], visiveis: {}, ocupado: false, atual: 1, desdeAtual: Date.now(), notaModo: false, textos: {}, busca: { termo: '', pos: 0 },
       paginaPedida: pagina, noite: noite
     };
     var inicial = pagina || v.ultima || (lei.total && !x.aula.concluido ? lei.inicio : 1);
     inicial = Math.max(1, Math.min(v.total, inicial));
 
     v.area = el('div', { class: 'leitor-area' + (noite ? ' noite' : '') });
-    v.painel = el('aside', { class: 'leitor-painel' });
     v.barra = barra();
+    v.area.classList.toggle('modo-grifo', v.marcaTexto);
     caixa.appendChild(v.barra);
-    caixa.appendChild(el('div', { class: 'leitor-corpo' }, [v.area, v.painel]));
+    caixa.appendChild(el('div', { class: 'leitor-corpo' }, [v.area]));
     v.area.addEventListener('scroll', aoRolar);
     v.area.addEventListener('mouseup', aoSoltar);
     v.area.addEventListener('click', aoClicar);
@@ -146,7 +146,8 @@ var Leitor = (function () {
         v.area.appendChild(pg);
       }
       v.observador = new IntersectionObserver(function (es) {
-        es.forEach(function (e) { if (e.isIntersecting) desenhar(Number(e.target.getAttribute('data-pagina'))); });
+        es.forEach(function (e) { var n = Number(e.target.getAttribute('data-pagina')); if (e.isIntersecting) v.visiveis[n] = true; else delete v.visiveis[n]; });
+        processarFila();
       }, { root: v.area, rootMargin: '600px 0px' });
       v.paginas.forEach(function (p) { v.observador.observe(p.el); });
       dimensionar();
@@ -172,21 +173,35 @@ var Leitor = (function () {
       if (p.desenhada && p.escala !== s) { p.desenhada = false; p.el.innerHTML = ''; }
     });
     var visiveis = v.paginas.filter(function (p) { var r = p.el.getBoundingClientRect(), a = v.area.getBoundingClientRect(); return r.bottom > a.top - 600 && r.top < a.bottom + 600; });
-    visiveis.forEach(function (p) { desenhar(p.n); });
+    visiveis.forEach(function (p) { v.visiveis[p.n] = true; });
+    processarFila();
+  }
+
+  // Uma página por vez, começando pela mais perto da que está na tela (com o PDF grande, a página lida aparece primeiro).
+  function processarFila() {
+    if (!v || v.ocupado) return;
+    var atual = v.atual, n = Object.keys(v.visiveis).map(Number).filter(function (k) { var p = v.paginas[k - 1]; return p && !p.desenhada && !p.desenhando; })
+      .sort(function (a, b) { return Math.abs(a - atual) - Math.abs(b - atual); })[0];
+    if (!n) return;
+    var doc = v.doc;
+    v.ocupado = true;
+    desenhar(n).then(function () { if (v && v.doc === doc) { v.ocupado = false; processarFila(); } });
   }
 
   function desenhar(n) {
     var p = v && v.paginas[n - 1];
-    if (!p || p.desenhada || p.desenhando) return;
+    if (!p || p.desenhada || p.desenhando) return Promise.resolve();
     var s = escala(), doc = v.doc;
     p.desenhando = true;
     // Se o zoom mudou enquanto a página era desenhada, o desenho é descartado e refeito na escala nova.
-    function velho() { if (!v || v.doc !== doc) return true; if (escala() !== s) { p.desenhando = false; p.desenhada = false; desenhar(n); return true; } return false; }
-    doc.getPage(n).then(function (page) {
+    function velho() { if (!v || v.doc !== doc) return true; if (escala() !== s) { p.desenhando = false; p.desenhada = false; return true; } return false; }
+    return doc.getPage(n).then(function (page) {
       if (velho()) return;
       var vp1 = page.getViewport({ scale: 1 });
       p.largura = vp1.width; p.altura = vp1.height;
-      var vp = page.getViewport({ scale: s }), dpr = window.devicePixelRatio || 1;
+      // Desenha em pelo menos o dobro da resolução da tela: com zoom baixo, as letras pequenas ficam nítidas.
+      var vp = page.getViewport({ scale: s }), dpr = Math.max(2, window.devicePixelRatio || 1);
+      var MAX_PIXELS = 16e6; if (vp.width * vp.height * dpr * dpr > MAX_PIXELS) dpr = Math.max(1, Math.sqrt(MAX_PIXELS / (vp.width * vp.height)));
       p.el.style.width = Math.round(vp.width) + 'px'; p.el.style.height = Math.round(vp.height) + 'px';
       var canvas = el('canvas', { class: 'pdf-canvas' });
       canvas.width = Math.floor(vp.width * dpr); canvas.height = Math.floor(vp.height * dpr);
@@ -239,27 +254,62 @@ var Leitor = (function () {
   function agendarSalvar() { clearTimeout(timerSalvar); timerSalvar = setTimeout(salvarAgora, 1500); }
   function salvarAgora() { clearTimeout(timerSalvar); if (v) PdfsDados.salvarGrifos(v.aulaId, v.itens, v.atual).catch(function (e) { console.error(e); }); }
 
-  // ---------- Barra ----------
+  // ---------- Barra (modelo A): tudo numa linha só, sem painel lateral ----------
+  var CHAVE_MARCA = 'controle-estudos.leitor-marca-texto';
   function barra() {
     var x = v.x, a = x.aula;
+    try { var mt = JSON.parse(localStorage.getItem(CHAVE_MARCA) || '{}'); v.marcaTexto = !!mt.ligado; v.corAtual = CORES.some(function (c) { return c[0] === mt.cor; }) ? mt.cor : CORES[0][0]; } catch (e) { v.marcaTexto = false; v.corAtual = CORES[0][0]; }
     v.campoPagina = el('input', { type: 'number', min: 1, class: 'leitor-pagina', 'aria-label': 'Página', onchange: function () { irPara(Number(v.campoPagina.value) || 1); } });
     v.infoTotal = el('span', { class: 'leitor-total' });
     v.infoLeitura = el('span', { class: 'leitor-leitura' });
     v.infoZoom = el('span', { class: 'leitor-zoom-valor' });
-    v.campoBusca = el('input', { type: 'search', class: 'leitor-busca', placeholder: 'Buscar no PDF', onkeydown: function (e) { if (e.key === 'Enter') { e.preventDefault(); buscar(v.campoBusca.value, e.shiftKey); } } });
+    v.campoBusca = el('input', { type: 'search', class: 'leitor-busca', placeholder: 'Buscar no PDF', onkeydown: function (e) { if (e.key === 'Enter') { e.preventDefault(); buscar(v.campoBusca.value, e.shiftKey); } if (e.key === 'Escape') { alternarBusca(false); } } });
     v.infoBusca = el('span', { class: 'leitor-busca-info' });
-    function bt(icone, titulo, acao, classe) { var b = el('button', { type: 'button', class: 'leitor-bt ' + (classe || ''), title: titulo, 'aria-label': titulo, onclick: acao }); b.appendChild(typeof icone === 'string' && icone.length > 2 ? UI.icone(icone) : document.createTextNode(icone)); return b; }
-    v.btNota = bt('nota', 'Nota solta: clique na página onde quer a nota', function () { v.notaModo = !v.notaModo; v.btNota.classList.toggle('ativo', v.notaModo); v.area.classList.toggle('modo-nota', v.notaModo); });
-    v.btNoite = bt('livro', 'Modo noturno', function () { v.noite = !v.noite; v.area.classList.toggle('noite', v.noite); v.btNoite.classList.toggle('ativo', v.noite); try { localStorage.setItem(CHAVE_NOITE, v.noite ? '1' : '0'); } catch (e) { /* preferência */ } }, v.noite ? 'ativo' : '');
-    v.btPainel = bt('lista', 'Grifos e anotações', function () { v.raiz.classList.toggle('sem-painel'); }, 'ativo');
-    return el('div', { class: 'leitor-barra' }, [
+    v.caixaBusca = el('div', { class: 'leitor-caixa-busca' }, [v.campoBusca, v.infoBusca]);
+    function bt(icone, titulo, acao, classe, texto) {
+      var b = el('button', { type: 'button', class: 'leitor-bt ' + (classe || ''), title: titulo, 'aria-label': titulo, onclick: acao });
+      b.appendChild(icone.length > 2 ? UI.icone(icone) : document.createTextNode(icone));
+      if (texto) b.appendChild(el('span', { class: 'leitor-bt-texto', text: texto }));
+      return b;
+    }
+    v.btBusca = bt('lupa', 'Buscar no PDF (Ctrl+F)', function () { alternarBusca(); });
+    // Marca-texto: ligado, selecionar um trecho já grifa na cor escolhida. A bolinha abre as cores.
+    v.btGrifar = bt('grifo', 'Marca-texto: com ele ligado, selecione o texto para grifar', function () { definirMarca(!v.marcaTexto); });
+    v.bolaCor = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Escolher a cor (teclas 1 a 4)', 'aria-label': 'Escolher a cor do marca-texto', onclick: function (e) { e.stopPropagation(); menuCores(v.bolaCor); } });
+    v.btNota = bt('nota', 'Nota: clique no botão e depois no ponto da página', function () { v.notaModo = !v.notaModo; v.btNota.classList.toggle('ativo', v.notaModo); v.area.classList.toggle('modo-nota', v.notaModo); });
+    v.btNoite = bt('lua', 'Modo noturno', function () { v.noite = !v.noite; v.area.classList.toggle('noite', v.noite); v.btNoite.classList.toggle('ativo', v.noite); try { localStorage.setItem(CHAVE_NOITE, v.noite ? '1' : '0'); } catch (e) { /* preferência */ } }, v.noite ? 'ativo' : '');
+    var navegacao = el('div', { class: 'leitor-grupo' }, [bt('‹', 'Página anterior', function () { irPara(v.atual - 1); }), v.campoPagina, v.infoTotal, bt('›', 'Próxima página', function () { irPara(v.atual + 1); })]);
+    var zoom = el('div', { class: 'leitor-grupo' }, [bt('−', 'Diminuir', function () { mudarZoom(v.zoom / 1.15); }), v.infoZoom, bt('+', 'Aumentar', function () { mudarZoom(v.zoom * 1.15); }), bt('↔', 'Ajustar à largura', function () { mudarZoom(1); })]);
+    var b = el('div', { class: 'leitor-barra' }, [
       el('a', { class: 'leitor-bt', href: '#/teoria/' + x.bloco.disciplinaId, title: 'Voltar para a matéria', 'aria-label': 'Voltar para a matéria' }, UI.icone('voltar')),
-      el('div', { class: 'leitor-titulo' }, [el('strong', { text: Dados.nomeAula(a) }), v.infoLeitura]),
-      el('div', { class: 'leitor-grupo' }, [bt('‹', 'Página anterior', function () { irPara(v.atual - 1); }), v.campoPagina, v.infoTotal, bt('›', 'Próxima página', function () { irPara(v.atual + 1); })]),
-      el('div', { class: 'leitor-grupo' }, [bt('−', 'Diminuir', function () { mudarZoom(v.zoom / 1.15); }), v.infoZoom, bt('+', 'Aumentar', function () { mudarZoom(v.zoom * 1.15); }), bt('↔', 'Ajustar à largura', function () { mudarZoom(1); })]),
-      el('div', { class: 'leitor-grupo leitor-grupo-busca' }, [v.campoBusca, v.infoBusca]),
-      el('div', { class: 'leitor-grupo' }, [v.btNota, v.btNoite, v.btPainel])
+      el('div', { class: 'leitor-titulo' }, [el('strong', { text: Dados.nomeAula(a), title: Dados.nomeAula(a) }), v.infoLeitura]),
+      navegacao, el('span', { class: 'leitor-sep' }), zoom, el('span', { class: 'leitor-sep' }),
+      v.caixaBusca,
+      el('div', { class: 'leitor-ferramentas' }, [v.btBusca, el('span', { class: 'leitor-sep' }), el('span', { class: 'leitor-grifar' }, [v.btGrifar, v.bolaCor]), v.btNota, v.btNoite])
     ]);
+    definirMarca(v.marcaTexto, true);
+    return b;
+  }
+  function alternarBusca(mostrar) {
+    var ver = mostrar == null ? !v.caixaBusca.classList.contains('aberta') : mostrar;
+    v.caixaBusca.classList.toggle('aberta', ver); v.btBusca.classList.toggle('ativo', ver);
+    if (ver) { v.campoBusca.focus(); v.campoBusca.select(); } else { v.busca = { termo: '', pos: 0 }; v.infoBusca.textContent = ''; limparBusca(); }
+  }
+  function definirMarca(ligado, semGravar) {
+    v.marcaTexto = ligado;
+    v.btGrifar.classList.toggle('ativo', ligado);
+    v.bolaCor.style.background = corHex(v.corAtual);
+    if (v.area) v.area.classList.toggle('modo-grifo', ligado);
+    if (!semGravar) try { localStorage.setItem(CHAVE_MARCA, JSON.stringify({ ligado: ligado, cor: v.corAtual })); } catch (e) { /* preferência */ }
+  }
+  function definirCor(cor) { v.corAtual = cor; definirMarca(true); }
+  function menuCores(ancora) {
+    fecharFlutuantes();
+    var r = ancora.getBoundingClientRect();
+    flutuante = el('div', { class: 'leitor-flutuante leitor-cores' }, CORES.map(function (c, i) {
+      return el('button', { type: 'button', class: 'leitor-cor' + (v.corAtual === c[0] ? ' ativa' : ''), title: c[0] + ' (' + (i + 1) + ')', style: { background: c[1] }, onclick: function () { fecharFlutuantes(); definirCor(c[0]); } });
+    }));
+    posicionar(flutuante, r.left + r.width / 2, r.bottom - 8);
   }
   function atualizarInfo() {
     if (!v || !v.campoPagina) return;
@@ -337,9 +387,9 @@ var Leitor = (function () {
     return null;
   }
 
-  // Soltou o mouse com texto selecionado: barrinha com as cores.
+  // Soltou o mouse com texto selecionado e o marca-texto ligado: grifa na cor escolhida.
   function aoSoltar(e) {
-    if (v.notaModo) return;
+    if (v.notaModo || !v.marcaTexto) return;
     setTimeout(function () {
       var sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount || !v.area.contains(sel.anchorNode)) return;
@@ -352,7 +402,7 @@ var Leitor = (function () {
       });
       if (!Object.keys(porPagina).length) return;
       var texto = sel.toString().replace(/\s+/g, ' ').trim();
-      mostrarCores(e.clientX, e.clientY, function (cor, anotar) {
+      (function (cor) {
         var criados = Object.keys(porPagina).map(function (n) {
           var it = { id: Dados.novoId(), tipo: 'grifo', pagina: Number(n), rects: juntarLinhas(porPagina[n]), cor: cor, texto: texto, nota: '', criadoEm: Date.now() };
           v.itens.push(it);
@@ -362,8 +412,7 @@ var Leitor = (function () {
         criados.forEach(function (it) { desenharItens(it.pagina); });
         desenharPainel();
         salvarAgora();
-        if (anotar) abrirBalao(criados[0], e.clientX, e.clientY);
-      });
+      })(v.corAtual);
     }, 0);
   }
   // Une os retângulos da mesma linha (o PDF.js quebra a linha em vários pedaços).
@@ -409,14 +458,6 @@ var Leitor = (function () {
     no.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, cx - w / 2)) + 'px';
     no.style.top = (cy + 14 + h > window.innerHeight ? Math.max(8, cy - h - 14) : cy + 14) + 'px';
   }
-  function mostrarCores(cx, cy, escolher) {
-    fecharFlutuantes();
-    flutuante = el('div', { class: 'leitor-flutuante leitor-cores' }, CORES.map(function (c, i) {
-      return el('button', { type: 'button', class: 'leitor-cor', title: 'Grifar (' + (i + 1) + ')', style: { background: c[1] }, onmousedown: function (e) { e.preventDefault(); }, onclick: function () { fecharFlutuantes(); escolher(c[0], false); } });
-    }).concat([el('button', { type: 'button', class: 'leitor-anotar', text: 'Anotar', onmousedown: function (e) { e.preventDefault(); }, onclick: function () { fecharFlutuantes(); escolher(CORES[0][0], true); } })]));
-    flutuante.escolher = escolher;
-    posicionar(flutuante, cx, cy);
-  }
   function abrirBalao(it, cx, cy) {
     fecharFlutuantes();
     var nota = el('textarea', { rows: 3, value: it.nota || '', placeholder: it.tipo === 'nota' ? 'Escreva a anotação' : 'Anotação sobre o trecho (opcional)' });
@@ -440,37 +481,16 @@ var Leitor = (function () {
   }
   document.addEventListener('mousedown', function (e) { if (flutuante && !flutuante.contains(e.target)) fecharFlutuantes(); });
 
-  // ---------- Painel lateral ----------
-  function desenharPainel() {
-    if (!v || !v.painel) return;
-    var lista = v.itens.filter(function (it) { return !v.filtroCor || it.cor === v.filtroCor; }).sort(function (a, b) {
-      return a.pagina - b.pagina || ((a.rects ? a.rects[0].y : a.y) - (b.rects ? b.rects[0].y : b.y));
-    });
-    v.painel.innerHTML = '';
-    v.painel.appendChild(el('div', { class: 'leitor-painel-topo' }, [
-      el('strong', { text: 'Grifos e anotações (' + v.itens.length + ')' }),
-      el('div', { class: 'leitor-filtro' }, [el('button', { type: 'button', class: 'leitor-filtro-todas' + (v.filtroCor ? '' : ' ativa'), text: 'Todos', onclick: function () { v.filtroCor = ''; desenharPainel(); } })].concat(CORES.map(function (c) {
-        return el('button', { type: 'button', class: 'leitor-cor mini' + (v.filtroCor === c[0] ? ' ativa' : ''), style: { background: c[1] }, title: 'Só ' + c[0], onclick: function () { v.filtroCor = v.filtroCor === c[0] ? '' : c[0]; desenharPainel(); } });
-      })))
-    ]));
-    if (!lista.length) { v.painel.appendChild(el('p', { class: 'data-fraca', text: v.itens.length ? 'Nenhum grifo desta cor.' : 'Selecione um trecho do PDF para grifar. Use o botão de nota para anotar em qualquer ponto da página.' })); return; }
-    lista.forEach(function (it) {
-      v.painel.appendChild(el('button', { type: 'button', class: 'leitor-item', style: { borderLeftColor: it.tipo === 'grifo' ? corHex(it.cor) : 'var(--texto-3)' }, onclick: function () { irPara(it.pagina); } }, [
-        el('span', { class: 'leitor-item-pag', text: 'p. ' + it.pagina + (it.tipo === 'nota' ? ' · nota' : '') }),
-        it.texto ? el('span', { class: 'leitor-item-texto', text: it.texto.length > 140 ? it.texto.slice(0, 140) + '…' : it.texto }) : null,
-        it.nota ? el('span', { class: 'leitor-item-nota', text: it.nota }) : null
-      ]));
-    });
-  }
+  function desenharPainel() { /* o painel lateral saiu (modelo C): grifos e notas ficam só na página */ }
 
   // ---------- Teclado ----------
   document.addEventListener('keydown', function (e) {
     if (!v || !document.body.contains(v.raiz) || document.querySelector('.modal-fundo')) return;
     var digitando = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ''));
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); v.campoBusca.focus(); v.campoBusca.select(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); alternarBusca(true); return; }
     if (e.key === 'Escape') { fecharFlutuantes(); if (v.notaModo) v.btNota.click(); return; }
     if (digitando) return;
-    if (flutuante && flutuante.escolher && /^[1-4]$/.test(e.key)) { e.preventDefault(); var f = flutuante.escolher; fecharFlutuantes(); f(CORES[Number(e.key) - 1][0], false); return; }
+    if (/^[1-4]$/.test(e.key)) { e.preventDefault(); fecharFlutuantes(); definirCor(CORES[Number(e.key) - 1][0]); return; }
     if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); irPara(v.atual + 1); }
     else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); irPara(v.atual - 1); }
   });
