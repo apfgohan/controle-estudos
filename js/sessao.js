@@ -204,7 +204,11 @@ var Sessao = (function () {
         // Aulas com páginas só ficam concluídas quando as páginas lidas chegam ao total.
         est.aulaIds.forEach(function (id) { var x = Dados.aula(id); if (x && !x.aula.concluido && !Dados.totalPaginas(x.aula)) Dados.definirAulaConcluida(id, true, data.value); });
       }
-      if (est.tipo === 'teoria') Dados.concluirLidas(est.aulaIds, data.value);
+      if (est.tipo === 'teoria') {
+        Dados.concluirLidas(est.aulaIds, data.value);
+        // A leitura do dia já foi lançada: a próxima começa de novo pelo leitor.
+        if (window.Leitor) est.aulaIds.forEach(function (id) { if (est.paginas[id]) Leitor.limparLeitura(id); });
+      }
       if (est.tipo === 'revisao') {
         (campos.revisados || []).forEach(function (r) { Dados.marcarRevisto(est.disciplinaId, r.chave, true, data.value); });
       }
@@ -318,7 +322,14 @@ var Sessao = (function () {
     }
     // Páginas sugeridas para um PDF: as páginas de uma meta (Configurações) ou, sem elas, tudo o que falta.
     function leitura(a) { return Dados.leituraAula(Object.assign({}, a, { concluido: false }), est.sessaoId); }
-    function sugestao(a) { var l = leitura(a), ppm = Dados.paginasPorMeta(); return ppm ? Math.min(ppm, l.faltam) : l.faltam; }
+    // Leitura feita hoje no leitor de PDF: as páginas vistas além do que já estava lido (só as de teoria contam).
+    function peloLeitor(a) {
+      var r = window.Leitor && Leitor.leituraDoDia(a.id), l = leitura(a);
+      if (!r || !l.total || r.ate < l.inicio) return null;
+      var ate = Math.min(r.ate, l.total);
+      return { de: l.inicio, ate: ate, n: ate - l.inicio + 1 };
+    }
+    function sugestao(a) { var p = peloLeitor(a); if (p) return p.n; var l = leitura(a), ppm = Dados.paginasPorMeta(); return ppm ? Math.min(ppm, l.faltam) : l.faltam; }
     est.aulaIds.forEach(function (id) {
       var x = Dados.aula(id);
       if (x && Dados.totalPaginas(x.aula) && est.paginas[id] == null && !est.sessaoId) est.paginas[id] = sugestao(x.aula) || '';
@@ -338,6 +349,9 @@ var Sessao = (function () {
             caixaPag.appendChild(el('input', { type: 'number', min: 0, max: l.faltam, step: 1, value: est.paginas[a.id] || '', 'aria-label': 'Páginas lidas de ' + Dados.nomeAula(a),
               oninput: function (e) { est.paginas[a.id] = e.target.value; } }));
             caixaPag.appendChild(el('span', { class: 'data-fraca', text: l.lidas ? 'já lidas ' + l.lidas + ' de ' + total + ' (falta da ' + l.inicio + 'ª à ' + total + 'ª)' : 'de ' + total + ' páginas' }));
+            var pl = peloLeitor(a);
+            if (pl) caixaPag.appendChild(el('span', { class: 'aula-pelo-leitor', text: 'pelo leitor: da ' + pl.de + 'ª à ' + pl.ate + 'ª' }));
+            if (PdfsDados.temPdf(a.id)) caixaPag.appendChild(el('a', { class: 'link', href: '#/leitor/' + a.id + '/' + l.inicio, text: 'Ler', title: 'Abre o PDF (fecha este formulário)', onclick: function () { var f = caixaPag.closest('.modal-fundo'); if (f) f.remove(); } }));
           }
           desenharPag();
           return el('div', { class: 'opcao-aula' }, [

@@ -167,6 +167,22 @@ var Configuracoes = (function () {
     return n ? { media: pags / n, n: n } : null;
   }
 
+  // PDFs guardados neste aparelho (não vão para a nuvem nem para o backup).
+  function espacoPdfs() {
+    var linha = el('div', { class: 'config-pdfs' }, [el('span', { class: 'data-fraca', text: 'Calculando o espaço dos PDFs neste aparelho…' })]);
+    if (!window.PdfsDados) return null;
+    PdfsDados.espacoUsado().then(function (u) {
+      linha.innerHTML = '';
+      linha.appendChild(el('span', { class: 'data-fraca', text: u.n ? u.n + (u.n === 1 ? ' PDF guardado' : ' PDFs guardados') + ' neste aparelho, ' + String(Math.round(u.bytes / 1048576 * 10) / 10).replace('.', ',') + ' MB. Eles não vão para a nuvem nem para o backup; os grifos vão.' : 'Nenhum PDF guardado neste aparelho. Envie os PDFs pela engrenagem de cada aula, na Teoria.' }));
+      if (u.n) linha.appendChild(el('button', { type: 'button', class: 'link link-perigo', text: 'Apagar os PDFs deste aparelho', onclick: function () {
+        UI.confirmar('Apagar os ' + u.n + ' PDFs guardados neste aparelho? Os grifos e as anotações continuam; para ler de novo, envie os arquivos outra vez.', function () {
+          PdfsDados.apagarTodosPdfs().then(function () { App.atualizar(); UI.aviso('PDFs apagados deste aparelho'); });
+        }, 'Apagar');
+      } }));
+    }).catch(function () { linha.innerHTML = ''; });
+    return linha;
+  }
+
   function painelLeitura() {
     var atual = Dados.paginasPorMeta(), real = mediaRealPaginas();
     var entrada = el('input', { type: 'number', min: 0, step: 1, value: atual || '', placeholder: 'Ex.: 20' });
@@ -188,7 +204,8 @@ var Configuracoes = (function () {
         ])
       ]),
       el('p', { class: 'data-fraca', text: real ? 'Média real: ' + String(Math.round(real.media * 10) / 10).replace('.', ',') + ' páginas por tarefa de teoria, em ' + real.n + (real.n === 1 ? ' tarefa' : ' tarefas') + ' com páginas informadas (fase atual).'
-        : 'Ainda não há tarefas de teoria com páginas informadas.' })
+        : 'Ainda não há tarefas de teoria com páginas informadas.' }),
+      espacoPdfs()
     ]);
   }
 

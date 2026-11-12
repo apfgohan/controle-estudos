@@ -388,7 +388,9 @@ var Dashboard = (function () {
         ? el('div', null, [
             estaMeta ? el('p', { class: 'rec-nesta-meta' }, [el('strong', { text: 'Nesta tarefa: ' }), estaMeta.aulas.map(function (u) {
               return u.de ? 'ler ' + (u.ate - u.de + 1) + ' págs. do ' + Dados.nomeAula(u.aula) + ' (da ' + u.de + 'ª à ' + u.ate + 'ª)' : Dados.nomeAula(u.aula);
-            }).join(' · ') + (metasT.length > 1 ? ' · ' + metasT.length + ' tarefas estimadas para terminar a meta' : '')]) : null,
+            }).join(' · ') + (metasT.length > 1 ? ' · ' + metasT.length + ' tarefas estimadas para terminar a meta' : ''),
+              (function () { var u = estaMeta.aulas.filter(function (x) { return PdfsDados.temPdf(x.aula.id); })[0];
+                return u ? el('a', { class: 'btn btn-ler rec-abrir-pdf', href: '#/leitor/' + u.aula.id + (u.de ? '/' + u.de : '') }, [UI.icone('livro'), 'Abrir PDF']) : null; })()]) : null,
             el('ul', { class: 'rec-topicos' }, faltam.slice(0, 4).map(function (a) {
               return el('li', null, a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', text: textoAula(a) }) : textoAula(a));
             }).concat(faltam.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (faltam.length - 4) + ' aulas' })] : []))

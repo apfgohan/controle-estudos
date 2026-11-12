@@ -325,7 +325,31 @@ var Teoria = (function () {
         seg.appendChild(el('button', { type: 'button', class: tipo === x[0] ? 'ativo' : '', text: x[1], onclick: function () { tipo = x[0]; desenhar(); } }));
       });
       if (campoPaginas) campoPaginas.style.display = tipo === 'pdf' ? '' : 'none';
+      if (campoArquivo) campoArquivo.style.display = tipo === 'pdf' ? '' : 'none';
     }
+    // Arquivo do PDF (fica só neste aparelho). As páginas da aula continuam as de teoria: o total do PDF só é mostrado.
+    var novoArquivo = null, removerArquivo = false;
+    var infoArquivo = el('span', { class: 'data-fraca' });
+    var entradaPdf = el('input', { type: 'file', accept: 'application/pdf,.pdf', hidden: true, onchange: function () {
+      var f = entradaPdf.files[0]; if (!f) return;
+      infoArquivo.textContent = 'Lendo ' + f.name + '…';
+      Leitor.contarPaginas(f).then(function (n) {
+        novoArquivo = { arquivo: f, paginas: n }; removerArquivo = false;
+        desenharArquivo();
+        if (!paginas.value) { paginas.placeholder = 'Teoria de ' + n; paginas.focus(); }
+      }).catch(function () { novoArquivo = null; infoArquivo.textContent = 'Não foi possível ler esse arquivo como PDF.'; });
+    } });
+    var acoesArquivo = el('div', { class: 'pasta-acoes' });
+    function desenharArquivo() {
+      var temAqui = m && PdfsDados.temPdf(m.id) && !removerArquivo;
+      var ficha = novoArquivo ? { nome: novoArquivo.arquivo.name, paginas: novoArquivo.paginas, tamanho: novoArquivo.arquivo.size } : removerArquivo ? null : m && m.arquivo;
+      infoArquivo.textContent = ficha ? ficha.nome + ' · PDF com ' + ficha.paginas + ' páginas (' + Math.max(1, Math.round((ficha.tamanho || 0) / 1048576)) + ' MB)' + (novoArquivo ? ' · será guardado ao salvar' : temAqui ? ' · neste aparelho' : ' · não está neste aparelho') + '. Em "Páginas", informe só as de teoria.' : 'Nenhum PDF. Envie o arquivo para ler, grifar e anotar no programa.';
+      acoesArquivo.innerHTML = '';
+      acoesArquivo.appendChild(UI.botao(ficha ? 'Trocar PDF…' : 'Enviar PDF…', function () { entradaPdf.click(); }, 'btn-secundario'));
+      if (ficha) acoesArquivo.appendChild(UI.botao('Remover', function () { novoArquivo = null; removerArquivo = true; desenharArquivo(); }, 'btn-secundario'));
+    }
+    var campoArquivo = UI.campo('Arquivo do PDF', el('div', { class: 'aula-arquivo' }, [infoArquivo, acoesArquivo, entradaPdf]), 'O PDF fica guardado só neste aparelho; grifos e anotações vão para a nuvem.');
+    desenharArquivo();
     // Só PDF tem páginas: com elas, as tarefas de teoria são calculadas pelas páginas lidas por tarefa.
     var paginas = el('input', { type: 'number', min: 1, step: 1, value: m && m.paginas ? m.paginas : '', placeholder: 'Ex.: 60' });
     var campoPaginas = UI.campo('Páginas', paginas, 'Opcional. Com as páginas, a meta mostra o que falta ler e a previsão usa as páginas lidas por tarefa (Configurações).');
@@ -342,13 +366,19 @@ var Teoria = (function () {
     botoes.push({ texto: 'Salvar', classe: 'btn-primario', acao: function () {
       if (!nome.value.trim()) { nome.focus(); return false; }
       var campos = { tipo: tipo, nome: nome.value, curso: curso.value, link: link.value, paginas: paginas.value };
-      if (m) Dados.atualizarMaterial(b.id, m.id, campos); else Dados.criarMaterial(b.id, campos);
+      var salva = m ? (Dados.atualizarMaterial(b.id, m.id, campos), m) : Dados.criarMaterial(b.id, campos);
+      if (salva && tipo === 'pdf' && novoArquivo) {
+        Leitor.enviarPdf(salva, novoArquivo.arquivo).then(function () { App.atualizar(); }).catch(function () { /* aviso já mostrado */ });
+      } else if (salva && (removerArquivo || tipo !== 'pdf') && (salva.arquivo || PdfsDados.temPdf(salva.id))) {
+        PdfsDados.removerPdf(salva.id).catch(function () {}); Dados.definirArquivoAula(salva.id, null);
+      }
       App.atualizar();
     } });
     UI.modal(m ? 'Editar aula' : 'Nova aula — ' + b.nome, [
       UI.campo('Tipo', seg),
       UI.campo('Nome', nome, 'Sem o tipo, que já aparece antes do nome. Ex.: 00 - Atos Administrativos, ou 01 - Bancos de Dados.'),
       campoPaginas,
+      campoArquivo,
       UI.campo('Curso', curso), lista,
       UI.campo('Link', link, 'Opcional: abre a aula com um clique.')
     ], botoes);
@@ -411,6 +441,8 @@ var Teoria = (function () {
         lei.total && !a.concluido && lei.lidas ? el('div', { class: 'aula-paginas' }, UI.barra(lei.lidas / lei.total * 100)) : null
       ]),
       el('div', { class: 'aula-acoes' }, [
+        a.tipo === 'pdf' && PdfsDados.temPdf(a.id) ? el('a', { class: 'btn btn-ler', href: '#/leitor/' + a.id, title: 'Ler o PDF no programa' }, [UI.icone('livro'), 'Ler']) : null,
+        a.tipo === 'pdf' && a.arquivo && !PdfsDados.temPdf(a.id) ? el('a', { class: 'btn btn-ler fora', href: '#/leitor/' + a.id, title: 'O PDF foi enviado em outro aparelho: envie o arquivo aqui' }, [UI.icone('livro'), 'Enviar PDF']) : null,
         window.Sessao ? UI.botao('Lançar estudo', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'teoria', aulaIds: [a.id] }); }, 'btn-lancar', 'play') : null,
         UI.botaoEngrenagem(function () { editarAula(b, a); }, 'Editar aula')
       ])

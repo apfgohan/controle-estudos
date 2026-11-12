@@ -414,6 +414,7 @@ var Dados = (function () {
   }
 
   function excluirDisciplina(id) {
+    apagarArquivosDasAulas(db.blocos.filter(function (b) { return b.disciplinaId === id; }));
     var blocoIds = db.blocos.filter(function (b) { return b.disciplinaId === id; }).map(function (b) { return b.id; });
     var pastaIds = db.pastas.filter(function (p) { return p.disciplinaId === id; }).map(function (p) { return p.id; });
     remover('topicos', function (t) { return blocoIds.indexOf(t.blocoId) >= 0; });
@@ -469,7 +470,14 @@ var Dados = (function () {
     salvar();
   }
 
+  // PDFs e grifos das aulas ficam fora destes dados (PdfsDados): apaga junto com a aula.
+  function apagarArquivosDasAulas(blocos) {
+    if (!window.PdfsDados) return;
+    blocos.forEach(function (b) { (b.materiais || []).forEach(function (a) { PdfsDados.apagarAula(a.id).catch(function (e) { console.error(e); }); }); });
+  }
+
   function excluirBloco(id) {
+    apagarArquivosDasAulas(db.blocos.filter(function (b) { return b.id === id; }));
     var ids = topicosDe(id).map(function (t) { return t.id; });
     remover('topicos', function (t) { return t.blocoId === id; });
     db.sessoes.forEach(function (s) {
@@ -1620,6 +1628,7 @@ var Dados = (function () {
     if (h && h.concluida && (b.materiais || []).every(function (x) { return x.concluido; })) { a.concluido = true; a.dataConclusao = h.data || UI.hoje(); a.herdado = true; }
     b.materiais.push(a);
     salvar();
+    return a;
   }
   function atualizarMaterial(blocoId, id, campos) {
     var b = bloco(blocoId), m = b && buscar(b.materiais || [], id); if (!m) return;
@@ -1628,7 +1637,15 @@ var Dados = (function () {
   }
   function excluirMaterial(blocoId, id) {
     var b = bloco(blocoId); if (!b) return;
+    if (window.PdfsDados) PdfsDados.apagarAula(id).catch(function (e) { console.error(e); });
     b.materiais = (b.materiais || []).filter(function (m) { return m.id !== id; });
+    salvar();
+  }
+  // Ficha do PDF enviado (o arquivo fica em PdfsDados, só no aparelho): { nome, tamanho, paginas } ou null.
+  function definirArquivoAula(id, ficha) {
+    var x = aula(id); if (!x) return;
+    if (ficha) x.aula.arquivo = { nome: ficha.nome || 'aula.pdf', tamanho: Number(ficha.tamanho) || 0, paginas: Number(ficha.paginas) || 0 };
+    else delete x.aula.arquivo;
     salvar();
   }
   function cursosUsados() {
@@ -1751,7 +1768,7 @@ var Dados = (function () {
     aulasDe: aulasDe, aula: aula, aulasHistoricas: aulasHistoricas, definirAulaConcluida: definirAulaConcluida, ultimoEstudoAula: ultimoEstudoAula, nomeAula: nomeAula,
     paginasPorMeta: paginasPorMeta, definirPaginasPorMeta: definirPaginasPorMeta, totalPaginas: totalPaginas, paginasLidas: paginasLidas,
     leituraAula: leituraAula, metasDaTeoria: metasDaTeoria, concluirLidas: concluirLidas,
-    topicosParaAulas: topicosParaAulas, converterTopicosEmAulas: converterTopicosEmAulas,
+    topicosParaAulas: topicosParaAulas, definirArquivoAula: definirArquivoAula, converterTopicosEmAulas: converterTopicosEmAulas,
     TIPOS_MATERIAL: TIPOS_MATERIAL, criarMaterial: criarMaterial, atualizarMaterial: atualizarMaterial, excluirMaterial: excluirMaterial, cursosUsados: cursosUsados,
     atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,
     ESFERAS: ESFERAS, BANCAS_EDITAL: BANCAS_EDITAL, concurso: concurso, concursos: concursos, faseAtual: faseAtual, infoFase: infoFase,

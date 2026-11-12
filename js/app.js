@@ -9,7 +9,8 @@ var App = (function () {
     historico: Historico.render,
     resumos: Resumos.render,
     backup: Backup.render,
-    configuracoes: Configuracoes.render
+    configuracoes: Configuracoes.render,
+    leitor: Leitor.render
   };
   var ROTA_INICIAL = 'metas';
 

@@ -106,6 +106,7 @@ var Nuvem = (function () {
       estado = online ? 'sincronizado' : 'offline';
       notificar();
       if (window.ResumosDados) ResumosDados.enviarPendentes();
+      if (window.PdfsDados) PdfsDados.enviarPendentes();
       return embutirFotoPerfil().then(function () { if (pendente) return gravarAgora(); });
     }).then(function () {
       ref.child('atualizadoEm').on('value', function (snap) {
@@ -163,6 +164,10 @@ var Nuvem = (function () {
   function salvarResumo(id, rec) { return ref.child('resumos/' + id).set(rec); }
   function buscarResumo(id) { return ref.child('resumos/' + id).once('value').then(function (s) { return s.val(); }); }
   function apagarResumo(id) { return ref.child('resumos/' + id).remove(); }
+  // Grifos e anotações dos PDFs, um registro por aula.
+  function salvarGrifos(id, rec) { return ref.child('grifos/' + id).set(rec); }
+  function buscarGrifos(id) { return ref.child('grifos/' + id).once('value').then(function (s) { return s.val(); }); }
+  function apagarGrifos(id) { return ref.child('grifos/' + id).remove(); }
 
   window.addEventListener('beforeunload', function (e) {
     if (pendente && ref) { gravarAgora(); e.preventDefault(); e.returnValue = ''; }
@@ -254,6 +259,7 @@ var Nuvem = (function () {
     iniciar: iniciar, agendar: agendar, gravarAgora: gravarAgora, entrar: entrar, sair: sair, aoMudar: aoMudar,
     regrasSugeridas: regrasSugeridas, VERSAO_SDK: VERSAO_SDK, pelaWeb: pelaWeb,
     podeGravar: podeGravar, salvarResumo: salvarResumo, buscarResumo: buscarResumo, apagarResumo: apagarResumo,
+    salvarGrifos: salvarGrifos, buscarGrifos: buscarGrifos, apagarGrifos: apagarGrifos,
     ativa: function () { return ativa; },
     info: function () {
       return { ativa: ativa, estado: estado, email: usuario ? usuario.email : null, uid: usuario ? usuario.uid : null,

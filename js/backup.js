@@ -4,9 +4,10 @@ var Backup = (function () {
 
   // O arquivo leva também os resumos (guardados à parte), no campo "resumos".
   function exportar() {
-    ResumosDados.exportarTodos().then(function (resumos) {
+    Promise.all([ResumosDados.exportarTodos(), window.PdfsDados ? PdfsDados.exportarGrifos() : Promise.resolve([])]).then(function (r) {
       var dados = JSON.parse(Dados.exportar());
-      dados.resumos = resumos;
+      dados.resumos = r[0];
+      dados.grifos = r[1]; // grifos e anotações dos PDFs (os PDFs não vão no arquivo)
       baixar(JSON.stringify(dados, null, 2));
     });
   }
@@ -27,10 +28,11 @@ var Backup = (function () {
         try {
           var dados = JSON.parse(leitor.result);
           var resumos = dados && Array.isArray(dados.resumos) ? dados.resumos : null;
-          if (dados) delete dados.resumos; // os resumos não entram nos dados principais
+          var grifos = dados && Array.isArray(dados.grifos) ? dados.grifos : null;
+          if (dados) { delete dados.resumos; delete dados.grifos; } // resumos e grifos não entram nos dados principais
           Dados.importar(JSON.stringify(dados));
           // Backup antigo, sem o campo "resumos", mantém os resumos atuais.
-          (resumos ? ResumosDados.importarTodos(resumos) : Promise.resolve()).then(function () {
+          Promise.all([resumos ? ResumosDados.importarTodos(resumos) : Promise.resolve(), grifos && window.PdfsDados ? PdfsDados.importarGrifos(grifos) : Promise.resolve()]).then(function () {
             UI.aviso(resumos ? 'Backup importado, com ' + resumos.length + (resumos.length === 1 ? ' resumo' : ' resumos') : 'Backup importado');
             App.atualizar();
           }).catch(function (e) { alert('Os dados foram importados, mas os resumos não: ' + e.message); });
@@ -58,7 +60,7 @@ var Backup = (function () {
     raiz.appendChild(el('section', { class: 'painel grade-backup' }, [
       el('div', { class: 'opcao-backup' }, [
         el('h2', { class: 'secao-titulo', text: 'Exportar' }),
-        el('p', { text: 'Baixa um arquivo .json com tudo: ' + db.disciplinas.length + ' disciplinas, ' + db.topicos.filter(function (t) { return !t.arquivado; }).length + ' tópicos, ' + db.sessoes.length + ' sessões' + (Dados.idsDasFases().length > 1 ? ' na fase atual (' + Dados.faseAtual().nome + '), mais as outras ' + (Dados.idsDasFases().length - 1) + ' fases' : '') + '.' }),
+        el('p', { text: 'Baixa um arquivo .json com tudo: ' + db.disciplinas.length + ' disciplinas, ' + db.topicos.filter(function (t) { return !t.arquivado; }).length + ' tópicos, ' + db.sessoes.length + ' sessões' + (Dados.idsDasFases().length > 1 ? ' na fase atual (' + Dados.faseAtual().nome + '), mais as outras ' + (Dados.idsDasFases().length - 1) + ' fases' : '') + '. Leva os resumos e os grifos dos PDFs, mas não os arquivos PDF (guarde-os à parte).' }),
         UI.botao('Exportar backup', exportar, 'btn-primario')
       ]),
       el('div', { class: 'opcao-backup' }, [
