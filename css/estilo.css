@@ -321,8 +321,9 @@ h1, h2, p { margin: 0; }
 .cron-disc { font-size: 13px; font-weight: 600; color: var(--texto-2); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cron-btn { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--borda); background: var(--superficie); font-size: 13px; font-weight: 700; cursor: pointer; }
 .cron-btn:hover { background: var(--superficie-2); }
-.cron-btn.principal { background: var(--azul); border-color: var(--azul); color: #fff; }
-.cron-btn.principal:hover { background: var(--azul-forte); }
+/* Não usar a classe 'principal' aqui: ela é a área principal da página (empurra o botão para a direita). */
+.cron-btn.cron-finalizar { background: var(--azul); border-color: var(--azul); color: #fff; }
+.cron-btn.cron-finalizar:hover { background: var(--azul-forte); }
 .cron-btn.descartar { color: var(--texto-3); }
 
 /* ---------- Formulário "Lançar estudo" ---------- */

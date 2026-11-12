@@ -56,7 +56,7 @@ var Sessao = (function () {
       el('span', { class: 'cron-tempo', id: 'cron-tempo', text: UI.fmtDuracao(segundosCron()) }),
       d || anki ? el('span', { class: 'cron-disc', text: anki ? 'Anki' : d.nome }) : null,
       cron.inicio ? botaoMini('Pausar', pausarCron) : botaoMini('Retomar', retomarCron),
-      botaoMini('Finalizar', finalizarCron, 'principal', 'Finalizar e lançar o estudo'),
+      botaoMini('Finalizar', finalizarCron, 'cron-finalizar', 'Finalizar e lançar o estudo'),
       botaoMini('✕', descartarCron, 'descartar', 'Descartar cronômetro')
     ]));
   }
