@@ -1514,6 +1514,7 @@ var Dashboard = (function () {
   // Rosca de horas por matéria (ou teoria x questões, quando uma matéria está filtrada).
   function rosca(fatias, centro, sub) {
     var total = fatias.reduce(function (s, f) { return s + f.valor; }, 0), R = 60, C = 2 * Math.PI * R, ini = 0;
+    var maior = fatias.reduce(function (m, f) { return Math.max(m, f.valor); }, 0) || 1;
     var svg = '<svg viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="60" fill="none" stroke="var(--superficie-3)" stroke-width="22"/>';
     fatias.forEach(function (f) {
       if (!f.valor) return;
@@ -1526,7 +1527,9 @@ var Dashboard = (function () {
       el('div', { class: 'rosca-grafico' }, [el('div', { html: svg }), el('div', { class: 'rosca-centro' }, [el('strong', { text: centro }), el('span', { text: sub })])]),
       el('ul', { class: 'rosca-legenda' }, fatias.filter(function (f) { return f.valor; }).sort(function (a, b) { return b.valor - a.valor; }).map(function (f) {
         return el('li', null, [el('span', { class: 'bolinha', style: { background: f.cor } }), el('span', { class: 'rosca-nome', text: f.nome }),
-          el('strong', { text: fmtHoras(f.valor) }), el('span', { class: 'data-fraca', text: Math.round(f.valor / total * 100) + '%' })]);
+          el('strong', { text: fmtHoras(f.valor) }), el('span', { class: 'data-fraca', text: Math.round(f.valor / total * 100) + '%' }),
+          // Barrinha proporcional à maior matéria: só aparece no celular.
+          el('span', { class: 'rosca-barra' }, el('span', { style: { width: (f.valor / maior * 100).toFixed(1) + '%', background: f.cor } }))]);
       }))
     ]);
   }
@@ -1541,8 +1544,10 @@ var Dashboard = (function () {
       fatias.push({ nome: 'Anki', cor: '#45cdbd', valor: resumoPeriodo(iv.de, iv.ate).anki }); // sem matéria: fatia própria, para o total bater com as horas
     }
     var total = fatias.reduce(function (s, f) { return s + f.valor; }, 0);
-    return cartaoGrafico(disc ? 'Teoria x questões' : 'Horas por matéria', 'No período escolhido',
+    var cartao = cartaoGrafico(disc ? 'Teoria x questões' : 'Horas por matéria', 'No período escolhido',
       total ? rosca(fatias, fmtHoras(total), 'no período') : el('div', { class: 'grafico-vazio', text: 'Sem estudos neste período.' }));
+    cartao.classList.add('cartao-horas');
+    return cartao;
   }
 
   // Progresso no edital: assuntos de teoria concluídos e baterias de questões concluídas, por matéria.

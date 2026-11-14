@@ -1696,3 +1696,15 @@ a.rec-caderno:hover { text-decoration: underline; }
   .leitor-area { padding: 10px 8px 30px; }
   .leitor-busca { width: 120px; }
 }
+/* ---------- Horas por matéria no celular: título e rosca centralizados, barrinha por matéria ---------- */
+.rosca-barra { display: none; }
+@media (max-width: 700px) {
+  .cartao-horas .grafico-topo { justify-content: center; text-align: center; }
+  .cartao-horas .grafico-topo .data-fraca { display: none; }
+  .cartao-horas .rosca { flex-direction: column; align-items: stretch; gap: 18px; }
+  .cartao-horas .rosca-grafico { margin: 0 auto; }
+  .cartao-horas .rosca-legenda { min-width: 0; gap: 4px; }
+  .cartao-horas .rosca-legenda li { grid-template-columns: 14px minmax(0, 1fr) auto 36px; row-gap: 4px; }
+  .cartao-horas .rosca-barra { display: block; grid-column: 2 / -1; height: 5px; border-radius: 999px; background: var(--superficie-3); overflow: hidden; margin-bottom: 4px; }
+  .cartao-horas .rosca-barra > span { display: block; height: 100%; border-radius: 999px; }
+}
