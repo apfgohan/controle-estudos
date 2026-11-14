@@ -397,6 +397,8 @@ var Dados = (function () {
     if (campos.peso != null) d.peso = Number(campos.peso) || 0;
     // modo: 'revisao' = entrar no Modo Revisão antes de terminar o Modo Leitura; 'auto' = seguir até o fim.
     if (campos.modo != null) { if (campos.modo === 'revisao') d.modo = 'revisao'; else delete d.modo; }
+    // questoes: 'pdf' = no Modo Leitura, as questões são as do próprio PDF (sem cadernos de teoria); 'tec' = cadernos do TEC.
+    if (campos.questoes != null) { if (campos.questoes === 'pdf') d.questoes = 'pdf'; else delete d.questoes; }
     salvar();
   }
 
@@ -795,7 +797,89 @@ var Dados = (function () {
   // seguida da bateria final de erros.
   var ATRASO_BATERIA = [0, 1, 3];
 
+  // ---------- Modo Leitura com as questões do próprio PDF ----------
+  // No passo n: teoria do bloco n, questões ímpares do bloco n e pares do bloco n-1. Logo depois das pares do 4º bloco
+  // de cada grupo (1–4, 5–8…), as questões erradas desse grupo. Depois da última teoria: pares do último bloco e as
+  // erradas do grupo que sobrou. O TEC só entra no Modo Revisão.
+  var GRUPO_ERRADAS_PDF = 4;
+  function questoesPdf(disciplinaId) { var d = disciplina(disciplinaId); return !!(d && d.questoes === 'pdf'); }
+  // Linhas de sessão com questões do PDF, por etapa: { chave: { feitas, acertos, erros, ultimo } }.
+  function lancamentosPdf() {
+    var c = cache();
+    if (c.pdf) return c.pdf;
+    var m = {};
+    db.sessoes.forEach(function (s) {
+      (s.cadernos || []).forEach(function (l) {
+        if (!l.pdf || !l.pdf.chave) return;
+        var x = m[l.pdf.chave] || (m[l.pdf.chave] = { feitas: 0, acertos: 0, erros: 0, ultimo: null, vezes: 0 });
+        var a = Number(l.acertos) || 0, e = Number(l.erros) || 0;
+        x.acertos += a; x.erros += e; x.feitas += a + e; x.vezes++;
+        if (!x.ultimo || s.data > x.ultimo) x.ultimo = s.data;
+      });
+    });
+    return (c.pdf = m);
+  }
+  function nomeParte(parte) { return parte === 'impares' ? 'ímpares' : parte === 'pares' ? 'pares' : 'erradas'; }
+  // Nome da etapa pela chave: "Questões ímpares do Bloco 02", "Questões erradas dos Blocos 01 a 04".
+  function tituloPdf(chave) {
+    var p = String(chave || '').split('|'), bs = (p[1] || '').split(',').map(bloco).filter(Boolean);
+    if (!bs.length) return 'Questões do PDF';
+    var nome = bs.length === 1 ? 'do ' + bs[0].nome : 'dos ' + nomePar({ blocos: bs });
+    return 'Questões ' + nomeParte(p[0]) + ' ' + nome;
+  }
+  function planoPdf(disciplinaId) {
+    var blocos = blocosDe(disciplinaId), N = blocos.length, lanc = lancamentosPdf(), itens = [];
+    var progresso = blocos.map(function (b) {
+      var aulas = aulasDe(b.id);
+      return { bloco: b, topicos: topicosDe(b.id), aulas: aulas, caderno: null, baterias: null,
+        teoriaConcluida: aulas.length ? aulas.every(function (a) { return a.concluido; }) : !!(b.herancaTeoria && b.herancaTeoria.concluida) };
+    });
+    function etapa(parte, passo, i) {
+      var b = blocos[i - 1], chave = parte + '|' + b.id, l = lanc[chave];
+      return { tipo: 'pdf', parte: parte, passo: passo, indice: i, bloco: b, blocos: [b], chave: chave,
+        feitas: l ? l.feitas : 0, acertos: l ? l.acertos : 0, erros: l ? l.erros : 0, ultimo: l ? l.ultimo : null, concluido: !!l };
+    }
+    function erradas(passo, ate) {
+      var de = Math.floor((ate - 1) / GRUPO_ERRADAS_PDF) * GRUPO_ERRADAS_PDF + 1, bs = blocos.slice(de - 1, ate);
+      var chave = 'erradas|' + bs.map(function (b) { return b.id; }).join(','), l = lanc[chave];
+      var origem = [], qtd = 0;
+      bs.forEach(function (b) { ['impares', 'pares'].forEach(function (p) { var x = lanc[p + '|' + b.id]; origem.push(!!x); if (x) qtd += x.erros; }); });
+      // Sem nenhum erro nas ímpares e pares do grupo, não há o que refazer: a etapa fica concluída sozinha.
+      var semErros = origem.every(Boolean) && qtd === 0;
+      return { tipo: 'pdf', parte: 'erradas', passo: passo, indice: ate, bloco: bs[bs.length - 1], blocos: bs, chave: chave, qtd: qtd,
+        feitas: l ? l.feitas : 0, acertos: l ? l.acertos : 0, erros: l ? l.erros : 0, ultimo: l ? l.ultimo : null, concluido: !!l || semErros, semErros: semErros };
+    }
+    for (var n = 1; n <= N; n++) {
+      itens.push({ tipo: 'teoria', passo: n, indice: n, bloco: blocos[n - 1], topicos: progresso[n - 1].topicos, aulas: progresso[n - 1].aulas, concluido: progresso[n - 1].teoriaConcluida });
+      itens.push(etapa('impares', n, n));
+      if (n > 1) {
+        itens.push(etapa('pares', n, n - 1));
+        if ((n - 1) % GRUPO_ERRADAS_PDF === 0) itens.push(erradas(n, n - 1));
+      }
+    }
+    if (N) {
+      itens.push(etapa('pares', N + 1, N));
+      itens.push(erradas(N + 1, N));
+    }
+    var pendentes = itens.filter(function (it) { return !it.concluido; });
+    return {
+      blocos: N, numBaterias: 0, questoesPdf: true, totalPassos: N ? N + 1 : 0, gruposErros: { normais: [], final: null },
+      itens: itens, pendentes: pendentes, progresso: progresso, concluido: N > 0 && !pendentes.length
+    };
+  }
+  // Acerto nas questões do PDF de um conjunto de blocos (todas as partes).
+  function acertoPdf(blocoIds) {
+    var lanc = lancamentosPdf(), n = 0, a = 0;
+    Object.keys(lanc).forEach(function (k) {
+      var ids = k.split('|')[1].split(',');
+      if (!ids.some(function (id) { return blocoIds.indexOf(id) >= 0; })) return;
+      n += lanc[k].feitas; a += lanc[k].acertos;
+    });
+    return { n: n, pct: n ? a / n * 100 : null };
+  }
+
   function planoTeoria(disciplinaId) {
+    if (questoesPdf(disciplinaId)) return planoPdf(disciplinaId);
     var blocos = blocosDe(disciplinaId);
     var nb = numBaterias(disciplinaId);
     var atrasos = ATRASO_BATERIA.slice(0, nb);
@@ -1093,6 +1177,8 @@ var Dados = (function () {
         if (c.finalizado && c.cadernoId) l.finalizado = true;
         if (c.rodada && c.cadernoId) { l.rodada = c.rodada; l.totalRodada = Number(c.totalRodada) || 0; }
         if (c.assunto && !c.cadernoId) l.assunto = { chave: c.assunto.chave, nome: c.assunto.nome };
+        // Questões do próprio PDF (Modo Leitura sem TEC): a etapa que a linha conclui.
+        if (c.pdf && c.pdf.chave && !c.cadernoId) l.pdf = { chave: c.pdf.chave, parte: c.pdf.parte || '' };
         return l;
       }),
       revisados: tipo === 'revisao' ? (campos.revisados || []).slice() : [], // [{ chave, nome }] dos assuntos marcados como revistos
@@ -1768,6 +1854,7 @@ var Dados = (function () {
     aulasDe: aulasDe, aula: aula, aulasHistoricas: aulasHistoricas, definirAulaConcluida: definirAulaConcluida, ultimoEstudoAula: ultimoEstudoAula, nomeAula: nomeAula,
     paginasPorMeta: paginasPorMeta, definirPaginasPorMeta: definirPaginasPorMeta, totalPaginas: totalPaginas, paginasLidas: paginasLidas,
     leituraAula: leituraAula, metasDaTeoria: metasDaTeoria, concluirLidas: concluirLidas,
+    questoesPdf: questoesPdf, acertoPdf: acertoPdf, tituloPdf: tituloPdf, nomeParte: nomeParte, GRUPO_ERRADAS_PDF: GRUPO_ERRADAS_PDF,
     topicosParaAulas: topicosParaAulas, definirArquivoAula: definirArquivoAula, converterTopicosEmAulas: converterTopicosEmAulas,
     TIPOS_MATERIAL: TIPOS_MATERIAL, criarMaterial: criarMaterial, atualizarMaterial: atualizarMaterial, excluirMaterial: excluirMaterial, cursosUsados: cursosUsados,
     atualizarPerfil: atualizarPerfil, criarPausa: criarPausa, encerrarPausa: encerrarPausa,

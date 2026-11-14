@@ -9,7 +9,9 @@ var Metas = (function () {
     teoria: ['teoria', 'Teoria', 'lista'],
     bateria: ['questoes', 'Questões', 'caderno2'],
     favoritas: ['favoritas', 'Favoritadas', 'caderno2'],
-    erros: ['erros', 'Bateria de erros', 'alerta']
+    erros: ['erros', 'Bateria de erros', 'alerta'],
+    pdf: ['questoes', 'Questões do PDF', 'caderno2'],
+    pdfErradas: ['erros', 'Erradas do PDF', 'alerta']
   };
   var TIPOS_REVISAO = {
     simulado: ['simulado', 'Simulado', 'caderno2'],
@@ -56,7 +58,7 @@ var Metas = (function () {
       }
       return { tipo: tr, titulo: titulo, detalhe: detalhe, estrelas: 0 };
     }
-    var it = x.it, tl = TIPOS_LEITURA[it.tipo] || TIPOS_LEITURA.teoria, det = '', estrelas = 0;
+    var it = x.it, tl = TIPOS_LEITURA[it.tipo === 'pdf' && it.parte === 'erradas' ? 'pdfErradas' : it.tipo] || TIPOS_LEITURA.teoria, det = '', estrelas = 0;
     if (it.tipo === 'teoria') {
       var faltam = it.aulas.filter(function (a) { return !a.concluido; });
       det = x.meta ? x.meta.aulas.map(function (u) { return Dados.nomeAula(u.aula) + (u.de ? ' · págs. ' + u.de + ' a ' + u.ate : ''); }).join(' · ') + (x.de > 1 ? ' · tarefa ' + (x.k + 1) + ' de ' + x.de : '')
@@ -67,10 +69,13 @@ var Metas = (function () {
       det = !it.caderno ? 'Cadastre o caderno deste bloco' : b && b.qtd ? it.caderno.nome + ' · ' + plural(b.qtd - b.feitas, 'questão', 'questões') : it.caderno.nome + ' · informe o total de questões';
     } else if (it.tipo === 'favoritas') {
       det = it.caderno ? it.caderno.nome + (it.qtd ? ' · ' + plural(it.qtd - it.feitas, 'questão', 'questões') : '') : 'Cadastre o caderno de favoritadas';
+    } else if (it.tipo === 'pdf') {
+      det = it.parte === 'erradas' ? (it.qtd ? plural(it.qtd, 'questão errada', 'questões erradas') : 'Questões que você errar nas ímpares e pares') : 'Questões do próprio PDF da aula';
     } else if (it.tipo === 'erros') {
       det = (it.caderno ? it.caderno.nome : 'Cadastre o caderno de erros') + (it.qtd ? ' · ' + plural(it.qtd - it.feitas, 'questão', 'questões') : '');
     }
-    if (it.tipo === 'erros' && it.par) estrelas = Math.max.apply(null, it.par.blocos.map(function (bl) { return Dados.relevancia(bl); }));
+    if (it.tipo === 'pdf' && it.blocos.length > 1) estrelas = Math.max.apply(null, it.blocos.map(function (bl) { return Dados.relevancia(bl); }));
+    else if (it.tipo === 'erros' && it.par) estrelas = Math.max.apply(null, it.par.blocos.map(function (bl) { return Dados.relevancia(bl); }));
     else if (it.bloco) estrelas = Dados.relevancia(it.bloco);
     return { tipo: tl, titulo: Dashboard.textoEtapa(it), detalhe: det, estrelas: estrelas };
   }
@@ -93,6 +98,10 @@ var Metas = (function () {
   function acertoDaEtapa(d, x, ac) {
     if (!x) return { pct: null, texto: '' };
     var cadernos = [], nome = '';
+    if (x.modo === 'leitura' && x.it.tipo === 'pdf') {
+      var ap = Dados.acertoPdf(x.it.blocos.map(function (b) { return b.id; }));
+      return { pct: ap.pct, n: ap.n, texto: 'Acerto nas questões do PDF ' + (x.it.blocos.length === 1 ? 'do ' + x.it.blocos[0].nome : 'dos ' + Dados.nomePar({ blocos: x.it.blocos })) };
+    }
     if (x.modo === 'leitura') {
       var blocos = x.it.tipo === 'erros' && x.it.par ? x.it.par.blocos : x.it.bloco ? [x.it.bloco] : [];
       blocos.forEach(function (b) { var c = Dados.cadernoDoBloco(b.id); if (c) cadernos.push(c.id); });

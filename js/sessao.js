@@ -92,7 +92,8 @@ var Sessao = (function () {
       sessaoId: existente ? existente.id : null,
       topicoIds: existente ? existente.topicoIds.slice() : (op.topicoIds || []).slice(),
       linhas: existente
-        ? existente.cadernos.filter(function (c) { return !c.assunto; }).map(function (c) { return { cadernoId: c.cadernoId || '', acertos: c.acertos, erros: c.erros, finalizado: !!c.finalizado, rodada: c.rodada || null, totalRodada: c.totalRodada || '', legado: !c.rodada }; })
+        ? existente.cadernos.filter(function (c) { return !c.assunto; }).map(function (c) { return { cadernoId: c.cadernoId || '', acertos: c.acertos, erros: c.erros, finalizado: !!c.finalizado, rodada: c.rodada || null, totalRodada: c.totalRodada || '', legado: !c.rodada, pdf: c.pdf || null }; })
+        : op.pdf ? [{ cadernoId: '', acertos: '', erros: '', pdf: { chave: op.pdf.chave, parte: op.pdf.parte }, pdfTitulo: op.pdf.titulo, pdfQtd: op.pdf.qtd }]
         : (op.cadernoIds || []).map(function (id) { return { cadernoId: id, acertos: '', erros: '' }; }),
       segundos: existente ? existente.segundos : (op.segundos || 0),
       concluir: true,
@@ -169,7 +170,7 @@ var Sessao = (function () {
         campos.topicoIds = est.topicoIds; // sessões antigas guardam os tópicos estudados
       } else {
         // Caderno de favoritadas pode ser finalizado mesmo sem questões (quando ele está vazio).
-        var linhas = est.linhas.filter(function (l) { return (Number(l.acertos) || 0) + (Number(l.erros) || 0) > 0 || (l.finalizado && l.cadernoId); });
+        var linhas = est.linhas.filter(function (l) { return (Number(l.acertos) || 0) + (Number(l.erros) || 0) > 0 || (l.finalizado && l.cadernoId) || l.pdf; });
         var porAssunto = [];
         if (est.tipo === 'revisao') {
           for (var ch in est.assuntos) {
@@ -448,6 +449,18 @@ var Sessao = (function () {
     function ehFavorito(id) { var c = id && Dados.caderno(id); var p = c && Dados.pasta(c.pastaId); return !!(p && p.tipo === 'favoritas'); }
 
     var linhas = est.linhas.map(function (l, i) {
+      // Questões do próprio PDF (Modo Leitura sem TEC): a etapa vem da meta e é concluída ao lançar.
+      if (l.pdf) {
+        var num = function (campo, rotulo) { return el('label', { class: 'campo-num' }, [el('span', { class: 'campo-rotulo', text: rotulo }),
+          el('input', { type: 'number', min: 0, step: 1, value: l[campo], oninput: function (e) { l[campo] = e.target.value; atualizarTotal(); } })]); };
+        return el('div', { class: 'linha-caderno-grupo' }, [
+          el('div', { class: 'linha-caderno' }, [
+            el('div', { class: 'campo' }, [el('span', { class: 'campo-rotulo', text: 'Questões do PDF' }), el('strong', { class: 'linha-pdf-titulo', text: l.pdfTitulo || ('Questões ' + Dados.nomeParte(l.pdf.parte)) })]),
+            num('acertos', 'Acertos'), num('erros', 'Erros')
+          ]),
+          el('span', { class: 'campo-ajuda', text: (l.pdfQtd ? l.pdfQtd + (l.pdfQtd === 1 ? ' questão errada para refazer. ' : ' questões erradas para refazer. ') : '') + 'Ao lançar, esta etapa fica concluída; os erros entram na etapa das erradas.' })
+        ]);
+      }
       var sel = el('select', { onchange: function () {
         var antes = ehFavorito(l.cadernoId);
         l.cadernoId = sel.value;
@@ -538,7 +551,7 @@ var Sessao = (function () {
     }
     var partes = (s.cadernos || []).map(function (c) {
       var cad = Dados.caderno(c.cadernoId);
-      var nome = c.assunto ? c.assunto.nome : cad ? cad.nome : 'Avulsas';
+      var nome = c.assunto ? c.assunto.nome : c.pdf ? Dados.tituloPdf(c.pdf.chave) + ' (PDF)' : cad ? cad.nome : 'Avulsas';
       return nome + ': ' + c.acertos + ' acertos · ' + c.erros + ' erros' + (c.finalizado ? ' (caderno finalizado)' : '') + (c.rodada && c.totalRodada ? ' (caderno com ' + c.totalRodada + ' questões)' : '');
     });
     // Revistos só marcados (sessões antigas, sem questões por assunto).

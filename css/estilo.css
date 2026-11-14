@@ -1708,3 +1708,6 @@ a.rec-caderno:hover { text-decoration: underline; }
   .cartao-horas .rosca-barra { display: block; grid-column: 2 / -1; height: 5px; border-radius: 999px; background: var(--superficie-3); overflow: hidden; margin-bottom: 4px; }
   .cartao-horas .rosca-barra > span { display: block; height: 100%; border-radius: 999px; }
 }
+/* ---------- Questões do PDF no Modo Leitura ---------- */
+.opcoes-questoes { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--borda); display: flex; flex-direction: column; gap: 8px; }
+.linha-pdf-titulo { display: block; padding: 9px 0; font-size: 14px; }

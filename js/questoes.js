@@ -195,6 +195,7 @@ var Questoes = (function () {
     if (semCaderno.length && blocos.length) avisos.push('Blocos sem caderno: ' + semCaderno.map(function (b) { return b.nome; }).join(', ') + '.');
     if (semBloco.length) avisos.push('Cadernos sem bloco de teoria: ' + semBloco.map(function (c) { return c.nome; }).join(', ') + ' (escolha o bloco na engrenagem).');
     if (semTotal.length) avisos.push('Informe o total de questões de: ' + semTotal.map(function (c) { return c.nome; }).join(', ') + ' (sem ele não dá para dividir as baterias).');
+    if (Dados.questoesPdf(d.id)) return el('div', { class: 'pasta-teoria-info' }, [el('p', { class: 'data-fraca', text: 'Esta matéria usa as questões do próprio PDF no Modo Leitura (ímpares, pares e erradas): os cadernos de teoria não entram na sequência. Para voltar aos cadernos do TEC, troque em Teoria › Modo de estudo.' })]);
     return el('div', { class: 'pasta-teoria-info' }, [
       el('p', { class: 'data-fraca', text: 'Um caderno por bloco de teoria (' + cadernos.length + ' de ' + blocos.length + '). ' +
         'Cada caderno tem ' + nb + ' baterias' + (Dados.posEdital(d.id) ? ', cada uma com metade das questões do caderno (Pós-Edital).' : blocos.length >= 10 ? ', cada uma com 1/4 das questões do caderno (matéria com 10 blocos ou mais); o restante fica fora da sequência.' : ' de tamanho igual.') +

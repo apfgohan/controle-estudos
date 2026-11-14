@@ -83,6 +83,13 @@ var Patentes = (function () {
           reg.bonus += extra;
           reg.baterias.push({ n: n, a: a, mult: multiplicador(n, a), xp: xpBat });
         }
+        // Questões do PDF: a primeira vez que a etapa é lançada conta como etapa concluída.
+        if (l.pdf && l.pdf.chave) {
+          var kp = 'pdf|' + l.pdf.chave, nova = !acum[kp];
+          acum[kp] = (acum[kp] || 0) + n;
+          if (nova) { g.etapas++; reg.etapas++; }
+          return;
+        }
         if (!l.cadernoId) return;
         // Cada rodada das favoritadas tem contagem própria.
         var chaveAcum = l.rodada ? l.cadernoId + '|' + l.rodada : l.cadernoId;

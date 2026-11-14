@@ -318,6 +318,7 @@ var Dashboard = (function () {
         ? 'Terminar ' + (resta === 1 ? 'a questão restante' : 'as ' + resta + ' questões restantes') + ' das favoritadas ' + alvo
         : 'Resolver as questões favoritadas ' + alvo;
     }
+    if (it.tipo === 'pdf') return it.parte === 'erradas' ? 'Refazer as ' + Dados.tituloPdf(it.chave).replace(/^Questões /, 'questões ') : 'Resolver as ' + Dados.tituloPdf(it.chave).replace(/^Questões /, 'questões ') + ' (PDF)';
     if (it.tipo === 'erros') return 'Realizar a bateria de erros ' + (it.par.blocos.length === 1 ? 'do ' : 'dos ') + Dados.nomePar(it.par);
     return 'Realizar a ' + it.numero + 'ª bateria de questões do ' + it.bloco.nome;
   }
@@ -339,7 +340,19 @@ var Dashboard = (function () {
     var feitas = plano.itens.length - plano.pendentes.length;
     var detalhe, acao, op = null;
 
-    if (atual.tipo === 'favoritas') {
+    if (atual.tipo === 'pdf') {
+      // Questões do próprio PDF: as aulas do bloco (ou dos blocos, nas erradas) e acertos/erros ao lançar.
+      var aulasPdf = [];
+      atual.blocos.forEach(function (b) { Dados.aulasDe(b.id).forEach(function (a) { if (a.tipo === 'pdf') aulasPdf.push(a); }); });
+      detalhe = el('div', null, [
+        atual.parte === 'erradas' ? el('p', { class: 'rec-nesta-meta' }, [el('strong', { text: atual.qtd + (atual.qtd === 1 ? ' questão errada' : ' questões erradas') }), ' nas ímpares e pares ' + (atual.blocos.length === 1 ? 'deste bloco' : 'destes blocos') + '.']) : null,
+        aulasPdf.length ? el('ul', { class: 'rec-topicos' }, aulasPdf.slice(0, 4).map(function (a) {
+          var ler = PdfsDados.temPdf(a.id) ? el('a', { class: 'btn btn-ler rec-abrir-pdf', href: '#/leitor/' + a.id }, [UI.icone('livro'), 'Abrir PDF']) : null;
+          return el('li', null, [a.link ? el('a', { href: a.link, target: '_blank', rel: 'noopener noreferrer', text: Dados.nomeAula(a) }) : Dados.nomeAula(a), ler]);
+        }).concat(aulasPdf.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (aulasPdf.length - 4) + ' PDFs' })] : [])) : el('p', { class: 'data-fraca', text: 'Questões do próprio material da aula.' })
+      ]);
+      op = { tipo: 'questoes', pdf: { chave: atual.chave, parte: atual.parte, titulo: Dados.tituloPdf(atual.chave), qtd: atual.parte === 'erradas' ? atual.qtd : 0 } };
+    } else if (atual.tipo === 'favoritas') {
       var cf = atual.caderno;
       if (!cf) {
         detalhe = el('p', { class: 'data-fraca' }, ['Ainda não há o caderno de ' + Dados.GRUPOS_FAVORITAS[atual.grupo].toLowerCase() + '. ',
@@ -412,7 +425,7 @@ var Dashboard = (function () {
       op = { tipo: 'questoes', cadernoIds: [c.id] };
     }
 
-    return comMeta(op, d, el('div', { class: 'recomendacao rec-' + TIPO_COR[atual.tipo] }, [
+    return comMeta(op, d, el('div', { class: 'recomendacao rec-' + corEtapa(atual) }, [
       el('div', { class: 'rec-topo' }, [
         UI.icone(atual.tipo === 'teoria' ? 'lista' : 'caderno2'),
         el('span', { class: 'rec-rotulo', text: 'Recomendação' })
@@ -426,7 +439,7 @@ var Dashboard = (function () {
         el('span', { class: 'rec-depois-rotulo', text: 'Em seguida' }),
         el('span', { text: depois ? textoEtapa(depois) : 'Fim do Modo Leitura: a matéria passa para o Modo Revisão.' })
       ]),
-      el('div', { class: 'rec-progresso data-fraca', text: feitas + ' de ' + plano.itens.length + ' etapas concluídas · ' + plano.numBaterias + ' baterias por bloco' })
+      el('div', { class: 'rec-progresso data-fraca', text: feitas + ' de ' + plano.itens.length + ' etapas concluídas · ' + (plano.questoesPdf ? 'questões do PDF (o TEC entra no Modo Revisão)' : plano.numBaterias + ' baterias por bloco') })
     ]));
   }
 
@@ -527,6 +540,8 @@ var Dashboard = (function () {
 
   // ---------- Processo até o fim da teoria (bloquinhos) ----------
   var TIPO_COR = { teoria: 'teoria', bateria: 'questoes', favoritas: 'favoritas', erros: 'erros' };
+  // Questões do PDF: ímpares e pares na cor das questões; as erradas na cor dos erros.
+  function corEtapa(it) { return it.tipo === 'pdf' ? (it.parte === 'erradas' ? 'erros' : 'questoes') : TIPO_COR[it.tipo]; }
 
   function bloquinhoEtapa(it, atual) {
     var nome, sub;
@@ -537,6 +552,9 @@ var Dashboard = (function () {
     } else if (it.tipo === 'favoritas') {
       nome = it.grupo === 'duvidas' ? 'Dúvidas' : 'Errei 2x+';
       sub = it.rodada && it.rodada.vazia ? 'Sem questões' : it.feitas && it.qtd ? it.feitas + '/' + it.qtd : 'Favoritadas';
+    } else if (it.tipo === 'pdf') {
+      nome = it.parte === 'impares' ? 'Ímpares' : it.parte === 'pares' ? 'Pares' : 'Erradas';
+      sub = it.parte === 'erradas' ? (it.semErros ? 'Sem erros · ' : '') + (it.blocos.length === 1 ? it.blocos[0].nome : Dados.nomePar({ blocos: it.blocos })) : it.bloco.nome;
     } else if (it.tipo === 'erros') {
       nome = 'Erros';
       sub = (it.feitas && !it.concluido ? it.feitas + '/' + it.qtd + ' · ' : '') + Dados.nomePar(it.par);
@@ -545,7 +563,7 @@ var Dashboard = (function () {
       nome = it.numero + 'ª bateria';
       sub = (b && b.feitas && !it.concluido ? b.feitas + '/' + b.qtd + ' · ' : '') + it.bloco.nome;
     }
-    return el('div', { class: 'etapa etapa-' + TIPO_COR[it.tipo] + (it.concluido ? ' feita' : '') + (it === atual ? ' atual' : ''), title: textoEtapa(it) }, [
+    return el('div', { class: 'etapa etapa-' + corEtapa(it) + (it.concluido ? ' feita' : '') + (it === atual ? ' atual' : ''), title: textoEtapa(it) }, [
       el('div', { class: 'etapa-nome' }, [it.concluido ? UI.icone('check') : null, el('span', { text: nome })]),
       el('div', { class: 'etapa-sub', text: sub }),
       it === atual ? el('div', { class: 'etapa-agora', text: 'Agora' }) : null
@@ -969,7 +987,7 @@ var Dashboard = (function () {
       ]);
     });
     var m = r.medias;
-    var tipos = [['teoria', 'teoria', 'Assuntos de teoria'], ['bateria', 'questoes', 'Baterias de questões'], ['favoritas', 'favoritas', 'Favoritadas'], ['erros', 'erros', 'Baterias de erros']];
+    var tipos = [['teoria', 'teoria', 'Assuntos de teoria'], ['bateria', 'questoes', 'Baterias de questões'], ['favoritas', 'favoritas', 'Favoritadas'], ['erros', 'erros', 'Baterias de erros'], ['pdf', 'questoes', 'Questões do PDF']];
     UI.modal('Conclusão do edital', [
       !r.concluido && r.data ? el('p', { class: 'modal-desc', text: 'Mantendo o ritmo das últimas 4 semanas (' + UI.fmtNum(Math.round(r.horasSemana)) + ' h/semana), a previsão é ' + Previsao.fmtMes(r.data) + '. A data muda conforme o seu ritmo real.' }) : null,
       el('div', { class: 'processo-resumo' }, [
@@ -1553,7 +1571,7 @@ var Dashboard = (function () {
   // Progresso no edital: assuntos de teoria concluídos e baterias de questões concluídas, por matéria.
   function progressoEdital(disc) {
     var linhas = Dados.disciplinas().filter(function (d) { return !disc || d.id === disc; }).map(function (d) {
-      var t = Dados.progressoTeoria(d.id), itens = Dados.planoTeoria(d.id).itens.filter(function (it) { return it.tipo === 'bateria'; });
+      var t = Dados.progressoTeoria(d.id), itens = Dados.planoTeoria(d.id).itens.filter(function (it) { return it.tipo === 'bateria' || (it.tipo === 'pdf' && it.parte !== 'erradas'); });
       var bat = itens.length ? itens.filter(function (it) { return it.concluido; }).length / itens.length * 100 : 0;
       return { d: d, teoria: t.total ? t.pct : 0, bat: bat, temTeoria: !!t.total, temBat: !!itens.length };
     }).filter(function (x) { return x.temTeoria || x.temBat; });

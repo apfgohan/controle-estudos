@@ -85,6 +85,31 @@ var Teoria = (function () {
   // ---------- Tela da disciplina ----------
   // Escolha do modo de estudo: seguir o Modo Leitura até o fim (passa sozinho para o Modo Revisão)
   // ou entrar logo no Modo Revisão. Com o Modo Leitura concluído, a matéria já está em Revisão.
+  // De onde vêm as questões no Modo Leitura: cadernos do TEC (baterias) ou o próprio PDF (ímpares, pares e erradas).
+  function opcaoQuestoes(d) {
+    var pdf = Dados.questoesPdf(d.id);
+    function op(valor, titulo, sub) {
+      var ativo = (valor === 'pdf') === pdf;
+      return el('button', { type: 'button', class: 'opcao-modo' + (ativo ? ' ativo' : ''), 'aria-pressed': String(ativo), onclick: function () {
+        if (ativo) return;
+        UI.confirmar(valor === 'pdf'
+          ? 'Usar as questões do PDF em ' + d.nome + '? O Modo Leitura passa a ser: teoria, ímpares do bloco, pares do bloco anterior e, a cada 4 blocos, as erradas. Os cadernos de teoria do TEC deixam de entrar na sequência (o que já foi feito neles continua no histórico).'
+          : 'Voltar a usar os cadernos do TEC em ' + d.nome + '? O Modo Leitura volta às baterias dos cadernos de teoria. As questões do PDF já lançadas continuam no histórico.', function () {
+          Dados.atualizarDisciplina(d.id, { questoes: valor });
+          App.atualizar();
+          UI.aviso(valor === 'pdf' ? d.nome + ': questões do PDF no Modo Leitura' : d.nome + ': cadernos do TEC no Modo Leitura');
+        }, 'Trocar');
+      } }, [el('strong', { text: titulo }), el('span', { text: sub })]);
+    }
+    return el('div', { class: 'opcoes-questoes' }, [
+      el('span', { class: 'rotulo-pequeno', text: 'Questões do Modo Leitura' }),
+      el('div', { class: 'opcoes-modo' }, [
+        op('tec', 'Questões do TEC', 'Cadernos de teoria por bloco, em 3 baterias'),
+        op('pdf', 'Questões do PDF', 'Ímpares, pares e erradas do próprio material; o TEC entra só no Modo Revisão')
+      ])
+    ]);
+  }
+
   function painelModo(d) {
     var m = Dados.modoDeEstudo(d.id);
     var pendentes = m.plano.pendentes.length;
@@ -112,9 +137,10 @@ var Teoria = (function () {
         el('span', { class: 'selo-modo ' + m.modo, text: m.modo === 'revisao' ? 'Modo Revisão' : 'Modo Leitura' })
       ]),
       el('div', { class: 'opcoes-modo' }, [
-        opcao('auto', 'Seguir o Modo Leitura até o fim', 'Teoria e baterias; passa sozinho para o Modo Revisão ao terminar' + (pendentes ? ' (faltam ' + pendentes + (pendentes === 1 ? ' etapa)' : ' etapas)') : '')),
+        opcao('auto', 'Seguir o Modo Leitura até o fim', '' + (Dados.questoesPdf(d.id) ? 'Teoria e questões do PDF' : 'Teoria e baterias') + '; passa sozinho para o Modo Revisão ao terminar' + (pendentes ? ' (faltam ' + pendentes + (pendentes === 1 ? ' etapa)' : ' etapas)') : '')),
         opcao('revisao', 'Ir direto para o Modo Revisão', 'Simulados, favoritadas e pontos fracos, mesmo sem concluir o Modo Leitura')
-      ])
+      ]),
+      opcaoQuestoes(d)
     ]);
   }
 
