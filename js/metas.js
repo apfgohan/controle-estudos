@@ -11,13 +11,15 @@ var Metas = (function () {
     favoritas: ['favoritas', 'Favoritadas', 'caderno2'],
     erros: ['erros', 'Bateria de erros', 'alerta'],
     pdf: ['questoes', 'Questões do PDF', 'caderno2'],
-    pdfErradas: ['erros', 'Erradas do PDF', 'alerta']
+    pdfErradas: ['erros', 'Erradas do PDF', 'alerta'],
+    anotacoes: ['anotacoes', 'Anotações', 'nota']
   };
   var TIPOS_REVISAO = {
     simulado: ['simulado', 'Simulado', 'caderno2'],
     duvidas: ['favoritas', 'Favoritadas', 'caderno2'],
     erros2x: ['favoritas', 'Favoritadas', 'caderno2'],
-    fracos: ['erros', 'Pontos fracos', 'alerta']
+    fracos: ['erros', 'Pontos fracos', 'alerta'],
+    resumo: ['resumo', 'Resumo', 'livro']
   };
 
   function plural(n, um, varios) { return n + ' ' + (n === 1 ? um : varios); }
@@ -49,6 +51,9 @@ var Metas = (function () {
       if (e.tipo === 'simulado') {
         titulo = e.caderno ? 'Resolver o caderno de simulado "' + e.caderno.nome + '"' : 'Resolver um novo caderno de simulado';
         detalhe = e.caderno && e.caderno.totalQuestoes ? plural(e.caderno.totalQuestoes - (e.feitas || 0), 'questão restante', 'questões restantes') : 'Cadastre o caderno na pasta de simulados';
+      } else if (e.tipo === 'resumo') {
+        titulo = 'Ler o resumo da matéria';
+        detalhe = 'Resumo feito no programa, antes do próximo simulado';
       } else if (e.tipo === 'fracos') {
         titulo = 'Revisar os assuntos em que estou mais fraco';
         detalhe = 'Questões dos pontos fracos das Estatísticas';
@@ -69,6 +74,8 @@ var Metas = (function () {
       det = !it.caderno ? 'Cadastre o caderno deste bloco' : b && b.qtd ? it.caderno.nome + ' · ' + plural(b.qtd - b.feitas, 'questão', 'questões') : it.caderno.nome + ' · informe o total de questões';
     } else if (it.tipo === 'favoritas') {
       det = it.caderno ? it.caderno.nome + (it.qtd ? ' · ' + plural(it.qtd - it.feitas, 'questão', 'questões') : '') : 'Cadastre o caderno de favoritadas';
+    } else if (it.tipo === 'anotacoes') {
+      det = it.caderno ? it.caderno.nome + ' · última meta do Modo Leitura' : 'Cadastre o caderno de questões com anotações';
     } else if (it.tipo === 'pdf') {
       det = it.parte === 'erradas' ? (it.qtd ? plural(it.qtd, 'questão errada', 'questões erradas') : 'Questões que você errar nas ímpares e pares') : 'Questões do próprio PDF da aula';
     } else if (it.tipo === 'erros') {

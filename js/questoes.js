@@ -234,7 +234,7 @@ var Questoes = (function () {
       texto = leitura
         ? 'Antes de cada novo bloco de teoria (do 2º em diante) vem uma rodada do caderno de dúvidas. Ao lançar, informe quantas questões o caderno tem naquele momento. A contagem aqui recomeça a cada rodada; o histórico não é apagado. O caderno de erradas 2x ou mais fica para o Modo Revisão.'
         : 'Depois do simulado, vêm as favoritadas: primeiro o caderno de dúvidas, depois o de erradas 2x ou mais. Como esses cadernos mudam sempre, não há total: ao lançar a sessão, marque "Finalizei este caderno" quando terminar.';
-      var faltam = (leitura ? [Dados.GRUPO_FAVORITAS_LEITURA] : Dados.ORDEM_FAVORITAS).filter(function (g) { return !Dados.cadernoFavorito(d.id, g); });
+      var faltam = (leitura ? [Dados.GRUPO_FAVORITAS_LEITURA, 'anotacoes'] : Dados.ORDEM_FAVORITAS).filter(function (g) { return !Dados.cadernoFavorito(d.id, g); });
       if (faltam.length) avisos.push('Falta cadastrar: ' + faltam.map(function (g) { return Dados.GRUPOS_FAVORITAS[g].toLowerCase(); }).join(' e ') + '.');
       var semGrupo = cadernos.filter(function (c) { return !c.grupo; });
       if (semGrupo.length) avisos.push('Cadernos sem grupo: ' + semGrupo.map(function (c) { return c.nome; }).join(', ') + ' (escolha na engrenagem).');
@@ -259,7 +259,7 @@ var Questoes = (function () {
       if ((s.cadernos || []).some(function (l) { return l.cadernoId === c.id && l.finalizado; }) && (!ultimo || s.data > ultimo)) ultimo = s.data;
     });
     return el('div', null, [
-      el('div', { class: 'caderno-bloco', text: c.grupo === 'duvidas' ? 'Dúvidas' : c.grupo === 'erros2x' ? 'Errei 2x ou mais' : 'Sem grupo' }),
+      el('div', { class: 'caderno-bloco', text: c.grupo === 'duvidas' ? 'Dúvidas' : c.grupo === 'erros2x' ? 'Errei 2x ou mais' : c.grupo === 'anotacoes' ? 'Com anotações' : 'Sem grupo' }),
       c.grupo === 'erros2x' && Dados.modoDeEstudo(d.id).modo === 'leitura' ? el('span', { class: 'data-fraca', text: 'Entra só no Modo Revisão' }) : null,
       it && it.rodada ? el('span', { class: 'data-fraca', text: 'Rodada antes da teoria do ' + it.bloco.nome }) : null,
       it && it.rodada && it.rodada.vazia ? el('div', { class: 'data-fraca' }, ['Sem questões nesta rodada · ',
@@ -396,7 +396,7 @@ var Questoes = (function () {
       return el('option', { value: pr.par, text: (pr.final ? 'Bateria final — ' : '') + Dados.nomePar(pr) + (ocupado ? ' (já tem caderno)' : ''), disabled: ocupado, selected: parLivre && parLivre.par === pr.par });
     }))) : null;
     var usadosGrupo = favoritas ? Dados.cadernosDe(p.id).filter(function (x) { return (!c || x.id !== c.id) && x.grupo; }).map(function (x) { return x.grupo; }) : [];
-    var seletorGrupo = favoritas ? el('select', null, [el('option', { value: '', text: '— escolha o grupo —' })].concat(Dados.ORDEM_FAVORITAS.map(function (g) {
+    var seletorGrupo = favoritas ? el('select', null, [el('option', { value: '', text: '— escolha o grupo —' })].concat(Dados.GRUPOS_TODOS.map(function (g) {
       var ocupado = usadosGrupo.indexOf(g) >= 0;
       return el('option', { value: g, text: Dados.GRUPOS_FAVORITAS[g] + (ocupado ? ' (já tem caderno)' : ''), disabled: ocupado, selected: grupo === g });
     }))) : null;

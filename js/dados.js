@@ -145,6 +145,7 @@ var Dados = (function () {
     db.fases.acessos[db.fases.atual] = UI.hoje();
     db.fases.atual = novo;
     garantirPastasTeoria(db);
+    dispensarAnotacoesAntigas();
     cacheRel = null;
     salvar();
   }
@@ -333,6 +334,7 @@ var Dados = (function () {
   function substituir(dados, origem) {
     migrouAgora = false;
     db = normalizar(dados);
+    dispensarAnotacoesAntigas();
     gravarNoNavegador();
     if (origem !== 'arquivo' && window.Armazenamento) Armazenamento.agendar();
     // Dados vindos da nuvem que acabaram de ser migrados voltam para a nuvem já migrados.
@@ -381,6 +383,7 @@ var Dados = (function () {
       nome: campos.nome,
       cor: campos.cor || '#4f7cff',
       peso: Number(campos.peso) || 1,
+      anotacoesVisto: true,
       ordem: proximaOrdem(db.disciplinas)
     };
     db.disciplinas.push(d);
@@ -827,7 +830,7 @@ var Dados = (function () {
     var nome = bs.length === 1 ? 'do ' + bs[0].nome : 'dos ' + nomePar({ blocos: bs });
     return 'Questões ' + nomeParte(p[0]) + ' ' + nome;
   }
-  function planoPdf(disciplinaId) {
+  function planoPdf(disciplinaId, semAnotacoes) {
     var blocos = blocosDe(disciplinaId), N = blocos.length, lanc = lancamentosPdf(), itens = [];
     var progresso = blocos.map(function (b) {
       var aulas = aulasDe(b.id);
@@ -861,6 +864,8 @@ var Dados = (function () {
       itens.push(etapa('pares', N + 1, N));
       itens.push(erradas(N + 1, N));
     }
+    var anot = itemAnotacoes(disciplinaId, itens, semAnotacoes);
+    if (anot) itens.push(anot);
     var pendentes = itens.filter(function (it) { return !it.concluido; });
     return {
       blocos: N, numBaterias: 0, questoesPdf: true, totalPassos: N ? N + 1 : 0, gruposErros: { normais: [], final: null },
@@ -878,8 +883,33 @@ var Dados = (function () {
     return { n: n, pct: n ? a / n * 100 : null };
   }
 
-  function planoTeoria(disciplinaId) {
-    if (questoesPdf(disciplinaId)) return planoPdf(disciplinaId);
+  // Última meta do Modo Leitura: as questões com anotações (caderno da pasta de favoritadas, grupo "anotacoes"),
+  // concluída quando uma sessão marca o caderno como finalizado. Matérias que já tinham terminado o Modo Leitura
+  // antes desta etapa existir ficam dispensadas (disciplina.anotacoes = 'dispensada').
+  function itemAnotacoes(disciplinaId, itens, sem) {
+    var d = disciplina(disciplinaId);
+    if (sem || !itens.length || (d && d.anotacoes === 'dispensada')) return null;
+    var cad = cadernoFavorito(disciplinaId, 'anotacoes'), fim = null, feitas = 0;
+    if (cad) db.sessoes.forEach(function (s) { (s.cadernos || []).forEach(function (l) {
+      if (l.cadernoId !== cad.id) return;
+      feitas += (Number(l.acertos) || 0) + (Number(l.erros) || 0);
+      if (l.finalizado && (!fim || s.data > fim)) fim = s.data;
+    }); });
+    return { tipo: 'anotacoes', passo: itens[itens.length - 1].passo, caderno: cad, feitas: feitas, ultimo: fim, concluido: !!fim };
+  }
+  // Uma vez por matéria: quem já tinha concluído o Modo Leitura não ganha a meta nova.
+  function dispensarAnotacoesAntigas() {
+    var mudou = false;
+    db.disciplinas.forEach(function (d) {
+      if (d.anotacoesVisto) return;
+      d.anotacoesVisto = true; mudou = true;
+      if (planoTeoria(d.id, true).concluido) d.anotacoes = 'dispensada';
+    });
+    return mudou;
+  }
+
+  function planoTeoria(disciplinaId, semAnotacoes) {
+    if (questoesPdf(disciplinaId)) return planoPdf(disciplinaId, semAnotacoes);
     var blocos = blocosDe(disciplinaId);
     var nb = numBaterias(disciplinaId);
     var atrasos = ATRASO_BATERIA.slice(0, nb);
@@ -950,6 +980,8 @@ var Dados = (function () {
     });
     // Erros que sobraram: uma única bateria no fim.
     if (grupos.final && itens.length) itens.push(itemErros(grupos.final, itens[itens.length - 1].passo));
+    var anot = itemAnotacoes(disciplinaId, itens, semAnotacoes);
+    if (anot) itens.push(anot);
 
     var pendentes = itens.filter(function (it) { return !it.concluido; });
     return {
@@ -1044,8 +1076,12 @@ var Dados = (function () {
   }
 
   // ---------- Modo Revisão: ciclo simulado → favoritadas (dúvidas, erradas 2x+) → pontos fracos ----------
-  var GRUPOS_FAVORITAS = { duvidas: 'Questões em que fiquei em dúvida', erros2x: 'Questões que errei 2x ou mais' };
-  var ORDEM_FAVORITAS = ['duvidas', 'erros2x'];
+  var GRUPOS_FAVORITAS = { duvidas: 'Questões em que fiquei em dúvida', erros2x: 'Questões que errei 2x ou mais', anotacoes: 'Questões com anotações' };
+  var ORDEM_FAVORITAS = ['duvidas', 'erros2x']; // rodadas do Modo Leitura e etapas do Modo Revisão
+  // Todos os grupos de cadernos da pasta de favoritadas; "anotacoes" é a última meta do Modo Leitura.
+  var GRUPOS_TODOS = ['duvidas', 'erros2x', 'anotacoes'];
+  // Etapa de leitura do resumo no Modo Revisão: vale para as voltas cujos pontos fracos terminaram a partir desta data.
+  var ATIVACAO_RESUMO = '2026-11-19';
   var GRUPO_FAVORITAS_LEITURA = 'duvidas'; // no Modo Leitura as rodadas são só de dúvidas; os dois grupos valem no Modo Revisão
   var FRACOS_QUESTOES = 50, FRACOS_ASSUNTOS = 3;
   var SIMULADO_MINIMO = 50; // por volta: soma mínima de questões de simulado antes das favoritadas
@@ -1057,7 +1093,7 @@ var Dados = (function () {
   function grupoLivre(disciplinaId, excetoCadernoId) {
     var pf = pastaFavoritas(disciplinaId);
     var usados = pf ? cadernosDe(pf.id).filter(function (c) { return c.id !== excetoCadernoId && c.grupo; }).map(function (c) { return c.grupo; }) : [];
-    return ORDEM_FAVORITAS.filter(function (g) { return usados.indexOf(g) < 0; })[0] || null;
+    return GRUPOS_TODOS.filter(function (g) { return usados.indexOf(g) < 0; })[0] || null;
   }
 
   // O estado é recalculado repassando as sessões em ordem (data e hora de lançamento); assim editar ou
@@ -1076,7 +1112,7 @@ var Dados = (function () {
     var sessoes = db.sessoes.filter(function (s) { return s.disciplinaId === disciplinaId; }).sort(function (a, b) {
       return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
     });
-    var acum = {};
+    var acum = {}, hoje = UI.hoje();
     var est = { etapa: 'simulado', indice: 0, rodada: 1, somaSimulado: 0, fracosQuestoes: 0, fracosAssuntos: {} };
     var historico = []; // etapas já concluídas: { rodada, tipo, caderno?, questoes?, assuntos? }
 
@@ -1100,6 +1136,15 @@ var Dados = (function () {
         } else if (est.etapa === 'fracos') {
           if (!fracos.length || est.fracosQuestoes >= FRACOS_QUESTOES || Object.keys(est.fracosAssuntos).length >= Math.max(1, metaAssuntos)) {
             if (fracos.length) historico.push({ rodada: est.rodada, tipo: 'fracos', questoes: est.fracosQuestoes, assuntos: Object.keys(est.fracosAssuntos).length });
+            // Depois dos pontos fracos, a leitura do resumo (só nas voltas que chegaram aqui depois da criação desta etapa).
+            if ((s ? s.data : hoje) >= ATIVACAO_RESUMO) { est.etapa = 'resumo'; est.resumoDe = s ? s.id : null; }
+            else { est.etapa = 'simulado'; est.rodada++; est.somaSimulado = 0; }
+            mudou = true;
+          }
+        } else if (est.etapa === 'resumo') {
+          // Concluída por uma sessão de leitura do resumo lançada depois (não a mesma que fechou os pontos fracos).
+          if (s && s.resumo && s.id !== est.resumoDe) {
+            historico.push({ rodada: est.rodada, tipo: 'resumo', data: s.data });
             est.etapa = 'simulado'; est.rodada++; est.somaSimulado = 0; mudou = true;
           }
         }
@@ -1131,8 +1176,9 @@ var Dados = (function () {
       }
     }
     if (est.etapa === 'simulado' || est.etapa === 'duvidas') faltam.push({ tipo: 'duvidas', caderno: fav.duvidas });
-    if (est.etapa !== 'fracos') faltam.push({ tipo: 'erros2x', caderno: fav.erros2x });
-    if (fracos.length) faltam.push({ tipo: 'fracos' });
+    if (est.etapa !== 'fracos' && est.etapa !== 'resumo') faltam.push({ tipo: 'erros2x', caderno: fav.erros2x });
+    if (fracos.length && est.etapa !== 'resumo') faltam.push({ tipo: 'fracos' });
+    faltam.push({ tipo: 'resumo' });
     return {
       historico: historico, faltam: faltam,
       etapa: est.etapa, rodada: est.rodada,
@@ -1165,6 +1211,8 @@ var Dados = (function () {
       tipo: tipo,
       topicoIds: teoria ? (campos.topicoIds || []).slice() : [],
       aulaIds: teoria ? (campos.aulaIds || []).slice() : [],
+      // Leitura do resumo da matéria (etapa do Modo Revisão).
+      resumo: teoria && !!campos.resumo,
       // Páginas lidas de cada aula (PDF) nesta sessão: { aulaId: n }.
       paginas: teoria ? (function () {
         var p = {}, o = campos.paginas || {};
@@ -1752,10 +1800,15 @@ var Dados = (function () {
     var d = JSON.parse(texto);
     if (!d || !Array.isArray(d.disciplinas)) throw new Error('Arquivo não parece ser um backup deste programa.');
     db = normalizar(d);
+    dispensarAnotacoesAntigas();
     salvar();
   }
 
   function limpar() { db = vazio(); salvar(); }
+
+  // Ao abrir: marca só em memória (sem mudar a data dos dados, para não passar na frente da nuvem); vai junto na próxima gravação.
+  // Fica aqui no fim porque precisa das constantes do plano de teoria já definidas.
+  dispensarAnotacoesAntigas();
 
   function estaVazio() { return db.disciplinas.length === 0; }
   // Sem nenhuma matéria em fase alguma (para a sincronização: dados vazios nunca vencem dados preenchidos).
@@ -1826,7 +1879,7 @@ var Dados = (function () {
     pastaSimulado: pastaSimulado, pastaFavoritas: pastaFavoritas,
     NOME_PASTA_TEORIA: NOME_PASTA_TEORIA, NOME_PASTA_ERROS: NOME_PASTA_ERROS,
     NOME_PASTA_SIMULADO: NOME_PASTA_SIMULADO, NOME_PASTA_FAVORITAS: NOME_PASTA_FAVORITAS, criarPasta: criarPasta,
-    GRUPOS_FAVORITAS: GRUPOS_FAVORITAS, ORDEM_FAVORITAS: ORDEM_FAVORITAS, GRUPO_FAVORITAS_LEITURA: GRUPO_FAVORITAS_LEITURA, cadernoFavorito: cadernoFavorito, grupoLivre: grupoLivre,
+    GRUPOS_FAVORITAS: GRUPOS_FAVORITAS, ORDEM_FAVORITAS: ORDEM_FAVORITAS, GRUPOS_TODOS: GRUPOS_TODOS, GRUPO_FAVORITAS_LEITURA: GRUPO_FAVORITAS_LEITURA, cadernoFavorito: cadernoFavorito, grupoLivre: grupoLivre,
     planoRevisao: planoRevisao,
     rodadaFavorita: rodadaFavorita, rodadaAberta: rodadaAberta, rodadaExibida: rodadaExibida, marcarRodadaVazia: marcarRodadaVazia,
     paresDeBlocos: paresDeBlocos, nomePar: nomePar, cadernoDoPar: cadernoDoPar, parSemCaderno: parSemCaderno,

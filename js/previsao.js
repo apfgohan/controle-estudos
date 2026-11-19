@@ -101,6 +101,8 @@ var Previsao = (function () {
       var questoes;
       if (it.tipo === 'bateria') {
         questoes = it.bateria && it.bateria.qtd ? it.bateria.qtd - it.bateria.feitas : bateriaMedia;
+      } else if (it.tipo === 'anotacoes') {
+        questoes = rodada; // sem total conhecido: como uma rodada de favoritadas
       } else if (it.tipo === 'pdf') {
         // Questões do PDF: sem total conhecido; ímpares/pares estimadas como meia bateria, erradas pelo que foi errado.
         questoes = it.parte === 'erradas' ? it.qtd : bateriaMedia / 2;
@@ -141,8 +143,8 @@ var Previsao = (function () {
     return g.n ? g.h : padrao;
   }
 
-  function etapasVazias() { return { teoria: 0, bateria: 0, favoritas: 0, erros: 0, pdf: 0 }; }
-  function somaEtapas(e) { return e.teoria + e.bateria + e.favoritas + e.erros + (e.pdf || 0); }
+  function etapasVazias() { return { teoria: 0, bateria: 0, favoritas: 0, erros: 0, pdf: 0, anotacoes: 0 }; }
+  function somaEtapas(e) { return e.teoria + e.bateria + e.favoritas + e.erros + (e.pdf || 0) + (e.anotacoes || 0); }
 
   // Etapas do Modo Leitura concluídas desde a data "de", pela data em que cada uma ficou pronta.
   function etapasConcluidasDesde(de) {
@@ -174,7 +176,7 @@ var Previsao = (function () {
           data = it.caderno && it.bateria ? dataAlcancou(it.caderno.id, it.bateria.ate) : null;
         } else if (it.tipo === 'erros') {
           data = it.caderno ? dataAlcancou(it.caderno.id, it.qtd) : null;
-        } else if (it.tipo === 'pdf') {
+        } else if (it.tipo === 'pdf' || it.tipo === 'anotacoes') {
           data = it.ultimo;
         } else if (it.rodada && !it.rodada.vazia) {
           data = it.rodada.ultimo; // rodada marcada como "sem questões" não foi estudo

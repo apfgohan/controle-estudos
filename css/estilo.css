@@ -1711,3 +1711,6 @@ a.rec-caderno:hover { text-decoration: underline; }
 /* ---------- Questões do PDF no Modo Leitura ---------- */
 .opcoes-questoes { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--borda); display: flex; flex-direction: column; gap: 8px; }
 .linha-pdf-titulo { display: block; padding: 9px 0; font-size: 14px; }
+/* ---------- Questões com anotações (fim do Modo Leitura) e leitura do resumo (Modo Revisão) ---------- */
+.recomendacao.rec-anotacoes, .etapa-anotacoes { --tipo-fundo: var(--rosa-claro); --tipo-borda: var(--rosa-borda); --tipo-texto: var(--rosa-texto); }
+.recomendacao.rec-resumo, .etapa-resumo { --tipo-fundo: var(--teal-claro); --tipo-borda: var(--teal-borda); --tipo-texto: var(--teal); }

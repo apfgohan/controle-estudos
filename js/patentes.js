@@ -99,6 +99,7 @@ var Patentes = (function () {
         g.etapas += e;
         reg.etapas += e;
       });
+      if (s.resumo) { g.etapas++; reg.etapas++; } // leitura do resumo (Modo Revisão) conta como etapa
       g.registros.push(reg);
     });
     var primeira = Object.keys(dias).sort()[0];

@@ -97,6 +97,7 @@ var Sessao = (function () {
         : (op.cadernoIds || []).map(function (id) { return { cadernoId: id, acertos: '', erros: '' }; }),
       segundos: existente ? existente.segundos : (op.segundos || 0),
       concluir: true,
+      resumo: existente ? !!existente.resumo : !!op.resumo,
       // Páginas lidas de cada aula PDF nesta sessão.
       paginas: existente ? Object.assign({}, existente.paginas || {}) : {},
       // Revisão: questões avulsas por ponto fraco { chave: { nome, acertos, erros } }
@@ -158,7 +159,8 @@ var Sessao = (function () {
       if (est.segundos <= 0) return mostrarErro('Informe o tempo de estudo.');
       var campos = { data: data.value, disciplinaId: est.disciplinaId, tipo: est.tipo, segundos: est.segundos, anotacao: anotacao.value, daMeta: travado };
       if (est.tipo === 'teoria') {
-        if (Dados.progressoTeoria(est.disciplinaId).total && !est.aulaIds.length) return mostrarErro('Marque a(s) aula(s) estudada(s).');
+        if (!est.resumo && Dados.progressoTeoria(est.disciplinaId).total && !est.aulaIds.length) return mostrarErro('Marque a(s) aula(s) estudada(s).');
+        campos.resumo = est.resumo;
         campos.aulaIds = est.aulaIds;
         campos.paginas = est.paginas;
         for (var ip = 0; ip < est.aulaIds.length; ip++) {
@@ -313,6 +315,8 @@ var Sessao = (function () {
 
   // Teoria: escolhe as aulas estudadas (o que se conclui são as aulas, não os assuntos).
   function areaTeoria(est) {
+    // Leitura do resumo (Modo Revisão): não há aulas para marcar.
+    if (est.resumo) return el('div', { class: 'aviso-suave' }, ['Leitura do resumo da matéria. ', el('a', { href: '#/resumos/' + est.disciplinaId, text: 'Abrir o resumo', onclick: function (e) { var f = e.target.closest('.modal-fundo'); if (f) f.remove(); } }), ' (fecha este formulário). Ao lançar, a etapa fica concluída.']);
     var blocos = Dados.blocosDe(est.disciplinaId).filter(function (b) { return Dados.aulasDe(b.id).length; });
     // Meta de teoria: só o bloco da meta aparece.
     if (est.aulasMeta && est.aulasMeta.length) {
@@ -542,6 +546,7 @@ var Sessao = (function () {
   // ---------- Histórico ----------
   function descrever(s) {
     if (s.tipo === 'anki') return 'Revisão no Anki';
+    if (s.tipo === 'teoria' && s.resumo) return 'Leitura do resumo';
     if (s.tipo === 'teoria') {
       var aulas = (s.aulaIds || []).map(function (id) {
         var x = Dados.aula(id), p = s.paginas && Number(s.paginas[id]);
