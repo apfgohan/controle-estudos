@@ -309,8 +309,9 @@ var Leitor = (function () {
     v.bolaCor = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Escolher a cor (teclas 1 a 4)', 'aria-label': 'Escolher a cor do marca-texto', onclick: function (e) { e.stopPropagation(); menuCores(v.bolaCor); } });
     v.btNota = bt('nota', 'Nota: clique no botão e depois no ponto da página', function () { ferramenta(v.notaModo ? '' : 'nota'); });
     try { v.corCaneta = localStorage.getItem('controle-estudos.leitor-caneta') || 'azul'; } catch (e) { v.corCaneta = 'azul'; }
+    try { v.grossuraCaneta = localStorage.getItem('controle-estudos.leitor-grossura') || 'media'; } catch (e) { v.grossuraCaneta = 'media'; }
     v.btCaneta = bt('lapis', 'Caneta: escrever à mão livre no PDF', function () { ferramenta(v.caneta ? '' : 'caneta'); });
-    v.bolaCaneta = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Cor da caneta', 'aria-label': 'Escolher a cor da caneta', style: { background: corCaneta(v.corCaneta) }, onclick: function (e) { e.stopPropagation(); menuCaneta(v.bolaCaneta); } });
+    v.bolaCaneta = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Cor e grossura da caneta', 'aria-label': 'Escolher a cor e a grossura da caneta', style: { background: corCaneta(v.corCaneta) }, onclick: function (e) { e.stopPropagation(); menuCaneta(v.bolaCaneta); } });
     v.btBorracha = bt('borracha', 'Borracha: clique num traço da caneta para apagar', function () { ferramenta(v.borracha ? '' : 'borracha'); });
     v.btNoite = bt('lua', 'Modo noturno', function () { v.noite = !v.noite; v.area.classList.toggle('noite', v.noite); v.btNoite.classList.toggle('ativo', v.noite); try { localStorage.setItem(CHAVE_NOITE, v.noite ? '1' : '0'); } catch (e) { /* preferência */ } }, v.noite ? 'ativo' : '');
     var navegacao = el('div', { class: 'leitor-grupo' }, [bt('‹', 'Página anterior', function () { irPara(v.atual - 1); }), v.campoPagina, v.infoTotal, bt('›', 'Próxima página', function () { irPara(v.atual + 1); })]);
@@ -397,7 +398,7 @@ var Leitor = (function () {
   function desenharItens(n) {
     var p = v.paginas[n - 1]; if (!p || !p.grifos) return;
     p.grifos.innerHTML = ''; p.notas.innerHTML = '';
-    if (p.tinta) Array.prototype.slice.call(p.tinta.querySelectorAll('path')).forEach(function (x) { x.remove(); });
+    if (p.tinta) Array.prototype.slice.call(p.tinta.querySelectorAll('.pdf-traco')).forEach(function (x) { x.remove(); });
     v.itens.filter(function (it) { return it.pagina === n; }).forEach(function (it) {
       if (it.tipo === 'grifo') {
         it.rects.forEach(function (r) {
@@ -446,20 +447,58 @@ var Leitor = (function () {
   var CORES_CANETA = [['azul', '#1f4fd8'], ['vermelho', '#d62828'], ['preto', '#1b1b1b'], ['verde', '#1f8a4c']];
   function corCaneta(c) { var x = CORES_CANETA.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES_CANETA[0][1]; }
   function alturaVB(p) { return 1000 * (p.altura || v.alturaPdf) / (p.largura || v.larguraPdf); }
-  function dTraco(pts) { return pts.map(function (q, i) { return (i ? 'L' : 'M') + q[0] + ' ' + q[1]; }).join(''); }
+  // Grossuras da caneta (em milésimos da largura da página; acompanham o zoom).
+  var GROSSURAS = [['fina', 'Fina', 2], ['media', 'Média', 3.5], ['grossa', 'Grossa', 6]];
+  function grossura(g) { var x = GROSSURAS.filter(function (k) { return k[0] === g; })[0]; return x ? x[2] : 3.5; }
+  function r1(n) { return Math.round(n * 10) / 10; }
+  // Traço como um contorno preenchido: a largura varia com a pressão da caneta (mesa digitalizadora) e as
+  // curvas passam pelos pontos médios (sem os "degraus" de linhas retas). Pontas redondas.
+  function contorno(it) {
+    var pts = it.pontos, base = it.larg || 2.4, n = pts.length;
+    function w(i) { var p = pts[i][2]; return p == null ? base : base * (0.3 + 1.4 * Math.max(0.05, Math.min(1, p))); }
+    if (n === 1 || (n === 2 && Math.abs(pts[0][0] - pts[1][0]) + Math.abs(pts[0][1] - pts[1][1]) < 0.6)) {
+      var c = pts[0], rr = w(0) / 2;
+      return { d: 'M' + r1(c[0] - rr) + ' ' + r1(c[1]) + 'a' + r1(rr) + ' ' + r1(rr) + ' 0 1 0 ' + r1(2 * rr) + ' 0a' + r1(rr) + ' ' + r1(rr) + ' 0 1 0 ' + r1(-2 * rr) + ' 0Z', ini: null, fim: null };
+    }
+    var esq = [], dir = [];
+    for (var i = 0; i < n; i++) {
+      var a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var nx = -dy / len, ny = dx / len, h = w(i) / 2;
+      esq.push([pts[i][0] + nx * h, pts[i][1] + ny * h]); dir.push([pts[i][0] - nx * h, pts[i][1] - ny * h]);
+    }
+    function curva(l, primeiro) {
+      var s = (primeiro ? 'M' : 'L') + r1(l[0][0]) + ' ' + r1(l[0][1]);
+      for (var k = 1; k < l.length - 1; k++) s += 'Q' + r1(l[k][0]) + ' ' + r1(l[k][1]) + ' ' + r1((l[k][0] + l[k + 1][0]) / 2) + ' ' + r1((l[k][1] + l[k + 1][1]) / 2);
+      return s + 'L' + r1(l[l.length - 1][0]) + ' ' + r1(l[l.length - 1][1]);
+    }
+    return { d: curva(esq, true) + curva(dir.reverse(), false) + 'Z', ini: [pts[0], w(0) / 2], fim: [pts[n - 1], w(n - 1) / 2] };
+  }
+  function desenharTraco(g, it) {
+    var c = contorno(it), cor = corCaneta(it.cor);
+    g.innerHTML = '';
+    var p = document.createElementNS(SVG, 'path');
+    p.setAttribute('d', c.d); p.setAttribute('fill', cor); p.setAttribute('fill-rule', 'nonzero');
+    g.appendChild(p);
+    [c.ini, c.fim].forEach(function (x) {
+      if (!x) return;
+      var ci = document.createElementNS(SVG, 'circle');
+      ci.setAttribute('cx', r1(x[0][0])); ci.setAttribute('cy', r1(x[0][1])); ci.setAttribute('r', r1(x[1])); ci.setAttribute('fill', cor);
+      g.appendChild(ci);
+    });
+  }
   function caminho(it) {
-    var c = document.createElementNS(SVG, 'path');
-    c.setAttribute('d', dTraco(it.pontos)); c.setAttribute('stroke', corCaneta(it.cor)); c.setAttribute('stroke-width', it.larg || 2.4);
-    c.setAttribute('fill', 'none'); c.setAttribute('stroke-linecap', 'round'); c.setAttribute('stroke-linejoin', 'round');
-    c.setAttribute('data-id', it.id);
-    return c;
+    var g = document.createElementNS(SVG, 'g');
+    g.setAttribute('class', 'pdf-traco'); g.setAttribute('data-id', it.id);
+    desenharTraco(g, it);
+    return g;
   }
   function criarTinta(p, vp1) {
     var svg = document.createElementNS(SVG, 'svg');
     svg.setAttribute('class', 'pdf-tinta');
     svg.setAttribute('viewBox', '0 0 1000 ' + (1000 * vp1.height / vp1.width).toFixed(2));
     svg.setAttribute('preserveAspectRatio', 'none');
-    var atual = null, traco = null, apagando = false;
+    var atual = null, traco = null, apagando = false, suave = null, quadro = null;
     // Borracha: apaga o traço que passa perto do ponto (os traços são finos demais para acertar o clique).
     function apagarPerto(q) {
       var raio = 10, alvo = v.itens.filter(function (it) {
@@ -467,34 +506,55 @@ var Leitor = (function () {
       });
       if (!alvo.length) return;
       v.itens = v.itens.filter(function (it) { return alvo.indexOf(it) < 0; });
-      alvo.forEach(function (it) { var c = svg.querySelector('path[data-id="' + it.id + '"]'); if (c) c.remove(); });
+      alvo.forEach(function (it) { var c = svg.querySelector('[data-id="' + it.id + '"]'); if (c) c.remove(); });
       salvarAgora();
     }
-    function ponto(e) { var r = svg.getBoundingClientRect(); return [+((e.clientX - r.left) / r.width * 1000).toFixed(1), +((e.clientY - r.top) / r.height * alturaVB(p)).toFixed(1)]; }
+    var caixa = null;
+    function prender(e) { try { svg.setPointerCapture(e.pointerId); } catch (x) { /* ponteiro já solto */ } }
+    function ponto(e) { var r = caixa || svg.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 1000, (e.clientY - r.top) / r.height * alturaVB(p)]; }
+    // Pressão só vem de caneta (mesa digitalizadora ou tela com caneta); mouse e dedo ficam com a grossura fixa.
+    function pressao(e) { return e.pointerType === 'pen' && e.pressure > 0 ? Math.round(e.pressure * 100) / 100 : null; }
+    function acrescentar(e) {
+      var q = ponto(e), pr = pressao(e);
+      // Suavização leve: cada ponto anda um pouco em direção ao novo (tira o tremido da mão e do sensor).
+      suave = suave ? [suave[0] + (q[0] - suave[0]) * 0.5, suave[1] + (q[1] - suave[1]) * 0.5] : q;
+      var u = atual.pontos[atual.pontos.length - 1];
+      if (Math.abs(suave[0] - u[0]) + Math.abs(suave[1] - u[1]) < 0.35) return;
+      var pt = [Math.round(suave[0] * 10) / 10, Math.round(suave[1] * 10) / 10];
+      if (pr != null) pt.push(u[2] != null ? Math.round((u[2] * 0.6 + pr * 0.4) * 100) / 100 : pr);
+      atual.pontos.push(pt);
+    }
     svg.addEventListener('pointerdown', function (e) {
-      if (v.borracha && e.button <= 0) { e.preventDefault(); svg.setPointerCapture(e.pointerId); apagando = true; apagarPerto(ponto(e)); return; }
+      caixa = svg.getBoundingClientRect();
+      if (v.borracha && e.button <= 0) { e.preventDefault(); prender(e); apagando = true; apagarPerto(ponto(e)); return; }
       if (!v.caneta || e.button > 0) return;
-      e.preventDefault(); svg.setPointerCapture(e.pointerId);
-      atual = { id: Dados.novoId(), tipo: 'tinta', pagina: p.n, cor: v.corCaneta, larg: 2.4, pontos: [ponto(e)], criadoEm: Date.now() };
+      e.preventDefault(); prender(e);
+      var q = ponto(e), pr = pressao(e);
+      suave = q;
+      var pt = [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10]; if (pr != null) pt.push(pr);
+      atual = { id: Dados.novoId(), tipo: 'tinta', pagina: p.n, cor: v.corCaneta, larg: grossura(v.grossuraCaneta), pontos: [pt], criadoEm: Date.now() };
       traco = caminho(atual); svg.appendChild(traco);
     });
     svg.addEventListener('pointermove', function (e) {
       if (apagando) { apagarPerto(ponto(e)); return; }
       if (!atual) return;
-      var q = ponto(e), u = atual.pontos[atual.pontos.length - 1];
-      if (Math.abs(q[0] - u[0]) + Math.abs(q[1] - u[1]) < 1.2) return; // menos pontos, traço mais leve
-      atual.pontos.push(q); traco.setAttribute('d', dTraco(atual.pontos));
+      // Todos os pontos que o navegador juntou entre um quadro e outro (a caneta manda mais de 100 por segundo).
+      var lista = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+      (lista && lista.length ? lista : [e]).forEach(acrescentar);
+      // Redesenha no máximo uma vez por quadro da tela.
+      if (!quadro) quadro = requestAnimationFrame(function () { quadro = null; if (traco && atual) desenharTraco(traco, atual); });
     });
-    function fim() {
-      apagando = false;
+    function fim(e) {
+      apagando = false; caixa = null;
       if (!atual) return;
-      if (atual.pontos.length === 1) atual.pontos.push([atual.pontos[0][0] + 0.5, atual.pontos[0][1] + 0.5]); // um toque vira um ponto
-      v.itens.push(atual); atual = null; traco = null; salvarAgora();
+      if (e && e.type === 'pointerup') acrescentar(e);
+      if (quadro) { cancelAnimationFrame(quadro); quadro = null; }
+      desenharTraco(traco, atual);
+      v.itens.push(atual); atual = null; traco = null; suave = null; salvarAgora();
     }
     svg.addEventListener('pointerup', fim); svg.addEventListener('pointercancel', fim);
     return svg;
-  }
-  // Só uma ferramenta de clique por vez: nota, caneta ou borracha (o marca-texto age na seleção de texto).
+  }  // Só uma ferramenta de clique por vez: nota, caneta ou borracha (o marca-texto age na seleção de texto).
   function ferramenta(nome) {
     v.notaModo = nome === 'nota'; v.caneta = nome === 'caneta'; v.borracha = nome === 'borracha';
     v.btNota.classList.toggle('ativo', v.notaModo); v.btCaneta.classList.toggle('ativo', v.caneta); v.btBorracha.classList.toggle('ativo', v.borracha);
@@ -503,12 +563,19 @@ var Leitor = (function () {
   function menuCaneta(ancora) {
     fecharFlutuantes();
     var r = ancora.getBoundingClientRect();
-    flutuante = el('div', { class: 'leitor-flutuante leitor-cores' }, CORES_CANETA.map(function (c) {
+    var cores = el('div', { class: 'leitor-cores-linha' }, CORES_CANETA.map(function (c) {
       return el('button', { type: 'button', class: 'leitor-cor' + (v.corCaneta === c[0] ? ' ativa' : ''), title: 'Caneta ' + c[0], style: { background: c[1] }, onclick: function () {
         fecharFlutuantes(); v.corCaneta = c[0]; v.bolaCaneta.style.background = c[1]; ferramenta('caneta');
         try { localStorage.setItem('controle-estudos.leitor-caneta', c[0]); } catch (e) { /* preferência */ }
       } });
     }));
+    var grossuras = el('div', { class: 'leitor-grossuras' }, GROSSURAS.map(function (g) {
+      return el('button', { type: 'button', class: 'leitor-grossura' + (v.grossuraCaneta === g[0] ? ' ativa' : ''), title: 'Traço ' + g[1].toLowerCase(), onclick: function () {
+        fecharFlutuantes(); v.grossuraCaneta = g[0]; ferramenta('caneta');
+        try { localStorage.setItem('controle-estudos.leitor-grossura', g[0]); } catch (e) { /* preferência */ }
+      } }, [el('span', { class: 'leitor-grossura-traco', style: { height: Math.round(g[2] * 0.9) + 'px', background: corCaneta(v.corCaneta) } }), el('span', { text: g[1] })]);
+    }));
+    flutuante = el('div', { class: 'leitor-flutuante leitor-menu-caneta' }, [cores, grossuras]);
     posicionar(flutuante, r.left + r.width / 2, r.bottom - 8);
   }
 

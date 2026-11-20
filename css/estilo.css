@@ -1739,3 +1739,10 @@ a.rec-caderno:hover { text-decoration: underline; }
 .copia-linha { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 9px; background: var(--superficie); border: 1px solid var(--borda); }
 .copia-linha > div { display: flex; flex-direction: column; gap: 2px; }
 .leitor-download { width: min(420px, 90%); margin: 8px auto; display: flex; flex-direction: column; gap: 6px; }
+/* ---------- Caneta: cor e grossura ---------- */
+.leitor-menu-caneta { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; }
+.leitor-grossuras { display: flex; gap: 6px; }
+.leitor-grossura { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--borda); background: var(--superficie); color: var(--texto-2); font-size: 12px; cursor: pointer; min-width: 54px; }
+.leitor-grossura.ativa { border-color: var(--azul-borda); background: var(--azul-claro); color: var(--azul-escuro); }
+.leitor-grossura-traco { display: block; width: 30px; border-radius: 999px; }
+.pdf-traco { pointer-events: none; }
