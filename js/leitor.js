@@ -4,8 +4,10 @@
 var Leitor = (function () {
   var el = UI.el;
   var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-  // Marca-texto estilo Edge: cor sólida por baixo do texto (mistura "multiply"), que continua nítido. O rosa virou vermelho claro.
-  var CORES = [['amarelo', '#FFF06B'], ['verde', '#B6F2A8'], ['azul', '#B3DBFF'], ['vermelho', '#FFB4B4']];
+  // Marca-texto igual ao da extensão do TEC: faixa reta com pontas redondas, encaixada na linha de texto,
+  // nas mesmas cores (mistura "multiply": o texto por baixo continua nítido).
+  var CORES = [['amarelo', '#FFE283'], ['verde', '#BFEBB2'], ['azul', '#BFDCFB'], ['rosa', '#FFC8D0'], ['lilas', '#DCCDFB']];
+  var NOMES_COR = { amarelo: 'Amarelo', verde: 'Verde', azul: 'Azul', rosa: 'Rosa', lilas: 'Lilás' };
   var CHAVE_LEITURA = 'controle-estudos.leitura-dia', CHAVE_NOITE = 'controle-estudos.leitor-noturno';
   var SEGUNDOS_LIDA = 5;
   var carregando = null;
@@ -138,6 +140,7 @@ var Leitor = (function () {
     clearInterval(v.relogio);
     if (v.observador) v.observador.disconnect();
     try { v.doc.destroy(); } catch (e) { /* já fechado */ }
+    if (mira) { mira.remove(); mira = null; }
     v = null;
   }
 
@@ -163,7 +166,6 @@ var Leitor = (function () {
     caixa.appendChild(v.barra);
     caixa.appendChild(el('div', { class: 'leitor-corpo' }, [v.area]));
     v.area.addEventListener('scroll', aoRolar);
-    v.area.addEventListener('mouseup', aoSoltar);
     v.area.addEventListener('click', aoClicar);
 
     doc.getPage(1).then(function (p1) {
@@ -281,6 +283,7 @@ var Leitor = (function () {
     for (var i = 0; i < v.paginas.length; i++) { if (v.paginas[i].el.offsetTop <= meio) n = i + 1; else break; }
     definirAtual(n);
     fecharFlutuantes();
+    esconderMira();
   }
 
   var timerSalvar = null;
@@ -291,7 +294,7 @@ var Leitor = (function () {
   var CHAVE_MARCA = 'controle-estudos.leitor-marca-texto';
   function barra() {
     var x = v.x, a = x.aula;
-    try { var mt = JSON.parse(localStorage.getItem(CHAVE_MARCA) || '{}'); v.marcaTexto = !!mt.ligado; v.corAtual = CORES.some(function (c) { return c[0] === mt.cor; }) ? mt.cor : CORES[0][0]; } catch (e) { v.marcaTexto = false; v.corAtual = CORES[0][0]; }
+    try { var mt = JSON.parse(localStorage.getItem(CHAVE_MARCA) || '{}'); v.marcaTexto = !!mt.ligado; if (mt.cor === 'vermelho') mt.cor = 'rosa'; v.corAtual = CORES.some(function (c) { return c[0] === mt.cor; }) ? mt.cor : CORES[0][0]; } catch (e) { v.marcaTexto = false; v.corAtual = CORES[0][0]; }
     v.campoPagina = el('input', { type: 'number', min: 1, class: 'leitor-pagina', 'aria-label': 'Página', onchange: function () { irPara(Number(v.campoPagina.value) || 1); } });
     v.infoTotal = el('span', { class: 'leitor-total' });
     v.infoLeitura = el('span', { class: 'leitor-leitura' });
@@ -306,9 +309,9 @@ var Leitor = (function () {
       return b;
     }
     v.btBusca = bt('lupa', 'Buscar no PDF (Ctrl+F)', function () { alternarBusca(); });
-    // Marca-texto: ligado, selecionar um trecho já grifa na cor escolhida. A bolinha abre as cores.
-    v.btGrifar = bt('grifo', 'Marca-texto: com ele ligado, selecione o texto para grifar', function () { definirMarca(!v.marcaTexto); });
-    v.bolaCor = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Escolher a cor (teclas 1 a 4)', 'aria-label': 'Escolher a cor do marca-texto', onclick: function (e) { e.stopPropagation(); menuCores(v.bolaCor); } });
+    // Marca-texto: ligado, arrastar sobre uma linha faz a faixa (como na extensão do TEC). A bolinha abre as cores.
+    v.btGrifar = bt('grifo', 'Marca-texto: arraste sobre a linha para grifar', function () { definirMarca(!v.marcaTexto); });
+    v.bolaCor = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Escolher a cor (teclas 1 a 5)', 'aria-label': 'Escolher a cor do marca-texto', onclick: function (e) { e.stopPropagation(); menuCores(v.bolaCor); } });
     v.btNota = bt('nota', 'Nota: clique no botão e depois no ponto da página', function () { ferramenta(v.notaModo ? '' : 'nota'); });
     try { v.corCaneta = localStorage.getItem('controle-estudos.leitor-caneta') || 'azul'; } catch (e) { v.corCaneta = 'azul'; }
     try { v.grossuraCaneta = localStorage.getItem('controle-estudos.leitor-grossura') || 'media'; } catch (e) { v.grossuraCaneta = 'media'; }
@@ -334,7 +337,9 @@ var Leitor = (function () {
     if (ver) { v.campoBusca.focus(); v.campoBusca.select(); } else { v.busca = { termo: '', pos: 0 }; v.infoBusca.textContent = ''; limparBusca(); }
   }
   function definirMarca(ligado, semGravar) {
+    if (ligado && (v.caneta || v.borracha || v.notaModo)) ferramenta('');
     v.marcaTexto = ligado;
+    if (!ligado) esconderMira();
     v.btGrifar.classList.toggle('ativo', ligado);
     v.bolaCor.style.background = corHex(v.corAtual);
     if (v.area) v.area.classList.toggle('modo-grifo', ligado);
@@ -345,7 +350,7 @@ var Leitor = (function () {
     fecharFlutuantes();
     var r = ancora.getBoundingClientRect();
     flutuante = el('div', { class: 'leitor-flutuante leitor-cores' }, CORES.map(function (c, i) {
-      return el('button', { type: 'button', class: 'leitor-cor' + (v.corAtual === c[0] ? ' ativa' : ''), title: c[0] + ' (' + (i + 1) + ')', style: { background: c[1] }, onclick: function () { fecharFlutuantes(); definirCor(c[0]); } });
+      return el('button', { type: 'button', class: 'leitor-cor' + (v.corAtual === c[0] ? ' ativa' : ''), title: NOMES_COR[c[0]] + ' (' + (i + 1) + ')', style: { background: c[1] }, onclick: function () { fecharFlutuantes(); definirCor(c[0]); } });
     }));
     posicionar(flutuante, r.left + r.width / 2, r.bottom - 8);
   }
@@ -396,7 +401,7 @@ var Leitor = (function () {
   }
 
   // ---------- Grifos e notas ----------
-  function corHex(c) { if (c === 'rosa') c = 'vermelho'; var x = CORES.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES[0][1]; }
+  function corHex(c) { if (c === 'vermelho') c = 'rosa'; var x = CORES.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES[0][1]; }
   function desenharItens(n) {
     var p = v.paginas[n - 1]; if (!p || !p.grifos) return;
     p.grifos.innerHTML = ''; p.notas.innerHTML = '';
@@ -546,8 +551,10 @@ var Leitor = (function () {
       if (quadro) return;
       quadro = requestAnimationFrame(function () { quadro = null; if (traco && atual) desenharTraco(traco, atual, previstos, true); });
     }
+    var grifo = null;
     svg.addEventListener('pointerdown', function (e) {
       caixa = svg.getBoundingClientRect();
+      if (v.marcaTexto && e.button <= 0) { e.preventDefault(); fecharFlutuantes(); prender(e); grifo = iniciarGrifo(p, e); return; }
       if (v.borracha && e.button <= 0) { e.preventDefault(); prender(e); apagando = true; apagarPerto(ponto(e)); return; }
       if (!v.caneta || e.button > 0) return;
       e.preventDefault(); prender(e);
@@ -557,6 +564,8 @@ var Leitor = (function () {
       traco = caminho(atual); svg.appendChild(traco);
     });
     svg.addEventListener('pointermove', function (e) {
+      if (grifo) { moverGrifo(grifo, e); return; }
+      if (v.marcaTexto) { if (e.pointerType !== 'touch') pairarMira(p, e); return; }
       if (apagando) { apagarPerto(ponto(e)); return; }
       if (!atual) return;
       // Todos os pontos que o navegador juntou entre um quadro e outro (a caneta manda mais de 100 por segundo).
@@ -567,8 +576,14 @@ var Leitor = (function () {
       previstos = prev.slice(0, 2).map(function (x) { var q = novoPonto(x); return [q[0], q[1], q[2] != null ? q[2] : 0.5]; });
       redesenhar();
     });
-    function fim() {
+    function fim(e) {
       apagando = false; caixa = null;
+      if (grifo) {
+        var g = grifo; grifo = null;
+        if (e && e.type === 'pointercancel') g.no.remove(); else fecharGrifo(g);
+        if (!e || e.pointerType === 'touch') esconderMira();
+        return;
+      }
       if (!atual) return;
       if (quadro) { cancelAnimationFrame(quadro); quadro = null; }
       previstos = [];
@@ -576,9 +591,12 @@ var Leitor = (function () {
       v.itens.push(atual); atual = null; traco = null; salvarAgora();
     }
     svg.addEventListener('pointerup', fim); svg.addEventListener('pointercancel', fim);
+    svg.addEventListener('pointerleave', function () { if (!grifo) esconderMira(); });
     return svg;
-  }  // Só uma ferramenta de clique por vez: nota, caneta ou borracha (o marca-texto age na seleção de texto).
+  }
+  // Só uma ferramenta por vez: marca-texto, nota, caneta ou borracha.
   function ferramenta(nome) {
+    if (nome && v.marcaTexto) definirMarca(false);
     v.notaModo = nome === 'nota'; v.caneta = nome === 'caneta'; v.borracha = nome === 'borracha';
     v.btNota.classList.toggle('ativo', v.notaModo); v.btCaneta.classList.toggle('ativo', v.caneta); v.btBorracha.classList.toggle('ativo', v.borracha);
     v.area.classList.toggle('modo-nota', v.notaModo); v.area.classList.toggle('modo-caneta', v.caneta); v.area.classList.toggle('modo-borracha', v.borracha);
@@ -616,50 +634,97 @@ var Leitor = (function () {
     return null;
   }
 
-  // Soltou o mouse com texto selecionado e o marca-texto ligado: grifa na cor escolhida.
-  function aoSoltar(e) {
-    if (v.notaModo || !v.marcaTexto) return;
-    setTimeout(function () {
-      var sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.rangeCount || !v.area.contains(sel.anchorNode)) return;
-      var range = sel.getRangeAt(0), porPagina = {};
-      Array.prototype.forEach.call(range.getClientRects(), function (r) {
-        if (r.width < 1 || r.height < 1) return;
-        var alvo = paginaDoPonto(r.left + r.width / 2, r.top + r.height / 2); if (!alvo) return;
-        var pr = alvo.r;
-        (porPagina[alvo.p.n] = porPagina[alvo.p.n] || []).push({ x: (r.left - pr.left) / pr.width, y: (r.top - pr.top) / pr.height, w: r.width / pr.width, h: r.height / pr.height });
-      });
-      if (!Object.keys(porPagina).length) return;
-      var texto = sel.toString().replace(/\s+/g, ' ').trim();
-      (function (cor) {
-        var criados = Object.keys(porPagina).map(function (n) {
-          var it = { id: Dados.novoId(), tipo: 'grifo', pagina: Number(n), rects: juntarLinhas(porPagina[n]), cor: cor, texto: texto, nota: '', criadoEm: Date.now() };
-          v.itens.push(it);
-          return it;
-        });
-        sel.removeAllRanges();
-        criados.forEach(function (it) { desenharItens(it.pagina); });
-        desenharPainel();
-        salvarAgora();
-      })(v.corAtual);
-    }, 0);
+  // ---------- Marca-texto no estilo da extensão do TEC ----------
+  // Faixa reta e horizontal do ponto inicial até onde o ponteiro estiver, na altura da linha de texto embaixo
+  // (80% da linha, centrada nas letras), com pontas redondas. Um toque sem arrastar vira um círculo;
+  // um toque em cima de um grifo abre o balão dele (cor, nota, excluir).
+  var GRIFO_SEM_LINHA = 0.02;  // altura da faixa fora do texto, em proporção da largura da página
+  function spansDoTexto(p) {
+    return p.texto ? Array.prototype.filter.call(p.texto.querySelectorAll('span'), function (s) { return !s.firstElementChild && s.textContent.trim(); }) : [];
   }
-  // Une os retângulos da mesma linha (o PDF.js quebra a linha em vários pedaços).
-  function juntarLinhas(rs) {
-    rs.sort(function (a, b) { return a.y - b.y || a.x - b.x; });
-    var r = [];
-    rs.forEach(function (x) {
-      var u = r[r.length - 1];
-      if (u && Math.abs(u.y - x.y) < u.h * 0.5 && x.x <= u.x + u.w + 0.02) {
-        var dir = Math.max(u.x + u.w, x.x + x.w), base = Math.max(u.y + u.h, x.y + x.h);
-        u.x = Math.min(u.x, x.x); u.y = Math.min(u.y, x.y); u.w = dir - u.x; u.h = base - u.y;
-      } else r.push({ x: x.x, y: x.y, w: x.w, h: x.h });
+  // Linha de texto da página sob o trecho [x0, x1] na altura cy (coordenadas da tela).
+  function linhaDeTexto(p, x0, x1, cy) {
+    var melhor = null;
+    spansDoTexto(p).forEach(function (s) {
+      var b = s.getBoundingClientRect();
+      if (!b.height || b.width < 1) return;
+      if (cy < b.top - b.height * 0.5 || cy > b.bottom + b.height * 0.5) return;
+      if (b.right < x0 - 30 || b.left > x1 + 30) return;
+      var d = Math.abs(b.top + b.height / 2 - cy);
+      if (!melhor || d < melhor.d - 0.5) melhor = { top: b.top, h: b.height, d: d };
     });
-    return r.map(function (x) { return { x: +x.x.toFixed(4), y: +x.y.toFixed(4), w: +x.w.toFixed(4), h: +x.h.toFixed(4) }; });
+    return melhor;
+  }
+  function faixaDaLinha(l) { return { y: l.top + l.h * 0.12, h: l.h * 0.8 }; }
+  // Retângulo da faixa em proporção da página (meio marcador antes do início e meio depois do fim).
+  function retanguloDaFaixa(g) {
+    var c = g.caixa, x0 = Math.min(g.x0, g.x1) - g.h / 2, w = Math.abs(g.x1 - g.x0) + g.h;
+    return { x: +((x0 - c.left) / c.width).toFixed(4), y: +((g.y - c.top) / c.height).toFixed(4), w: +(w / c.width).toFixed(4), h: +(g.h / c.height).toFixed(4) };
+  }
+  function posicionarFaixa(no, r) { no.style.left = r.x * 100 + '%'; no.style.top = r.y * 100 + '%'; no.style.width = r.w * 100 + '%'; no.style.height = r.h * 100 + '%'; }
+  function iniciarGrifo(p, e) {
+    var caixa = p.el.getBoundingClientRect(), linha = linhaDeTexto(p, e.clientX - 6, e.clientX + 6, e.clientY);
+    var fx = linha ? faixaDaLinha(linha) : { h: caixa.width * GRIFO_SEM_LINHA, y: e.clientY - caixa.width * GRIFO_SEM_LINHA / 2 };
+    var g = { p: p, caixa: caixa, x0: e.clientX, x1: e.clientX, y: fx.y, h: fx.h, linha: !!linha, cor: v.corAtual, no: el('div', { class: 'pdf-grifo', style: { background: corHex(v.corAtual) } }) };
+    p.grifos.appendChild(g.no);
+    posicionarFaixa(g.no, retanguloDaFaixa(g));
+    mostrarMira(e.clientX, g.y + g.h / 2, g.h);
+    return g;
+  }
+  function moverGrifo(g, e) {
+    g.x1 = e.clientX;
+    posicionarFaixa(g.no, retanguloDaFaixa(g));
+    mostrarMira(e.clientX, g.y + g.h / 2, g.h);
+  }
+  function fecharGrifo(g) {
+    g.no.remove();
+    var x0 = Math.min(g.x0, g.x1), x1 = Math.max(g.x0, g.x1), c = g.caixa;
+    // Toque sem arrastar em cima de um grifo: abre o balão dele em vez de fazer um círculo.
+    if (x1 - x0 < 3) {
+      var px = (g.x0 - c.left) / c.width, py = (g.y + g.h / 2 - c.top) / c.height;
+      var achado = v.itens.filter(function (it) {
+        return it.tipo === 'grifo' && it.pagina === g.p.n && it.rects.some(function (r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; });
+      })[0];
+      if (achado) { abrirBalao(achado, g.x0, g.y + g.h); return; }
+    }
+    // Começou num espaço sem texto: procura a linha ao longo do trecho grifado.
+    if (!g.linha) { var l = linhaDeTexto(g.p, x0 - g.h / 2, x1 + g.h / 2, g.y + g.h / 2); if (l) { var fx = faixaDaLinha(l); g.y = fx.y; g.h = fx.h; } }
+    var meio = g.y + g.h / 2, texto = spansDoTexto(g.p).filter(function (s) {
+      var b = s.getBoundingClientRect();
+      return meio >= b.top && meio <= b.bottom && b.right > x0 && b.left < x1;
+    }).map(function (s) { return s.textContent; }).join(' ').replace(/\s+/g, ' ').trim();
+    var it = { id: Dados.novoId(), tipo: 'grifo', pagina: g.p.n, rects: [retanguloDaFaixa(g)], cor: g.cor, texto: texto, nota: '', criadoEm: Date.now() };
+    v.itens.push(it);
+    desenharItens(it.pagina);
+    salvarAgora();
+  }
+  // Mira: círculo translúcido do tamanho exato da faixa que vai ser marcada (substitui o cursor).
+  var mira = null, quadroMira = null, ultimoPairar = null;
+  function mostrarMira(cx, cy, d) {
+    if (!mira) { mira = el('div', { class: 'pdf-mira' }); document.body.appendChild(mira); }
+    mira.style.background = corHex(v.corAtual);
+    mira.style.width = mira.style.height = d + 'px';
+    mira.style.left = cx - d / 2 + 'px'; mira.style.top = cy - d / 2 + 'px';
+    mira.style.display = '';
+  }
+  function esconderMira() { if (mira) mira.style.display = 'none'; }
+  // Passando o ponteiro: a mira segue na hora; o tamanho se ajusta à linha embaixo (uma vez por quadro).
+  function pairarMira(p, e) {
+    var d = mira && mira.style.display !== 'none' ? parseFloat(mira.style.width) : p.el.getBoundingClientRect().width * GRIFO_SEM_LINHA;
+    mostrarMira(e.clientX, e.clientY, d);
+    ultimoPairar = { p: p, x: e.clientX, y: e.clientY };
+    if (quadroMira) return;
+    quadroMira = requestAnimationFrame(function () {
+      quadroMira = null;
+      var u = ultimoPairar;
+      if (!v || !v.marcaTexto || !u || !mira || mira.style.display === 'none') return;
+      var l = linhaDeTexto(u.p, u.x, u.x, u.y);
+      mostrarMira(u.x, u.y, l ? faixaDaLinha(l).h : u.p.el.getBoundingClientRect().width * GRIFO_SEM_LINHA);
+    });
   }
 
   function aoClicar(e) {
-    if (e.target.closest('.pdf-marcador')) return;
+    if (e.target.closest('.pdf-marcador') || v.marcaTexto) return;
     var alvo = paginaDoPonto(e.clientX, e.clientY); if (!alvo) return;
     var px = (e.clientX - alvo.r.left) / alvo.r.width, py = (e.clientY - alvo.r.top) / alvo.r.height;
     if (v.notaModo) {
@@ -719,7 +784,7 @@ var Leitor = (function () {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); alternarBusca(true); return; }
     if (e.key === 'Escape') { fecharFlutuantes(); ferramenta(''); return; }
     if (digitando) return;
-    if (/^[1-4]$/.test(e.key)) { e.preventDefault(); fecharFlutuantes(); definirCor(CORES[Number(e.key) - 1][0]); return; }
+    if (/^[1-5]$/.test(e.key)) { e.preventDefault(); fecharFlutuantes(); definirCor(CORES[Number(e.key) - 1][0]); return; }
     if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); irPara(v.atual + 1); }
     else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); irPara(v.atual - 1); }
   });

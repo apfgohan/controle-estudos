@@ -1635,8 +1635,10 @@ a.rec-caderno:hover { text-decoration: underline; }
 .leitor-caixa-busca { display: none; align-items: center; gap: 6px; }
 .leitor-caixa-busca.aberta { display: flex; }
 .leitor-sep { width: 1px; height: 22px; background: var(--borda-forte); margin: 0 4px; }
-.leitor-area.modo-grifo .textLayer span { cursor: text; }
-.leitor-area.modo-grifo .textLayer ::selection { background: rgba(242, 179, 61, .45); }
+/* Marca-texto (igual à extensão do TEC): arrasta-se sobre a linha; a mira circular faz o papel do cursor. */
+.leitor-area.modo-grifo .pdf-tinta { pointer-events: auto; cursor: none; touch-action: pan-y; }
+.leitor-area.modo-grifo .pdf-links { display: none; }
+.pdf-mira { position: fixed; z-index: 60; pointer-events: none; border-radius: 50%; opacity: .55; box-shadow: 0 0 0 1px rgba(138, 138, 138, .9); }
 /* Tela estreita (tela dividida, celular): a barra quebra em duas linhas, com o nome da aula inteiro em cima. */
 @media (max-width: 1100px) { .leitor .leitor-barra { flex-wrap: wrap; } .leitor-barra .leitor-titulo { flex: 1 1 calc(100% - 50px); } }
 @media (max-width: 700px) { .leitor-pagina { width: 48px; } .leitor-sep { display: none; } }
@@ -1671,7 +1673,7 @@ a.rec-caderno:hover { text-decoration: underline; }
 .leitor-area.noite .pdf-notas { filter: invert(1) hue-rotate(180deg); }
 .leitor-area.noite .pdf-pagina { background: #fff; }
 .pdf-grifos { position: absolute; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: multiply; } /* a mistura vale para a camada toda: o texto do PDF fica nítido por cima da cor */
-.pdf-grifo { position: absolute; mix-blend-mode: multiply; border-radius: 2px; }
+.pdf-grifo { position: absolute; mix-blend-mode: multiply; border-radius: 999px; } /* pontas redondas, como o marcador da extensão do TEC */
 
 .pdf-notas { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .pdf-marcador { position: absolute; transform: translate(-30%, -60%); pointer-events: auto; width: 24px; height: 24px; border-radius: 50%; border: 0; background: #f2b33d; color: #2a1d00; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
