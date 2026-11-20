@@ -36,6 +36,8 @@ var Dados = (function () {
       leitura: { paginasPorMeta: 0 },
       // Google Drive: ids das pastas do programa e a data da última cópia diária (comum a todas as fases).
       drive: {},
+      // Sessões excluídas { id: quando }: ao juntar com a nuvem, não voltam (ver mesclarComRemoto).
+      excluidas: {},
       // Fase de estudo: 'pre' (Pré-Edital) ou o id de um concurso (Pós-Edital). Cada fase é um espaço separado
       // (matérias, cadernos, estudos…): o ativo fica no topo destes dados e os outros em `espacos`.
       fases: { atual: 'pre', concursos: [] }, // concursos: { id, nome, esfera, banca, bancaOutra, dataProva, criadoEm }
@@ -1347,7 +1349,38 @@ var Dados = (function () {
 
   function excluirSessao(id) {
     remover('sessoes', function (s) { return s.id === id; });
+    db.excluidas = db.excluidas || {};
+    db.excluidas[id] = Date.now();
     salvar();
+  }
+
+  // ---------- Juntar com a nuvem (dois aparelhos alterados ao mesmo tempo) ----------
+  // Parte da versão da nuvem e acrescenta as sessões criadas neste aparelho depois da última sincronização
+  // (base) que a nuvem ainda não tem; tira as que foram excluídas aqui depois da base. Nenhuma sessão lançada se perde.
+  function sessoesDaFase(d, fase) {
+    if (!d.fases || d.fases.atual === fase || (!d.fases && fase === 'pre')) return d.sessoes || (d.sessoes = []);
+    var e = (d.espacos || {})[fase];
+    return e ? (e.sessoes || (e.sessoes = [])) : null;
+  }
+  function fasesDe(d) { return [(d.fases && d.fases.atual) || 'pre'].concat(Object.keys(d.espacos || {})); }
+  function mesclarComRemoto(remoto, localDb, base) {
+    var r = JSON.parse(JSON.stringify(remoto)), l = localDb, add = 0, rem = 0;
+    var exc = Object.assign({}, r.excluidas || {}, l.excluidas || {});
+    // Poda: exclusões com mais de 120 dias não precisam mais ser lembradas.
+    var limite = Date.now() - 120 * 86400000;
+    Object.keys(exc).forEach(function (id) { if (exc[id] < limite) delete exc[id]; });
+    r.excluidas = exc;
+    fasesDe(l).forEach(function (fase) {
+      var ls = sessoesDaFase(l, fase), rs = sessoesDaFase(r, fase);
+      if (!ls || !rs) return;
+      var ids = {}; rs.forEach(function (s) { ids[s.id] = true; });
+      ls.forEach(function (s) { if (!ids[s.id] && !exc[s.id] && (s.criadoEm || 0) > base) { rs.push(JSON.parse(JSON.stringify(s))); add++; } });
+    });
+    fasesDe(r).forEach(function (fase) {
+      var rs = sessoesDaFase(r, fase); if (!rs) return;
+      for (var i = rs.length - 1; i >= 0; i--) if ((l.excluidas || {})[rs[i].id] > base) { rs.splice(i, 1); rem++; }
+    });
+    return { dados: r, adicionadas: add, removidas: rem };
   }
 
   // ---------- Consultas calculadas ----------
@@ -1912,7 +1945,7 @@ var Dados = (function () {
     excluirImportacao: excluirImportacao, definirApelido: definirApelido,
     BANCAS: BANCAS, NOME_BANCA: NOME_BANCA, incidenciasDe: incidenciasDe, incidencia: incidencia, salvarIncidencia: salvarIncidencia,
     excluirIncidencia: excluirIncidencia, arvoreIncidencia: arvoreIncidencia, descendentes: descendentes, somarIncidencia: somarIncidencia,
-    estrelasPorRazao: estrelasPorRazao, relevanciasDaDisciplina: relevanciasDaDisciplina, incidenciaBloco: incidenciaBloco,
+    estrelasPorRazao: estrelasPorRazao, mesclarComRemoto: mesclarComRemoto, relevanciasDaDisciplina: relevanciasDaDisciplina, incidenciaBloco: incidenciaBloco,
     definirAssuntosTec: definirAssuntosTec, topicosHistoricos: topicosHistoricos,
     aulasDe: aulasDe, aula: aula, aulasHistoricas: aulasHistoricas, definirAulaConcluida: definirAulaConcluida, ultimoEstudoAula: ultimoEstudoAula, nomeAula: nomeAula,
     paginasPorMeta: paginasPorMeta, definirPaginasPorMeta: definirPaginasPorMeta, totalPaginas: totalPaginas, paginasLidas: paginasLidas,

@@ -58,6 +58,20 @@ var Nuvem = (function () {
 
   // ---------- Sincronização ----------
   function local() { return Dados.db.atualizadoEm || 0; }
+  // Base: a versão da nuvem que este aparelho leu ou gravou por último. Se a nuvem e este aparelho mudaram depois dela,
+  // os dois lados são juntados (as sessões lançadas aqui que não subiram não se perdem).
+  var CHAVE_BASE = 'controle-estudos.base-nuvem';
+  function base() { try { return Number(localStorage.getItem(CHAVE_BASE)) || 0; } catch (e) { return 0; } }
+  function definirBase(v) { try { if (v) localStorage.setItem(CHAVE_BASE, String(v)); } catch (e) { /* segue */ } }
+  function juntar(textoRemoto, quandoRemoto) {
+    var remoto; try { remoto = JSON.parse(textoRemoto); } catch (e) { return false; }
+    var m = Dados.mesclarComRemoto(remoto, Dados.db, base());
+    Dados.substituir(m.dados, 'nuvem');
+    Dados.db.atualizadoEm = Math.max(Date.now(), (quandoRemoto || 0) + 1);
+    if (window.App) App.atualizar();
+    if (m.adicionadas) UI.aviso(m.adicionadas + (m.adicionadas === 1 ? ' sessão deste aparelho foi juntada' : ' sessões deste aparelho foram juntadas') + ' com a nuvem');
+    return true;
+  }
   function vazioNoTexto(texto) {
     try { var d = JSON.parse(texto); return !d || !Array.isArray(d.disciplinas) || Dados.semDados(d); } catch (e) { return false; }
   }
@@ -93,9 +107,15 @@ var Nuvem = (function () {
       // (protege contra um aparelho novo ou vazio apagar o que já está na nuvem, e vice-versa).
       var remotoVazio = !v || !v.dados || vazioNoTexto(v.dados);
       var localVazio = Dados.semDados();
-      if (!remotoVazio && (localVazio || (v.atualizadoEm || 0) >= local())) {
+      var b = base(), rt = v.atualizadoEm || 0;
+      if (!remotoVazio && !localVazio && b && rt > b && local() > b && rt !== local()) {
+        // Os dois mudaram desde a última sincronização: junta e envia o resultado.
+        juntar(v.dados, rt);
+        pendente = true;
+      } else if (!remotoVazio && (localVazio || rt >= local())) {
         aplicarRemoto(v.dados);
         ultimoSalvo = v.atualizadoEm || null;
+        definirBase(rt);
         pendente = false;
       } else if (!localVazio) {
         pendente = true;
@@ -119,7 +139,7 @@ var Nuvem = (function () {
       ref.child('atualizadoEm').on('value', function (snap) {
         var quando = snap.val() || 0;
         if (quando > local() && !pendente) {
-          ref.child('dados').once('value').then(function (s) { if (s.val()) { aplicarRemoto(s.val()); ultimoSalvo = quando; notificar(); } });
+          ref.child('dados').once('value').then(function (s) { if (s.val()) { aplicarRemoto(s.val()); ultimoSalvo = quando; definirBase(quando); notificar(); } });
         }
       }, falhar);
     }).catch(falhar);
@@ -128,11 +148,21 @@ var Nuvem = (function () {
   function gravarAgora() {
     clearTimeout(timer);
     if (!ref || !comparado || estado === 'negado') return Promise.resolve();
+    var alvo = ref;
+    // Antes de gravar: se outro aparelho gravou depois da nossa base, junta primeiro (em vez de passar por cima).
+    return alvo.child('atualizadoEm').once('value').then(function (s) {
+      var rt = s.val() || 0, b = base();
+      if (b && rt > b && rt !== local()) {
+        return alvo.child('dados').once('value').then(function (sd) { if (sd.val()) juntar(sd.val(), rt); });
+      }
+    }).then(function () {
     var quando = local() || Date.now();
     // Sem internet, o Firebase guarda a gravação e envia quando a conexão voltar (com a página aberta).
-    return ref.update({ dados: Dados.exportar(), atualizadoEm: quando }).then(function () {
+    return alvo.update({ dados: Dados.exportar(), atualizadoEm: quando });
+    }).then(function () {
+      definirBase(local() || Date.now());
       pendente = false;
-      ultimoSalvo = quando;
+      ultimoSalvo = local();
       copiaDoDia();
       if (estado !== 'offline') estado = 'sincronizado';
       notificar();
@@ -245,6 +275,16 @@ var Nuvem = (function () {
   function esconderTelaLogin() { if (tela) { tela.remove(); tela = null; } }
 
   // ---------- Indicador no topo e aviso ----------
+  // "às 14:32", "ontem 22:10" ou "18/11 09:05".
+  function quandoTexto(ms) {
+    if (!ms) return '';
+    var d = new Date(ms), hoje = new Date(), ontem = new Date(Date.now() - 86400000);
+    var h = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (d.toDateString() === hoje.toDateString()) return 'às ' + h;
+    if (d.toDateString() === ontem.toDateString()) return 'ontem ' + h;
+    return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + ' ' + h;
+  }
+  setInterval(function () { if (estado === 'sincronizado') desenharIndicador(); }, 60000); // "ontem" vira data com o passar do tempo
   function desenharIndicador() {
     if (!ativa) return;
     var caixa = document.getElementById('status-dados');
@@ -260,7 +300,7 @@ var Nuvem = (function () {
         [el('span', { class: 'status-ponto' }), 'Resumo pendente']);
     } else if (estado === 'sincronizado') {
       n = el('a', { href: pdfsNaFila ? '#/configuracoes' : '#/backup', class: 'status-dados ok' + (pendente || pdfsNaFila ? ' salvando' : ''), title: 'Dados salvos na nuvem' + hora + (pdfsNaFila ? ' · ' + pdfsNaFila + (pdfsNaFila === 1 ? ' PDF subindo' : ' PDFs subindo') + ' para o Google Drive' : '') },
-        [el('span', { class: 'status-ponto' }), pendente ? 'Salvando…' : pdfsNaFila ? 'Enviando PDFs…' : 'Salvo na nuvem']);
+        [el('span', { class: 'status-ponto' }), pendente ? 'Salvando…' : pdfsNaFila ? 'Enviando PDFs…' : 'Salvo na nuvem' + (ultimoSalvo ? ' ' + quandoTexto(ultimoSalvo) : '')]);
     } else if (estado === 'offline') {
       n = el('a', { href: '#/backup', class: 'status-dados atencao', title: 'Sem internet: as alterações ficam neste aparelho e vão para a nuvem quando a conexão voltar.' },
         [el('span', { class: 'status-ponto' }), 'Sem internet']);
