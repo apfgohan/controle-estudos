@@ -6,10 +6,10 @@ var Patentes = (function () {
   var LISTA = [
     // Calibrado com o histórico real (cerca de 118 XP por hora): o Imperator equivale a cerca de 2.000 horas.
     ['Tiro', 0], ['Miles', 1000], ['Immunis', 3000], ['Tesserarius', 6000], ['Optio', 9500],
-    // Algumas promoções exigem também acerto acima de X% nas últimas N questões.
-    ['Signifer', 15000], ['Aquilifer', 22000], ['Centurio', 32000, { acerto: 80, questoes: 500 }], ['Primus Pilus', 44000], ['Tribunus', 57000],
-    ['Quaestor', 73000, { acerto: 82, questoes: 500 }], ['Aedilis', 94000], ['Praetor', 118000], ['Legatus', 146000], ['Consul', 180000],
-    ['Imperator', 236000, { acerto: 85, questoes: 1000 }]
+    // Algumas promoções exigem também acerto acima de X% nas questões do Modo Revisão (todas, sem quantidade mínima).
+    ['Signifer', 15000], ['Aquilifer', 22000], ['Centurio', 32000, { acerto: 80 }], ['Primus Pilus', 44000], ['Tribunus', 57000],
+    ['Quaestor', 73000, { acerto: 82 }], ['Aedilis', 94000], ['Praetor', 118000], ['Legatus', 146000], ['Consul', 180000],
+    ['Imperator', 236000, { acerto: 85 }]
   ].map(function (p, i) { return { indice: i, nome: p[0], xp: p[1], requisito: p[2] || null }; });
 
   // O rebaixamento só vale a partir daqui: falhas antigas não punem, mas o XP antigo conta.
@@ -31,21 +31,29 @@ var Patentes = (function () {
   var FALTAS_SEGUIDAS = 3, FALTAS_NO_MES = 5;
   var CHAVE_VISTA = 'controle-estudos.patente-vista';
 
-  // Acerto nas últimas N questões lançadas. Se a janela corta uma linha ao meio, conta a parte proporcional.
-  function acertoNasUltimas(historico, n) {
+  // Acerto em todas as questões do Modo Revisão lançadas até agora (historico = só as linhas de Revisão).
+  function acertoRevisao(historico) {
     var questoes = 0, acertos = 0;
-    for (var i = historico.length - 1; i >= 0 && questoes < n; i--) {
-      var parte = Math.min(1, (n - questoes) / historico[i].n);
-      questoes += historico[i].n * parte;
-      acertos += historico[i].a * parte;
-    }
-    return { questoes: Math.round(questoes), pct: questoes ? acertos / questoes * 100 : 0 };
+    historico.forEach(function (x) { questoes += x.n; acertos += x.a; });
+    return { questoes: questoes, pct: questoes ? acertos / questoes * 100 : 0 };
   }
 
+  // Sem nenhuma questão do Modo Revisão, o requisito ainda não foi cumprido.
   function requisitoAtendido(req, historico) {
     if (!req) return true;
-    var st = acertoNasUltimas(historico, req.questoes);
-    return st.questoes >= req.questoes && st.pct > req.acerto;
+    var st = acertoRevisao(historico);
+    return st.questoes > 0 && st.pct > req.acerto;
+  }
+
+  // Questão do Modo Revisão: simulados, favoritadas da Revisão (dúvidas e erradas 2x+, fora das rodadas do Modo Leitura)
+  // e pontos fracos. Baterias, erros, questões do PDF e o caderno de anotações são do Modo Leitura.
+  function linhaDaRevisao(s, l) {
+    if (l.assunto) return true;
+    if (!l.cadernoId) return false;
+    var c = Dados.caderno(l.cadernoId), p = c && Dados.pasta(c.pastaId);
+    if (!p) return false;
+    if (p.tipo === 'simulado') return true;
+    return p.tipo === 'favoritas' && !l.rodada && (c.grupo === 'duvidas' || c.grupo === 'erros2x');
   }
 
   function meioDaFaixa(i) { return Math.round((LISTA[i].xp + LISTA[i + 1].xp) / 2); }
@@ -77,7 +85,7 @@ var Patentes = (function () {
         reg.questoes += n;
         reg.acertos += a;
         if (n) {
-          g.linhas.push({ n: n, a: a });
+          if (linhaDaRevisao(s, l)) g.linhas.push({ n: n, a: a });
           var xpBat = xpDaBateria(n, a), extra = xpBat - n * XP.QUESTAO;
           g.bonus += extra;
           reg.bonus += extra;
@@ -250,7 +258,7 @@ var Patentes = (function () {
     r.pct = r.proxima ? Math.min(100, (r.xp - r.patente.xp) / (r.proxima.xp - r.patente.xp) * 100) : 100;
     // Situação do requisito de acerto da próxima patente, quando ela tiver um.
     var req = r.proxima && r.proxima.requisito;
-    r.requisito = req ? Object.assign({ exigido: req.acerto, janela: req.questoes, ok: requisitoAtendido(req, historico) }, acertoNasUltimas(historico, req.questoes)) : null;
+    r.requisito = req ? Object.assign({ exigido: req.acerto, ok: requisitoAtendido(req, historico) }, acertoRevisao(historico)) : null;
     // Falta só mais um dia para cair (considerando que hoje termine sem estudo).
     r.travado = !!(r.requisito && !r.requisito.ok && r.xp >= r.proxima.xp);
     var hojeXp = r.dias[hoje];
@@ -614,15 +622,15 @@ var Patentes = (function () {
     return r.faltam ? 'Faltam ' + UI.fmtNum(r.faltam) + ' XP para ' + r.proxima.nome : 'XP completo para ' + r.proxima.nome;
   }
 
-  function textoExigencia(req) { return 'Acerto acima de ' + req.acerto + '% nas últimas ' + UI.fmtNum(req.questoes) + ' questões'; }
+  function textoExigencia(req) { return 'Acerto acima de ' + req.acerto + '% nas questões do Modo Revisão'; }
 
-  // Ex.: "Acerto acima de 80% nas últimas 500 questões: agora 78,3%".
+  // Ex.: "Acerto acima de 80% nas questões do Modo Revisão: agora 78,3% (420 questões)".
   function textoRequisito(r) {
     var q = r.requisito;
     if (!q) return '';
-    var txt = textoExigencia({ acerto: q.exigido, questoes: q.janela });
-    if (q.questoes < q.janela) return txt + ': você tem ' + UI.fmtNum(q.questoes) + ' de ' + UI.fmtNum(q.janela);
-    return txt + ': agora ' + UI.fmtPct(Math.round(q.pct * 10) / 10) + (q.ok ? ' ✓' : '');
+    var txt = textoExigencia({ acerto: q.exigido });
+    if (!q.questoes) return txt + ': ainda sem questões do Modo Revisão';
+    return txt + ': agora ' + UI.fmtPct(Math.round(q.pct * 10) / 10) + ' (' + UI.fmtNum(q.questoes) + (q.questoes === 1 ? ' questão)' : ' questões)') + (q.ok ? ' ✓' : '');
   }
 
   // ---------- Janelas de aviso ----------
@@ -816,7 +824,7 @@ var Patentes = (function () {
           insignia(p.indice),
           el('span', { class: 'patente-lista-nome' }, [
             el('span', { text: p.nome }),
-            p.requisito ? el('span', { class: 'patente-requisito', text: p.requisito.acerto + '%+ nas últimas ' + UI.fmtNum(p.requisito.questoes) }) : null
+            p.requisito ? el('span', { class: 'patente-requisito', text: 'acerto acima de ' + p.requisito.acerto + '% no Modo Revisão' }) : null
           ]),
           el('span', { class: 'data-fraca', text: UI.fmtNum(p.xp) + ' XP' })
         ]);
