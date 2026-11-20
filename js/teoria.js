@@ -369,7 +369,7 @@ var Teoria = (function () {
     function desenharArquivo() {
       var temAqui = m && PdfsDados.temPdf(m.id) && !removerArquivo;
       var ficha = novoArquivo ? { nome: novoArquivo.arquivo.name, paginas: novoArquivo.paginas, tamanho: novoArquivo.arquivo.size } : removerArquivo ? null : m && m.arquivo;
-      infoArquivo.textContent = ficha ? ficha.nome + ' · PDF com ' + ficha.paginas + ' páginas (' + Math.max(1, Math.round((ficha.tamanho || 0) / 1048576)) + ' MB)' + (novoArquivo ? ' · será guardado ao salvar' : temAqui ? ' · neste aparelho' : ' · não está neste aparelho') + '. Em "Páginas", informe só as de teoria.' : 'Nenhum PDF. Envie o arquivo para ler, grifar e anotar no programa.';
+      infoArquivo.textContent = ficha ? ficha.nome + ' · PDF com ' + ficha.paginas + ' páginas (' + Math.max(1, Math.round((ficha.tamanho || 0) / 1048576)) + ' MB)' + (novoArquivo ? ' · será guardado ao salvar' : (temAqui ? ' · neste aparelho' : ' · não está neste aparelho') + (window.Drive && Drive.configurado() ? (ficha.driveId ? ' · no Google Drive ✓' : Drive.situacao().progresso[m.id] != null ? ' · enviando para o Google Drive' : ' · ainda não está no Google Drive') : '')) + '. Em "Páginas", informe só as de teoria.' : 'Nenhum PDF. Envie o arquivo para ler, grifar e anotar no programa.';
       acoesArquivo.innerHTML = '';
       acoesArquivo.appendChild(UI.botao(ficha ? 'Trocar PDF…' : 'Enviar PDF…', function () { entradaPdf.click(); }, 'btn-secundario'));
       if (ficha) acoesArquivo.appendChild(UI.botao('Remover', function () { novoArquivo = null; removerArquivo = true; desenharArquivo(); }, 'btn-secundario'));
@@ -468,7 +468,8 @@ var Teoria = (function () {
       ]),
       el('div', { class: 'aula-acoes' }, [
         a.tipo === 'pdf' && PdfsDados.temPdf(a.id) ? el('a', { class: 'btn btn-ler', href: '#/leitor/' + a.id, title: 'Ler o PDF no programa' }, [UI.icone('livro'), 'Ler']) : null,
-        a.tipo === 'pdf' && a.arquivo && !PdfsDados.temPdf(a.id) ? el('a', { class: 'btn btn-ler fora', href: '#/leitor/' + a.id, title: 'O PDF foi enviado em outro aparelho: envie o arquivo aqui' }, [UI.icone('livro'), 'Enviar PDF']) : null,
+        a.tipo === 'pdf' && a.arquivo && a.arquivo.driveId && !PdfsDados.temPdf(a.id) ? el('a', { class: 'btn btn-ler', href: '#/leitor/' + a.id, title: 'O PDF está no Google Drive: é baixado para este aparelho na primeira vez' }, [UI.icone('livro'), 'Ler']) : null,
+        a.tipo === 'pdf' && a.arquivo && !a.arquivo.driveId && !PdfsDados.temPdf(a.id) ? el('a', { class: 'btn btn-ler fora', href: '#/leitor/' + a.id, title: 'O PDF foi enviado em outro aparelho e ainda não está no Google Drive: envie o arquivo aqui' }, [UI.icone('livro'), 'Enviar PDF']) : null,
         window.Sessao ? UI.botao('Lançar estudo', function () { Sessao.abrir({ disciplinaId: d.id, tipo: 'teoria', aulaIds: [a.id] }); }, 'btn-lancar', 'play') : null,
         UI.botaoEngrenagem(function () { editarAula(b, a); }, 'Editar aula')
       ])

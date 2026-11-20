@@ -106,6 +106,13 @@ var Nuvem = (function () {
       estado = online ? 'sincronizado' : 'offline';
       notificar();
       if (window.ResumosDados) ResumosDados.enviarPendentes();
+      // Cronômetro iniciado em outro aparelho (ou parado lá): acompanha.
+      var primeiroCron = true;
+      ref.child('cronometro').on('value', function (s) {
+        var v = null; try { v = s.val() ? JSON.parse(s.val()) : null; } catch (e) { v = null; }
+        if (aoCron) aoCron(v, primeiroCron);
+        primeiroCron = false;
+      });
       if (window.PdfsDados) PdfsDados.enviarPendentes();
       return embutirFotoPerfil().then(function () { if (pendente) return gravarAgora(); });
     }).then(function () {
@@ -126,6 +133,7 @@ var Nuvem = (function () {
     return ref.update({ dados: Dados.exportar(), atualizadoEm: quando }).then(function () {
       pendente = false;
       ultimoSalvo = quando;
+      copiaDoDia();
       if (estado !== 'offline') estado = 'sincronizado';
       notificar();
     }).catch(falhar);
@@ -159,11 +167,52 @@ var Nuvem = (function () {
     });
   }
 
+  // ---------- Cópia diária dos dados principais (14 dias), para voltar atrás se algo der errado ----------
+  // Guarda o estado do primeiro salvamento de cada dia. Um índice pequeno lista as cópias sem baixá-las.
+  var CHAVE_COPIA = 'controle-estudos.copia-nuvem', COPIAS_NUVEM = 14;
+  function copiaDoDia() {
+    var hoje = UI.hoje();
+    try { if (localStorage.getItem(CHAVE_COPIA) === hoje) return; } catch (e) { /* segue */ }
+    if (!ref || Dados.semDados()) return;
+    var alvo = ref;
+    alvo.child('copiasIndice/' + hoje).once('value').then(function (s) {
+      if (s.val()) return null; // outro aparelho já fez a de hoje
+      var texto = Dados.exportar();
+      return alvo.child('copias/' + hoje).set({ dados: texto, atualizadoEm: Date.now() }).then(function () {
+        return alvo.child('copiasIndice/' + hoje).set({ tamanho: texto.length, atualizadoEm: Date.now() });
+      }).then(function () {
+        return alvo.child('copiasIndice').once('value').then(function (si) {
+          var datas = Object.keys(si.val() || {}).sort().reverse();
+          return Promise.all(datas.slice(COPIAS_NUVEM).map(function (d) { return Promise.all([alvo.child('copias/' + d).remove(), alvo.child('copiasIndice/' + d).remove()]); }));
+        });
+      });
+    }).then(function () { try { localStorage.setItem(CHAVE_COPIA, hoje); } catch (e) { /* tenta amanhã de novo */ } })
+      .catch(function (e) { console.warn('Cópia diária na nuvem não feita', e); });
+  }
+  function listarCopias() {
+    if (!ref) return Promise.reject(new Error('Entre com a sua conta para ver as cópias.'));
+    return ref.child('copiasIndice').once('value').then(function (s) {
+      var v = s.val() || {};
+      return Object.keys(v).sort().reverse().map(function (d) { return { data: d, tamanho: v[d].tamanho || 0, atualizadoEm: v[d].atualizadoEm || 0 }; });
+    });
+  }
+  function baixarCopia(data) {
+    return ref.child('copias/' + data).once('value').then(function (s) { var v = s.val(); if (!v || !v.dados) throw new Error('Cópia não encontrada.'); return v.dados; });
+  }
+
+  // ---------- Cronômetro em andamento (aparece em qualquer aparelho) ----------
+  var aoCron = null;
+  function salvarCron(c) { if (ref && comparado) ref.child('cronometro').set(c ? JSON.stringify(c) : null).catch(function (e) { console.warn(e); }); }
+  function ouvirCron(f) { aoCron = f; }
+
   // ---------- Resumos (um por matéria, fora dos dados principais) ----------
   function podeGravar() { return !!(ref && comparado && estado !== 'negado'); }
   function salvarResumo(id, rec) { return ref.child('resumos/' + id).set(rec); }
   function buscarResumo(id) { return ref.child('resumos/' + id).once('value').then(function (s) { return s.val(); }); }
-  function apagarResumo(id) { return ref.child('resumos/' + id).remove(); }
+  function apagarResumo(id) { return Promise.all([ref.child('resumos/' + id).remove(), ref.child('resumosInfo/' + id).remove()]); }
+  // Índice leve dos resumos (data, títulos, tamanho): a lista mostra o que existe sem baixar todos os textos.
+  function salvarResumoInfo(id, info) { return ref.child('resumosInfo/' + id).set(info); }
+  function listarResumosInfo() { return ref.child('resumosInfo').once('value').then(function (s) { return s.val() || {}; }); }
   // Grifos e anotações dos PDFs, um registro por aula.
   function salvarGrifos(id, rec) { return ref.child('grifos/' + id).set(rec); }
   function buscarGrifos(id) { return ref.child('grifos/' + id).once('value').then(function (s) { return s.val(); }); }
@@ -203,9 +252,15 @@ var Nuvem = (function () {
     var el = UI.el, n;
     caixa.innerHTML = '';
     var hora = ultimoSalvo ? ' · última sincronização às ' + new Date(ultimoSalvo).toLocaleTimeString('pt-BR') : '';
-    if (estado === 'sincronizado') {
-      n = el('a', { href: '#/backup', class: 'status-dados ok' + (pendente ? ' salvando' : ''), title: 'Dados salvos na nuvem' + hora },
-        [el('span', { class: 'status-ponto' }), pendente ? 'Salvando…' : 'Salvo na nuvem']);
+    // Além dos dados principais: resumo que não subiu e PDFs na fila do Google Drive.
+    var resumoPendente = window.ResumosDados && ResumosDados.pendencias ? ResumosDados.pendencias() : 0;
+    var pdfsNaFila = window.Drive && Drive.ligado() ? Drive.situacao().fila.filter(function (x) { return x.op === 'enviar'; }).length : 0;
+    if (estado === 'sincronizado' && !pendente && resumoPendente) {
+      n = el('a', { href: '#/resumos', class: 'status-dados atencao', title: resumoPendente + (resumoPendente === 1 ? ' resumo ainda não subiu' : ' resumos ainda não subiram') + ' para a nuvem (estão salvos neste aparelho e o envio é tentado de novo sozinho).' },
+        [el('span', { class: 'status-ponto' }), 'Resumo pendente']);
+    } else if (estado === 'sincronizado') {
+      n = el('a', { href: pdfsNaFila ? '#/configuracoes' : '#/backup', class: 'status-dados ok' + (pendente || pdfsNaFila ? ' salvando' : ''), title: 'Dados salvos na nuvem' + hora + (pdfsNaFila ? ' · ' + pdfsNaFila + (pdfsNaFila === 1 ? ' PDF subindo' : ' PDFs subindo') + ' para o Google Drive' : '') },
+        [el('span', { class: 'status-ponto' }), pendente ? 'Salvando…' : pdfsNaFila ? 'Enviando PDFs…' : 'Salvo na nuvem']);
     } else if (estado === 'offline') {
       n = el('a', { href: '#/backup', class: 'status-dados atencao', title: 'Sem internet: as alterações ficam neste aparelho e vão para a nuvem quando a conexão voltar.' },
         [el('span', { class: 'status-ponto' }), 'Sem internet']);
@@ -217,6 +272,10 @@ var Nuvem = (function () {
     if (n) caixa.appendChild(n);
   }
   aoMudar(desenharIndicador);
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.ResumosDados && ResumosDados.aoMudarEstado) ResumosDados.aoMudarEstado(function () { desenharIndicador(); });
+    if (window.Drive) Drive.aoMudar(desenharIndicador);
+  });
 
   function desenharAviso() {
     if (!ativa) return;
@@ -249,7 +308,7 @@ var Nuvem = (function () {
     });
     firebase.auth().getRedirectResult().catch(function (e) { UI.aviso('Não foi possível entrar: ' + e.message); });
     firebase.auth().onAuthStateChanged(function (u) {
-      if (ref) { ref.child('atualizadoEm').off(); ref = null; }
+      if (ref) { ref.child('atualizadoEm').off(); ref.child('cronometro').off(); ref = null; }
       if (u) conectar(u);
       else { usuario = null; estado = 'entrar'; notificar(); mostrarTelaLogin(); }
     });
@@ -259,6 +318,8 @@ var Nuvem = (function () {
     iniciar: iniciar, agendar: agendar, gravarAgora: gravarAgora, entrar: entrar, sair: sair, aoMudar: aoMudar,
     regrasSugeridas: regrasSugeridas, VERSAO_SDK: VERSAO_SDK, pelaWeb: pelaWeb,
     podeGravar: podeGravar, salvarResumo: salvarResumo, buscarResumo: buscarResumo, apagarResumo: apagarResumo,
+    salvarResumoInfo: salvarResumoInfo, listarResumosInfo: listarResumosInfo,
+    listarCopias: listarCopias, baixarCopia: baixarCopia, salvarCron: salvarCron, ouvirCron: ouvirCron,
     salvarGrifos: salvarGrifos, buscarGrifos: buscarGrifos, apagarGrifos: apagarGrifos,
     ativa: function () { return ativa; },
     info: function () {

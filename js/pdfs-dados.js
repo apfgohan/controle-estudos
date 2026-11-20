@@ -60,8 +60,9 @@ var PdfsDados = (function () {
   function apagarTodosPdfs() { presentes = {}; return transacao(ARQ, 'readwrite', function (l) { l.clear(); }); }
 
   // ---------- Grifos ----------
-  function registro(aulaId, itens, ultimaPagina, atualizadoEm, pendente) {
-    return { aulaId: aulaId, itens: Array.isArray(itens) ? itens : [], ultimaPagina: Number(ultimaPagina) || 0, atualizadoEm: atualizadoEm || 0, pendente: !!pendente };
+  // leituraDia: páginas vistas hoje no leitor { dia, de, ate } (vai junto, para outro aparelho preencher "Páginas lidas").
+  function registro(aulaId, itens, ultimaPagina, atualizadoEm, pendente, leituraDia) {
+    return { aulaId: aulaId, itens: Array.isArray(itens) ? itens : [], ultimaPagina: Number(ultimaPagina) || 0, atualizadoEm: atualizadoEm || 0, pendente: !!pendente, leituraDia: leituraDia || null };
   }
   function lerItens(v) {
     if (Array.isArray(v)) return v;
@@ -69,8 +70,8 @@ var PdfsDados = (function () {
   }
   function obterGrifos(aulaId) { return transacao(GRI, 'readonly', function (l) { return l.get(aulaId); }).then(function (r) { return r || registro(aulaId, [], 0, 0, false); }); }
   function gravarGrifosLocal(rec) { return transacao(GRI, 'readwrite', function (l) { return l.put(rec); }).then(function () { return rec; }); }
-  function salvarGrifos(aulaId, itens, ultimaPagina) {
-    return gravarGrifosLocal(registro(aulaId, itens, ultimaPagina, Date.now(), true)).then(function (rec) { agendar(aulaId); return rec; });
+  function salvarGrifos(aulaId, itens, ultimaPagina, leituraDia) {
+    return gravarGrifosLocal(registro(aulaId, itens, ultimaPagina, Date.now(), true, leituraDia)).then(function (rec) { agendar(aulaId); return rec; });
   }
 
   function nuvemPronta() { return !!(window.Nuvem && Nuvem.podeGravar && Nuvem.podeGravar() && Nuvem.salvarGrifos); }
@@ -81,7 +82,7 @@ var PdfsDados = (function () {
     return obterGrifos(id).then(function (rec) {
       if (!rec.pendente) return false;
       // Na nuvem, os itens vão como texto (JSON): o banco não guarda listas de listas de forma confiável.
-      return Nuvem.salvarGrifos(id, { itens: JSON.stringify(rec.itens), ultimaPagina: rec.ultimaPagina, atualizadoEm: rec.atualizadoEm }).then(function () {
+      return Nuvem.salvarGrifos(id, { itens: JSON.stringify(rec.itens), ultimaPagina: rec.ultimaPagina, atualizadoEm: rec.atualizadoEm, leituraDia: rec.leituraDia || null }).then(function () {
         return obterGrifos(id).then(function (atual) { if (atual.atualizadoEm === rec.atualizadoEm) { atual.pendente = false; return gravarGrifosLocal(atual); } });
       }).then(function () { return true; });
     }).catch(function (e) { console.error('Grifos não enviados para a nuvem', e); return false; });
@@ -101,7 +102,7 @@ var PdfsDados = (function () {
       if (!nuvemPronta()) return local;
       return Nuvem.buscarGrifos(aulaId).then(function (remoto) {
         if (remoto && (remoto.atualizadoEm || 0) > (local.atualizadoEm || 0)) {
-          return gravarGrifosLocal(registro(aulaId, lerItens(remoto.itens), remoto.ultimaPagina, remoto.atualizadoEm, false));
+          return gravarGrifosLocal(registro(aulaId, lerItens(remoto.itens), remoto.ultimaPagina, remoto.atualizadoEm, false, remoto.leituraDia));
         }
         if (local.pendente) enviar(aulaId);
         return local;

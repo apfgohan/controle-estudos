@@ -42,7 +42,19 @@ var Leitor = (function () {
     gravarLeituras(x);
   }
   function leituraDoDia(aulaId) { var r = lerLeituras()[aulaId]; return r && r.dia === UI.hoje() ? r : null; }
-  function limparLeitura(aulaId) { var x = lerLeituras(); delete x[aulaId]; gravarLeituras(x); }
+  // Leitura feita hoje em outro aparelho (vem com os grifos da aula, pela nuvem): junta com a deste aparelho.
+  function trazerLeitura(aulaId) {
+    return PdfsDados.sincronizarGrifos(aulaId).then(function (rec) {
+      var r = rec && rec.leituraDia;
+      if (!r || r.dia !== UI.hoje()) return leituraDoDia(aulaId);
+      var x = lerLeituras(), l = x[aulaId];
+      x[aulaId] = l && l.dia === r.dia ? { dia: r.dia, de: Math.min(l.de, r.de), ate: Math.max(l.ate, r.ate) } : r;
+      gravarLeituras(x);
+      return x[aulaId];
+    }).catch(function () { return leituraDoDia(aulaId); });
+  }
+  function limparLeituraNaNuvem(aulaId) { PdfsDados.obterGrifos(aulaId).then(function (rec) { if (rec.leituraDia) PdfsDados.salvarGrifos(aulaId, rec.itens, rec.ultimaPagina, null); }).catch(function () {}); }
+  function limparLeitura(aulaId) { var x = lerLeituras(); delete x[aulaId]; gravarLeituras(x); limparLeituraNaNuvem(aulaId); }
 
   // ---------- Abertura ----------
   function render(raiz, partes) {
@@ -81,10 +93,23 @@ var Leitor = (function () {
       var f = entrada.files[0]; if (!f) return;
       enviarPdf(a, f).then(function () { v = null; App.atualizar(); });
     } });
+    // O PDF está no Google Drive (enviado de outro aparelho): baixa e guarda aqui.
+    var noDrive = a.arquivo && a.arquivo.driveId && window.Drive && Drive.configurado();
+    var barra = el('div', { class: 'leitor-download', hidden: true }, [el('span', { class: 'leitor-download-texto', text: 'Baixando do Google Drive…' }), UI.barra(0)]);
+    function baixar() {
+      barra.hidden = false;
+      Drive.baixarPdf(a.id, function (p) { var b = barra.querySelector('.barra-preenchida'); if (b) b.style.width = Math.round(p * 100) + '%'; barra.querySelector('.leitor-download-texto').textContent = 'Baixando do Google Drive… ' + Math.round(p * 100) + '%'; })
+        .then(function () { v = null; App.atualizar(); })
+        .catch(function (e) { barra.querySelector('.leitor-download-texto').textContent = e.message; });
+    }
+    if (noDrive && Drive.temToken()) setTimeout(baixar, 0);
     caixa.appendChild(el('div', { class: 'vazio' }, [
       el('p', { class: 'vazio-destaque', text: Dados.nomeAula(a) }),
-      el('p', { text: a.arquivo ? 'O PDF desta aula (' + a.arquivo.nome + ') foi enviado em outro aparelho e não está neste. Envie o arquivo aqui para ler.' : 'Esta aula ainda não tem PDF. Envie o arquivo para ler, grifar e anotar aqui.' }),
-      el('div', { class: 'vazio-acoes' }, [UI.botao('Enviar PDF…', function () { entrada.click(); }, 'btn-primario'), voltarBotao(x)]),
+      el('p', { text: noDrive ? 'O PDF desta aula está no seu Google Drive. ' + (Drive.temToken() ? 'Baixando para este aparelho (só na primeira vez).' : 'Clique em "Baixar do Google Drive" para trazê-lo a este aparelho (só na primeira vez).')
+        : a.arquivo ? 'O PDF desta aula (' + a.arquivo.nome + ') foi enviado em outro aparelho e não está neste. Envie o arquivo aqui para ler.' : 'Esta aula ainda não tem PDF. Envie o arquivo para ler, grifar e anotar aqui.' }),
+      noDrive ? barra : null,
+      noDrive && !Drive.temToken() ? el('div', { class: 'vazio-acoes' }, [UI.botao('Baixar do Google Drive', baixar, 'btn-primario')]) : null,
+      el('div', { class: 'vazio-acoes' }, [UI.botao(noDrive ? 'Enviar outro PDF…' : 'Enviar PDF…', function () { entrada.click(); }, noDrive ? 'btn-secundario' : 'btn-primario'), voltarBotao(x)]),
       entrada
     ]));
   }
@@ -95,7 +120,9 @@ var Leitor = (function () {
     return contarPaginas(arquivo).then(function (n) {
       return PdfsDados.guardarPdf(a.id, arquivo, n).then(function () {
         Dados.definirArquivoAula(a.id, { nome: arquivo.name, tamanho: arquivo.size, paginas: n });
-        UI.aviso('PDF guardado neste aparelho (' + n + ' páginas)');
+        // Vai também para o Google Drive (fila: se estiver sem internet ou sem permissão, sobe depois).
+        if (window.Drive && Drive.configurado()) Drive.enviarPdf(a.id);
+        UI.aviso(window.Drive && Drive.configurado() && Drive.ligado() ? 'PDF guardado (' + n + ' páginas) · enviando para o Google Drive' : 'PDF guardado neste aparelho (' + n + ' páginas)');
         return n;
       });
     }).catch(function (e) { if (e && e.message !== 'não é PDF') { console.error(e); UI.aviso('Não foi possível ler esse PDF'); } throw e; });
@@ -256,7 +283,7 @@ var Leitor = (function () {
 
   var timerSalvar = null;
   function agendarSalvar() { clearTimeout(timerSalvar); timerSalvar = setTimeout(salvarAgora, 1500); }
-  function salvarAgora() { clearTimeout(timerSalvar); if (v) PdfsDados.salvarGrifos(v.aulaId, v.itens, v.atual).catch(function (e) { console.error(e); }); }
+  function salvarAgora() { clearTimeout(timerSalvar); if (v) PdfsDados.salvarGrifos(v.aulaId, v.itens, v.atual, leituraDoDia(v.aulaId)).catch(function (e) { console.error(e); }); }
 
   // ---------- Barra (modelo A): tudo numa linha só, sem painel lateral ----------
   var CHAVE_MARCA = 'controle-estudos.leitor-marca-texto';
@@ -613,5 +640,5 @@ var Leitor = (function () {
     v.timerTam = setTimeout(function () { var n = v.atual; v.base = Math.min(2.2, Math.max(0.5, (v.area.clientWidth - 48) / v.larguraPdf)); dimensionar(); irPara(n, true); atualizarInfo(); }, 250);
   });
 
-  return { render: render, enviarPdf: enviarPdf, contarPaginas: contarPaginas, leituraDoDia: leituraDoDia, limparLeitura: limparLeitura };
+  return { render: render, enviarPdf: enviarPdf, contarPaginas: contarPaginas, leituraDoDia: leituraDoDia, trazerLeitura: trazerLeitura, limparLeitura: limparLeitura };
 })();

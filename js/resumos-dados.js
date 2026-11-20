@@ -5,9 +5,20 @@
 // Entre aparelhos, vale a versão com atualizadoEm mais recente, matéria por matéria.
 var ResumosDados = (function () {
   var BANCO = 'controle-estudos-resumos', LOJA = 'resumos';
-  var ESPERA_NUVEM = 5000;
+  var ESPERA_NUVEM = 5000, NOVA_TENTATIVA = 30000;
+  var LIMITE_NUVEM = 9.5 * 1024 * 1024; // um valor no Firebase vai até 10 MB
   var abrindo = null;
   var timers = {};
+  // Estado do envio de cada resumo à nuvem: 'local' (sem nuvem), 'pendente', 'nuvem' (confirmado), 'falha', 'grande'.
+  var estados = {}, ouvintes = [];
+  function definirEstado(id, estado, quando) {
+    estados[id] = { estado: estado, quando: quando || Date.now() };
+    ouvintes.forEach(function (f) { try { f(id, estados[id]); } catch (e) { console.error(e); } });
+  }
+  function aoMudarEstado(f) { ouvintes.push(f); }
+  // Resumos que não conseguiram subir (falha de envio ou grandes demais).
+  function pendencias() { return Object.keys(estados).filter(function (k) { return estados[k].estado === 'falha' || estados[k].estado === 'grande'; }).length; }
+  function estadoDe(id) { return estados[id] || null; }
 
   function abrir() {
     if (abrindo) return abrindo;
@@ -54,7 +65,10 @@ var ResumosDados = (function () {
 
   // Grava neste aparelho agora e agenda o envio para a nuvem.
   function salvar(id, html, tinta) {
-    return gravarLocal(registro(id, html, Date.now(), true, tinta)).then(function (rec) { agendarNuvem(id); return rec; });
+    return gravarLocal(registro(id, html, Date.now(), true, tinta)).then(function (rec) {
+      definirEstado(id, nuvemPronta() ? 'pendente' : 'local', rec.atualizadoEm);
+      agendarNuvem(id); return rec;
+    });
   }
 
   function agendarNuvem(id) {
@@ -71,13 +85,23 @@ var ResumosDados = (function () {
     return obter(id).then(function (rec) {
       if (!rec || !rec.pendente) return false;
       // Na nuvem, os traços vão como texto (JSON): o banco não guarda listas de listas de forma confiável.
-      return Nuvem.salvarResumo(id, { html: rec.html, tinta: JSON.stringify(rec.tinta || []), atualizadoEm: rec.atualizadoEm, titulos: rec.titulos }).then(function () {
+      var corpo = { html: rec.html, tinta: JSON.stringify(rec.tinta || []), atualizadoEm: rec.atualizadoEm, titulos: rec.titulos };
+      if (corpo.html.length + corpo.tinta.length > LIMITE_NUVEM) { definirEstado(id, 'grande', rec.atualizadoEm); return false; }
+      return Nuvem.salvarResumo(id, corpo).then(function () {
+        return Nuvem.salvarResumoInfo(id, { atualizadoEm: rec.atualizadoEm, titulos: rec.titulos || 0, tamanho: rec.tamanho || 0 }).catch(function () { /* o índice volta a ser gravado no próximo envio */ });
+      }).then(function () {
+        if (!estados[id] || estados[id].quando <= rec.atualizadoEm) definirEstado(id, 'nuvem', rec.atualizadoEm);
         // Só desmarca se ninguém editou de novo enquanto enviava.
         return obter(id).then(function (atual) {
           if (atual && atual.atualizadoEm === rec.atualizadoEm) { atual.pendente = false; return gravarLocal(atual); }
         });
       }).then(function () { return true; });
-    }).catch(function (e) { console.error('Resumo não enviado para a nuvem', e); return false; });
+    }).catch(function (e) {
+      console.error('Resumo não enviado para a nuvem', e);
+      definirEstado(id, 'falha', estados[id] ? estados[id].quando : 0); // mantém a hora do salvamento: o próximo envio bem-sucedido limpa o aviso
+      clearTimeout(timers[id]); timers[id] = setTimeout(function () { enviar(id); }, NOVA_TENTATIVA);
+      return false;
+    });
   }
 
   function enviarPendentes() {
@@ -89,6 +113,28 @@ var ResumosDados = (function () {
   function enviarAgendados() { Object.keys(timers).forEach(function (id) { enviar(id); }); }
   window.addEventListener('pagehide', enviarAgendados);
   window.addEventListener('beforeunload', enviarAgendados);
+  // A internet voltou, ou de tempos em tempos: reenvia o que ficou pendente.
+  window.addEventListener('online', function () { enviarPendentes(); });
+  setInterval(function () { if (nuvemPronta() && Object.keys(estados).some(function (k) { return estados[k].estado === 'falha' || estados[k].estado === 'pendente'; })) enviarPendentes(); }, NOVA_TENTATIVA);
+
+  // Lista para a aba Resumos: a cópia deste aparelho junto com o índice da nuvem (aparelho novo ainda sem os textos).
+  // Resumos deste aparelho que ainda não estão no índice (enviados antes do índice existir) são incluídos nele.
+  function listarComNuvem() {
+    return listar().then(function (locais) {
+      if (!nuvemPronta() || !Nuvem.listarResumosInfo) return locais;
+      return Nuvem.listarResumosInfo().then(function (info) {
+        var porId = {}; locais.forEach(function (r) { porId[r.disciplinaId] = r; });
+        locais.forEach(function (r) {
+          if (!r.pendente && r.html && !info[r.disciplinaId]) Nuvem.salvarResumoInfo(r.disciplinaId, { atualizadoEm: r.atualizadoEm, titulos: r.titulos || 0, tamanho: r.tamanho || 0 }).catch(function () {});
+        });
+        Object.keys(info).forEach(function (id) {
+          var x = info[id], l = porId[id];
+          if (!l || (x.atualizadoEm || 0) > (l.atualizadoEm || 0)) porId[id] = { disciplinaId: id, html: null, naNuvem: true, titulos: x.titulos || 0, tamanho: x.tamanho || 0, atualizadoEm: x.atualizadoEm || 0 };
+        });
+        return Object.keys(porId).map(function (k) { return porId[k]; });
+      }).catch(function () { return locais; });
+    });
+  }
 
   // Compara com a nuvem ao abrir uma matéria: a versão mais recente vence.
   function sincronizar(id) {
@@ -127,7 +173,7 @@ var ResumosDados = (function () {
   }
 
   return {
-    obter: obter, listar: listar, salvar: salvar, sincronizar: sincronizar, apagar: apagar,
+    obter: obter, listar: listar, listarComNuvem: listarComNuvem, aoMudarEstado: aoMudarEstado, estadoDe: estadoDe, pendencias: pendencias, salvar: salvar, sincronizar: sincronizar, apagar: apagar,
     enviarPendentes: enviarPendentes, enviarAgendados: enviarAgendados,
     exportarTodos: exportarTodos, importarTodos: importarTodos, contarTitulos: contarTitulos
   };

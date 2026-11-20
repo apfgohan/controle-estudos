@@ -31,6 +31,20 @@ var Resumos = (function () {
     if (topo && window.ResizeObserver) new ResizeObserver(medirTopo).observe(topo);
   });
 
+  // ---------- Onde o resumo está salvo (aparelho ou nuvem) ----------
+  var statusAberto = null; // { id, el } do editor aberto
+  function hora(ms) { return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+  function mostrarEstado(el, e, quando) {
+    el.classList.remove('resumo-status-aviso', 'resumo-status-ok');
+    var nuvem = window.Nuvem && Nuvem.podeGravar && Nuvem.podeGravar();
+    if (!e || e.estado === 'local' || (e.estado === 'pendente' && !nuvem)) { el.textContent = 'Salvo neste aparelho às ' + hora(quando || (e && e.quando) || Date.now()); return; }
+    if (e.estado === 'pendente') { el.textContent = 'Salvo neste aparelho às ' + hora(e.quando) + ' · enviando para a nuvem…'; return; }
+    if (e.estado === 'nuvem') { el.textContent = 'Salvo na nuvem às ' + hora(e.quando) + ' ✓'; el.classList.add('resumo-status-ok'); return; }
+    el.classList.add('resumo-status-aviso');
+    el.textContent = e.estado === 'grande' ? 'Salvo só neste aparelho: o resumo passou de 9,5 MB e não cabe na nuvem. Reduza ou remova imagens.' : 'Não subiu para a nuvem: tentando de novo (salvo neste aparelho)';
+  }
+  ResumosDados.aoMudarEstado(function (id, e) { if (statusAberto && statusAberto.id === id && document.body.contains(statusAberto.el)) mostrarEstado(statusAberto.el, e); });
+
   // ---------- Lista de matérias ----------
   function renderLista(raiz) {
     var lista = Dados.disciplinas();
@@ -56,7 +70,8 @@ var Resumos = (function () {
       caixa.innerHTML = '';
       lista.forEach(function (d) {
         var r = porId[d.id];
-        var temTexto = r && textoPuro(r.html).trim();
+        // Resumo que está só na nuvem (aparelho novo): o índice diz que ele existe, sem baixar o texto.
+        var temTexto = r && (r.naNuvem ? (r.tamanho > 0) : textoPuro(r.html).trim());
         caixa.appendChild(el('div', { class: 'linha-disciplina', style: { borderLeftColor: d.cor } }, [
           el('div', { class: 'linha-nome', text: d.nome }),
           el('div', { class: 'linha-config' }),
@@ -70,7 +85,7 @@ var Resumos = (function () {
       });
     }
     desenhar([]);
-    ResumosDados.listar().then(desenhar).catch(function (e) { UI.aviso(e.message); });
+    ResumosDados.listar().then(desenhar).then(function () { return ResumosDados.listarComNuvem(); }).then(function (r) { if (r) desenhar(r); }).catch(function (e) { UI.aviso(e.message); });
   }
 
   function isoDe(ms) { var d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -258,7 +273,7 @@ var Resumos = (function () {
       status.textContent = 'Salvando…';
       var conteudo = html();
       return ResumosDados.salvar(id, conteudo, tinta).then(function (rec) {
-        status.textContent = 'Salvo às ' + new Date(rec.atualizadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        mostrarEstado(status, ResumosDados.estadoDe(id), rec.atualizadoEm);
         if (rec.tamanho > LIMITE_AVISO && !avisouTamanho) {
           avisouTamanho = true;
           UI.aviso('Este resumo passou de 8 MB. Reduza ou remova imagens para a nuvem não ficar lenta.');
@@ -1366,13 +1381,16 @@ var Resumos = (function () {
       carregado = true;
       doc.setAttribute('contenteditable', 'true');
       try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* navegador antigo */ }
-      status.textContent = rec ? 'Salvo às ' + new Date(rec.atualizadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Novo resumo';
+      statusAberto = { id: id, el: status };
+      if (!rec) status.textContent = 'Novo resumo';
+      else if (rec.pendente) mostrarEstado(status, ResumosDados.estadoDe(id) || { estado: 'pendente', quando: rec.atualizadoEm });
+      else mostrarEstado(status, window.Nuvem && Nuvem.podeGravar && Nuvem.podeGravar() ? { estado: 'nuvem', quando: rec.atualizadoEm } : { estado: 'local', quando: rec.atualizadoEm });
       return ResumosDados.sincronizar(id);
     }).then(function (r) {
       if (!r || !r.daNuvem || atual.pagina !== pagina) return;
       if (editadoDesdeAbrir) { UI.aviso('Há uma versão mais nova deste resumo na nuvem. Ela será usada se você reabrir a matéria sem editar.'); return; }
       aplicar(r.rec);
-      status.textContent = 'Atualizado da nuvem';
+      status.textContent = 'Atualizado da nuvem (versão de ' + hora(r.rec.atualizadoEm) + ')';
     }).catch(function (e) {
       status.textContent = 'Não foi possível abrir';
       UI.aviso(e.message);

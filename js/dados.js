@@ -34,6 +34,8 @@ var Dados = (function () {
       pausas: [],
       // Leitura dos PDFs: páginas lidas, em média, numa meta de teoria (0 = sem estimativa por páginas).
       leitura: { paginasPorMeta: 0 },
+      // Google Drive: ids das pastas do programa e a data da última cópia diária (comum a todas as fases).
+      drive: {},
       // Fase de estudo: 'pre' (Pré-Edital) ou o id de um concurso (Pós-Edital). Cada fase é um espaço separado
       // (matérias, cadernos, estudos…): o ativo fica no topo destes dados e os outros em `espacos`.
       fases: { atual: 'pre', concursos: [] }, // concursos: { id, nome, esfera, banca, bancaOutra, dataProva, criadoEm }
@@ -478,7 +480,10 @@ var Dados = (function () {
   // PDFs e grifos das aulas ficam fora destes dados (PdfsDados): apaga junto com a aula.
   function apagarArquivosDasAulas(blocos) {
     if (!window.PdfsDados) return;
-    blocos.forEach(function (b) { (b.materiais || []).forEach(function (a) { PdfsDados.apagarAula(a.id).catch(function (e) { console.error(e); }); }); });
+    blocos.forEach(function (b) { (b.materiais || []).forEach(function (a) {
+      PdfsDados.apagarAula(a.id).catch(function (e) { console.error(e); });
+      if (a.arquivo && a.arquivo.driveId && window.Drive) Drive.apagar(a.arquivo.driveId);
+    }); });
   }
 
   function excluirBloco(id) {
@@ -1772,13 +1777,18 @@ var Dados = (function () {
   function excluirMaterial(blocoId, id) {
     var b = bloco(blocoId); if (!b) return;
     if (window.PdfsDados) PdfsDados.apagarAula(id).catch(function (e) { console.error(e); });
+    var am = buscar(b.materiais || [], id);
+    if (am && am.arquivo && am.arquivo.driveId && window.Drive) Drive.apagar(am.arquivo.driveId);
     b.materiais = (b.materiais || []).filter(function (m) { return m.id !== id; });
     salvar();
   }
   // Ficha do PDF enviado (o arquivo fica em PdfsDados, só no aparelho): { nome, tamanho, paginas } ou null.
   function definirArquivoAula(id, ficha) {
     var x = aula(id); if (!x) return;
-    if (ficha) x.aula.arquivo = { nome: ficha.nome || 'aula.pdf', tamanho: Number(ficha.tamanho) || 0, paginas: Number(ficha.paginas) || 0 };
+    // Trocou ou removeu o PDF: o arquivo antigo do Google Drive vai para a lixeira de lá.
+    var antigo = x.aula.arquivo && x.aula.arquivo.driveId;
+    if (antigo && (!ficha || ficha.driveId !== antigo) && window.Drive) Drive.apagar(antigo);
+    if (ficha) { x.aula.arquivo = { nome: ficha.nome || 'aula.pdf', tamanho: Number(ficha.tamanho) || 0, paginas: Number(ficha.paginas) || 0 }; if (ficha.driveId) x.aula.arquivo.driveId = ficha.driveId; }
     else delete x.aula.arquivo;
     salvar();
   }

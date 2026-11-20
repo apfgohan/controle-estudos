@@ -167,13 +167,68 @@ var Configuracoes = (function () {
     return n ? { media: pags / n, n: n } : null;
   }
 
+  // ---------- Google Drive: PDFs e cópias diárias ----------
+  var painelDriveAtual = null;
+  function painelDrive() {
+    var caixa = el('section', { class: 'painel painel-drive' });
+    painelDriveAtual = caixa;
+    desenharDrive(caixa);
+    return caixa;
+  }
+  if (window.Drive) Drive.aoMudar(function () { if (painelDriveAtual && document.body.contains(painelDriveAtual)) desenharDrive(painelDriveAtual); });
+  function desenharDrive(caixa) {
+    caixa.innerHTML = '';
+    var s = window.Drive ? Drive.situacao() : null;
+    caixa.appendChild(el('div', { class: 'grafico-topo' }, [
+      el('h3', { class: 'secao-titulo', text: 'Google Drive' }),
+      el('span', { class: 'data-fraca', text: 'PDFs das aulas e uma cópia completa por dia, numa pasta "Controle de Estudos" do seu Drive' })
+    ]));
+    if (!s || !s.configurado) {
+      caixa.appendChild(el('p', { class: 'data-fraca', text: 'O Google Drive ainda não foi configurado neste programa (falta o Client ID do Google). Enquanto isso, os PDFs ficam só neste aparelho.' }));
+      return;
+    }
+    var aulas = [];
+    Dados.db.blocos.forEach(function (b) { (b.materiais || []).forEach(function (a) { if (a.arquivo) aulas.push(a); }); });
+    var noDrive = aulas.filter(function (a) { return a.arquivo.driveId; }).length;
+    var envios = s.fila.filter(function (x) { return x.op === 'enviar'; }).length;
+    var enviando = Object.keys(s.progresso);
+    if (!s.ligado) {
+      caixa.appendChild(el('p', { text: 'Conecte o seu Google Drive para guardar os PDFs na nuvem: assim eles abrem em qualquer aparelho e não se perdem se este computador der problema. O programa só enxerga os arquivos que ele mesmo criar.' }));
+      caixa.appendChild(el('div', { class: 'pasta-acoes' }, [UI.botao('Conectar Google Drive', function () {
+        Drive.pedirAcesso(true).then(function () { return Drive.enviarPdfsDoAparelho(); }).then(function (n) {
+          UI.aviso('Google Drive conectado' + (n ? ' · enviando ' + n + (n === 1 ? ' PDF' : ' PDFs') : ''));
+          return Drive.processar();
+        }).catch(function (e) { UI.aviso(e.message); });
+      }, 'btn-primario')]));
+      return;
+    }
+    var linhas = [
+      el('li', null, [el('strong', { text: 'PDFs no Drive: ' }), noDrive + ' de ' + aulas.length + (aulas.length === 1 ? ' aula com PDF' : ' aulas com PDF')]),
+      envios ? el('li', null, [el('strong', { text: 'Na fila: ' }), envios + (envios === 1 ? ' PDF' : ' PDFs') + (enviando.length ? ' · enviando ' + Math.round((s.progresso[enviando[0]] || 0) * 100) + '%' : s.comAcesso ? '' : ' · clique em qualquer lugar para renovar o acesso')]) : null,
+      el('li', null, [el('strong', { text: 'Última cópia completa: ' }), s.ultimaCopia ? UI.fmtData(s.ultimaCopia) : 'ainda nenhuma (é feita uma vez por dia)']),
+      s.erro ? el('li', { class: 'drive-erro', text: 'Último problema: ' + s.erro }) : null
+    ];
+    caixa.appendChild(el('ul', { class: 'drive-situacao' }, linhas));
+    var faltam = aulas.filter(function (a) { return !a.arquivo.driveId && PdfsDados.temPdf(a.id); }).length;
+    caixa.appendChild(el('div', { class: 'pasta-acoes' }, [
+      faltam ? UI.botao('Enviar ' + faltam + (faltam === 1 ? ' PDF deste aparelho' : ' PDFs deste aparelho'), function () {
+        (Drive.temToken() ? Promise.resolve() : Drive.pedirAcesso(false)).then(function () { return Drive.enviarPdfsDoAparelho(); }).then(function () { return Drive.processar(); }).catch(function (e) { UI.aviso(e.message); });
+      }, 'btn-primario') : null,
+      !s.comAcesso ? UI.botao('Renovar acesso', function () { Drive.pedirAcesso(false).then(function () { return Drive.processar(); }).catch(function (e) { UI.aviso(e.message); }); }, 'btn-secundario') : null,
+      el('button', { type: 'button', class: 'link link-perigo', text: 'Desconectar', onclick: function () {
+        UI.confirmar('Desconectar o Google Drive neste aparelho? Os arquivos continuam no Drive; os PDFs novos ficam só neste aparelho até conectar de novo.', function () { Drive.desconectar(); App.atualizar(); }, 'Desconectar');
+      } })
+    ]));
+  }
+
   // PDFs guardados neste aparelho (não vão para a nuvem nem para o backup).
   function espacoPdfs() {
     var linha = el('div', { class: 'config-pdfs' }, [el('span', { class: 'data-fraca', text: 'Calculando o espaço dos PDFs neste aparelho…' })]);
     if (!window.PdfsDados) return null;
     PdfsDados.espacoUsado().then(function (u) {
       linha.innerHTML = '';
-      linha.appendChild(el('span', { class: 'data-fraca', text: u.n ? u.n + (u.n === 1 ? ' PDF guardado' : ' PDFs guardados') + ' neste aparelho, ' + String(Math.round(u.bytes / 1048576 * 10) / 10).replace('.', ',') + ' MB. Eles não vão para a nuvem nem para o backup; os grifos vão.' : 'Nenhum PDF guardado neste aparelho. Envie os PDFs pela engrenagem de cada aula, na Teoria.' }));
+      var comDrive = window.Drive && Drive.configurado() && Drive.ligado();
+      linha.appendChild(el('span', { class: 'data-fraca', text: u.n ? u.n + (u.n === 1 ? ' PDF guardado' : ' PDFs guardados') + ' neste aparelho, ' + String(Math.round(u.bytes / 1048576 * 10) / 10).replace('.', ',') + ' MB.' + (comDrive ? ' Os que já estão no Google Drive podem ser apagados daqui sem perda: são baixados de novo quando você abrir.' : ' Sem o Google Drive conectado, eles ficam só aqui; os grifos vão para a nuvem.') : 'Nenhum PDF guardado neste aparelho. Envie os PDFs pela engrenagem de cada aula, na Teoria.' }));
       if (u.n) linha.appendChild(el('button', { type: 'button', class: 'link link-perigo', text: 'Apagar os PDFs deste aparelho', onclick: function () {
         UI.confirmar('Apagar os ' + u.n + ' PDFs guardados neste aparelho? Os grifos e as anotações continuam; para ler de novo, envie os arquivos outra vez.', function () {
           PdfsDados.apagarTodosPdfs().then(function () { App.atualizar(); UI.aviso('PDFs apagados deste aparelho'); });
@@ -257,6 +312,7 @@ var Configuracoes = (function () {
     ])));
     raiz.appendChild(painelPerfil());
     raiz.appendChild(painelFases());
+    raiz.appendChild(painelDrive());
     raiz.appendChild(painelLeitura());
     var antigos = painelTopicosAntigos();
     if (antigos) raiz.appendChild(antigos);

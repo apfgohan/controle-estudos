@@ -3,14 +3,16 @@ var Backup = (function () {
   var el = UI.el;
 
   // O arquivo leva também os resumos (guardados à parte), no campo "resumos".
-  function exportar() {
-    Promise.all([ResumosDados.exportarTodos(), window.PdfsDados ? PdfsDados.exportarGrifos() : Promise.resolve([])]).then(function (r) {
+  // Texto completo do backup (também usado na cópia diária do Google Drive).
+  function gerarTexto() {
+    return Promise.all([ResumosDados.exportarTodos(), window.PdfsDados ? PdfsDados.exportarGrifos() : Promise.resolve([])]).then(function (r) {
       var dados = JSON.parse(Dados.exportar());
       dados.resumos = r[0];
-      dados.grifos = r[1]; // grifos e anotações dos PDFs (os PDFs não vão no arquivo)
-      baixar(JSON.stringify(dados, null, 2));
+      dados.grifos = r[1]; // grifos e anotações dos PDFs (os PDFs não vão no arquivo; ficam no Google Drive)
+      return JSON.stringify(dados, null, 2);
     });
   }
+  function exportar() { gerarTexto().then(baixar); }
 
   function baixar(texto) {
     var blob = new Blob([texto], { type: 'application/json' });
@@ -24,9 +26,14 @@ var Backup = (function () {
     if (!arquivo) return;
     var leitor = new FileReader();
     leitor.onload = function () {
-      UI.confirmar('Importar "' + arquivo.name + '"? Os dados atuais serão substituídos pelos do arquivo.', function () {
+      UI.confirmar('Importar "' + arquivo.name + '"? Os dados atuais serão substituídos pelos do arquivo.', function () { importarTexto(leitor.result); }, 'Importar');
+    };
+    leitor.readAsText(arquivo);
+  }
+  // Restaura um backup (arquivo ou cópia da nuvem/Drive). Cópia só dos dados principais mantém os resumos e grifos atuais.
+  function importarTexto(texto) {
         try {
-          var dados = JSON.parse(leitor.result);
+          var dados = JSON.parse(texto);
           var resumos = dados && Array.isArray(dados.resumos) ? dados.resumos : null;
           var grifos = dados && Array.isArray(dados.grifos) ? dados.grifos : null;
           if (dados) { delete dados.resumos; delete dados.grifos; } // resumos e grifos não entram nos dados principais
@@ -39,9 +46,6 @@ var Backup = (function () {
         } catch (e) {
           alert('Não foi possível importar: ' + e.message);
         }
-      }, 'Importar');
-    };
-    leitor.readAsText(arquivo);
   }
 
   function render(raiz) {
@@ -54,6 +58,7 @@ var Backup = (function () {
     ])));
 
     raiz.appendChild(painelNuvem());
+    raiz.appendChild(painelCopias());
     raiz.appendChild(painelPasta());
 
     raiz.appendChild(el('h2', { class: 'secao-titulo titulo-manual', text: 'Backup manual' }));
@@ -77,6 +82,58 @@ var Backup = (function () {
         }, 'btn-perigo')
       ])
     ]));
+  }
+
+  // ---------- Cópias automáticas (Google Drive e nuvem do programa) ----------
+  function painelCopias() {
+    var listaDrive = el('div', { class: 'copias-lista' }), listaNuvem = el('div', { class: 'copias-lista' });
+    var sd = window.Drive ? Drive.situacao() : null;
+    function linha(titulo, sub, restaurar) {
+      return el('div', { class: 'copia-linha' }, [el('div', null, [el('strong', { text: titulo }), el('span', { class: 'data-fraca', text: sub })]),
+        UI.botao('Restaurar', function () {
+          UI.confirmar('Restaurar a cópia de ' + titulo + '? Os dados atuais serão substituídos por ela (faça um backup antes, se quiser guardar o estado de agora).', function () {
+            restaurar().then(function (texto) { importarTexto(texto); }).catch(function (e) { UI.aviso(e.message); });
+          }, 'Restaurar');
+        }, 'btn-secundario')]);
+    }
+    function dataBr(nome) { var m = /(\d{4})-(\d{2})-(\d{2})/.exec(nome || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : nome; }
+    function verDrive() {
+      listaDrive.innerHTML = ''; listaDrive.appendChild(el('p', { class: 'data-fraca', text: 'Buscando as cópias no Google Drive…' }));
+      Drive.listarCopias().then(function (fs) {
+        listaDrive.innerHTML = '';
+        if (!fs.length) { listaDrive.appendChild(el('p', { class: 'data-fraca', text: 'Nenhuma cópia ainda. A primeira é feita hoje, quando você usar o programa com o Drive conectado.' })); return; }
+        fs.forEach(function (f) { listaDrive.appendChild(linha(dataBr(f.name), 'Completa (dados, resumos e grifos) · ' + Math.max(1, Math.round((Number(f.size) || 0) / 1024)) + ' KB', function () { return Drive.baixarTexto(f.id); })); });
+      }).catch(function (e) { listaDrive.innerHTML = ''; listaDrive.appendChild(el('p', { class: 'data-fraca', text: e.message })); });
+    }
+    function verNuvem() {
+      listaNuvem.innerHTML = ''; listaNuvem.appendChild(el('p', { class: 'data-fraca', text: 'Buscando…' }));
+      Nuvem.listarCopias().then(function (lista) {
+        listaNuvem.innerHTML = '';
+        if (!lista.length) { listaNuvem.appendChild(el('p', { class: 'data-fraca', text: 'Nenhuma cópia ainda: a primeira é feita hoje, no primeiro salvamento.' })); return; }
+        lista.forEach(function (c) { listaNuvem.appendChild(linha(dataBr(c.data), 'Dados principais (sem resumos e grifos) · ' + Math.max(1, Math.round((c.tamanho || 0) / 1024)) + ' KB', function () { return Nuvem.baixarCopia(c.data); })); });
+      }).catch(function (e) { listaNuvem.innerHTML = ''; listaNuvem.appendChild(el('p', { class: 'data-fraca', text: e.message })); });
+    }
+    var partes = [el('h2', { class: 'secao-titulo', text: 'Cópias automáticas' }),
+      el('p', { class: 'data-fraca', text: 'Uma cópia por dia, para voltar atrás se algo der errado (ex.: excluiu uma matéria sem querer).' })];
+    if (sd && sd.configurado) {
+      partes.push(el('div', { class: 'copias-grupo' }, [
+        el('div', { class: 'copias-topo' }, [el('strong', { text: 'Google Drive (30 dias, completas)' }),
+          el('span', { class: 'data-fraca', text: !sd.ligado ? 'Drive não conectado (Configurações)' : sd.ultimaCopia ? 'Última cópia: ' + dataBr(sd.ultimaCopia) : 'Ainda sem cópia' })]),
+        sd.ligado ? el('div', { class: 'pasta-acoes' }, [UI.botao('Ver cópias', verDrive, 'btn-secundario'), UI.botao('Fazer cópia agora', function () {
+          (Drive.temToken() ? Promise.resolve() : Drive.pedirAcesso(false)).then(function () { return Drive.copiaDiaria(true); }).then(function (ok) { UI.aviso(ok ? 'Cópia guardada no Google Drive' : 'Não foi possível fazer a cópia agora'); App.atualizar(); }).catch(function (e) { UI.aviso(e.message); });
+        }, 'btn-secundario')]) : null,
+        listaDrive
+      ]));
+    }
+    if (Nuvem.ativa()) {
+      partes.push(el('div', { class: 'copias-grupo' }, [
+        el('div', { class: 'copias-topo' }, [el('strong', { text: 'Nuvem do programa (14 dias, dados principais)' })]),
+        el('div', { class: 'pasta-acoes' }, [UI.botao('Ver cópias', verNuvem, 'btn-secundario')]),
+        listaNuvem
+      ]));
+    }
+    if (partes.length === 2) partes.push(el('p', { class: 'data-fraca', text: 'Entre com a sua conta para ter cópias automáticas na nuvem.' }));
+    return el('section', { class: 'painel painel-copias' }, partes);
   }
 
   function painelNuvem() {
@@ -173,5 +230,6 @@ var Backup = (function () {
   Armazenamento.aoMudar(atualizarSeAberta);
   Nuvem.aoMudar(atualizarSeAberta);
 
-  return { render: render };
+  return {
+    gerarTexto: gerarTexto, importarTexto: importarTexto, render: render };
 })();

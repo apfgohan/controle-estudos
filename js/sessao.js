@@ -7,14 +7,23 @@ var Sessao = (function () {
   var cron = null;
   try { cron = JSON.parse(localStorage.getItem(CHAVE_CRON)); } catch (e) { cron = null; }
 
-  function gravarCron(c) {
+  function gravarCron(c, daNuvem) {
     cron = c;
     try {
       if (c) localStorage.setItem(CHAVE_CRON, JSON.stringify(c));
       else localStorage.removeItem(CHAVE_CRON);
     } catch (e) { /* segue só em memória */ }
+    // Também na nuvem: o cronômetro aparece (e pode ser finalizado) em outro aparelho.
+    if (!daNuvem && window.Nuvem && Nuvem.salvarCron) Nuvem.salvarCron(c);
     desenharCron();
   }
+  // Mudança vinda de outro aparelho. Ao entrar, um cronômetro só deste aparelho (de antes) sobe para a nuvem em vez de sumir.
+  if (window.Nuvem && Nuvem.ouvirCron) Nuvem.ouvirCron(function (remoto, primeiro) {
+    if (JSON.stringify(remoto) === JSON.stringify(cron)) return;
+    if (primeiro && !remoto && cron) { Nuvem.salvarCron(cron); return; }
+    if (primeiro && remoto && cron && (cron.inicio || 0) + (cron.acumulado || 0) * 1000 > (remoto.inicio || 0) + (remoto.acumulado || 0) * 1000) { Nuvem.salvarCron(cron); return; }
+    gravarCron(remoto, true);
+  });
 
   function segundosCron() {
     if (!cron) return 0;
@@ -99,7 +108,7 @@ var Sessao = (function () {
       concluir: true,
       resumo: existente ? !!existente.resumo : !!op.resumo,
       // Páginas lidas de cada aula PDF nesta sessão.
-      paginas: existente ? Object.assign({}, existente.paginas || {}) : {},
+      paginas: existente ? Object.assign({}, existente.paginas || {}) : {}, paginasAuto: {},
       // Revisão: questões avulsas por ponto fraco { chave: { nome, acertos, erros } }
       assuntos: {}
     };
@@ -337,7 +346,7 @@ var Sessao = (function () {
     function sugestao(a) { var p = peloLeitor(a); if (p) return p.n; var l = leitura(a), ppm = Dados.paginasPorMeta(); return ppm ? Math.min(ppm, l.faltam) : l.faltam; }
     est.aulaIds.forEach(function (id) {
       var x = Dados.aula(id);
-      if (x && Dados.totalPaginas(x.aula) && est.paginas[id] == null && !est.sessaoId) est.paginas[id] = sugestao(x.aula) || '';
+      if (x && Dados.totalPaginas(x.aula) && est.paginas[id] == null && !est.sessaoId) { est.paginas[id] = sugestao(x.aula) || ''; est.paginasAuto[id] = true; }
     });
     var lista = el('div', { class: 'lista-topicos' }, blocos.map(function (b) {
       return el('div', { class: 'grupo-topicos' }, [
@@ -352,17 +361,22 @@ var Sessao = (function () {
             var l = leitura(a);
             caixaPag.appendChild(el('span', { text: 'Páginas lidas' }));
             caixaPag.appendChild(el('input', { type: 'number', min: 0, max: l.faltam, step: 1, value: est.paginas[a.id] || '', 'aria-label': 'Páginas lidas de ' + Dados.nomeAula(a),
-              oninput: function (e) { est.paginas[a.id] = e.target.value; } }));
+              oninput: function (e) { est.paginas[a.id] = e.target.value; delete est.paginasAuto[a.id]; } }));
             caixaPag.appendChild(el('span', { class: 'data-fraca', text: l.lidas ? 'já lidas ' + l.lidas + ' de ' + total + ' (falta da ' + l.inicio + 'ª à ' + total + 'ª)' : 'de ' + total + ' páginas' }));
             var pl = peloLeitor(a);
             if (pl) caixaPag.appendChild(el('span', { class: 'aula-pelo-leitor', text: 'pelo leitor: da ' + pl.de + 'ª à ' + pl.ate + 'ª' }));
             if (PdfsDados.temPdf(a.id)) caixaPag.appendChild(el('a', { class: 'link', href: '#/leitor/' + a.id + '/' + l.inicio, text: 'Ler', title: 'Abre o PDF (fecha este formulário)', onclick: function () { var f = caixaPag.closest('.modal-fundo'); if (f) f.remove(); } }));
           }
           desenharPag();
+          // A leitura pode ter sido feita no leitor de outro aparelho: busca na nuvem e atualiza a sugestão (se você não digitou).
+          if (total && window.Leitor && Leitor.trazerLeitura) Leitor.trazerLeitura(a.id).then(function () {
+            if (est.aulaIds.indexOf(a.id) >= 0 && est.paginasAuto[a.id] && !est.sessaoId) est.paginas[a.id] = sugestao(a) || '';
+            desenharPag();
+          });
           return el('div', { class: 'opcao-aula' }, [
             el('label', { class: 'opcao-topico' + (a.concluido ? ' ja-concluido' : '') }, [
               el('input', { type: 'checkbox', checked: marcado, onchange: function (e) {
-                if (e.target.checked) { est.aulaIds.push(a.id); if (total && !est.paginas[a.id]) est.paginas[a.id] = sugestao(a) || ''; }
+                if (e.target.checked) { est.aulaIds.push(a.id); if (total && !est.paginas[a.id]) { est.paginas[a.id] = sugestao(a) || ''; est.paginasAuto[a.id] = true; } }
                 else { est.aulaIds = est.aulaIds.filter(function (x) { return x !== a.id; }); delete est.paginas[a.id]; }
                 desenharPag();
               } }),
