@@ -4,7 +4,8 @@
 var Leitor = (function () {
   var el = UI.el;
   var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-  var CORES = [['amarelo', '#ffd54a'], ['verde', '#7be08f'], ['azul', '#7cc4ff'], ['rosa', '#ff8fc8']];
+  // Marca-texto estilo Edge: cor sólida por baixo do texto (mistura "multiply"), que continua nítido. O rosa virou vermelho claro.
+  var CORES = [['amarelo', '#FFF06B'], ['verde', '#B6F2A8'], ['azul', '#B3DBFF'], ['vermelho', '#FFB4B4']];
   var CHAVE_LEITURA = 'controle-estudos.leitura-dia', CHAVE_NOITE = 'controle-estudos.leitor-noturno';
   var SEGUNDOS_LIDA = 5;
   var carregando = null;
@@ -210,9 +211,11 @@ var Leitor = (function () {
       var texto = el('div', { class: 'textLayer' });
       texto.style.setProperty('--scale-factor', s);
       var notas = el('div', { class: 'pdf-notas' });
+      var links = el('div', { class: 'pdf-links' });
+      var tinta = criarTinta(p, vp1);
       p.el.innerHTML = '';
-      p.el.appendChild(canvas); p.el.appendChild(grifos); p.el.appendChild(texto); p.el.appendChild(notas);
-      p.grifos = grifos; p.notas = notas; p.texto = texto;
+      p.el.appendChild(canvas); p.el.appendChild(grifos); p.el.appendChild(texto); p.el.appendChild(links); p.el.appendChild(tinta); p.el.appendChild(notas);
+      p.grifos = grifos; p.notas = notas; p.texto = texto; p.links = links; p.tinta = tinta;
       var ctx = canvas.getContext('2d');
       return page.render({ canvasContext: ctx, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise.then(function () {
         return page.getTextContent();
@@ -225,6 +228,7 @@ var Leitor = (function () {
         p.desenhada = true; p.escala = s; p.desenhando = false;
         desenharItens(n);
         marcarBusca(n);
+        return desenharLinks(page, vp, links);
       });
     }).catch(function (e) { p.desenhando = false; console.error('Página não desenhada', n, e); });
   }
@@ -276,7 +280,11 @@ var Leitor = (function () {
     // Marca-texto: ligado, selecionar um trecho já grifa na cor escolhida. A bolinha abre as cores.
     v.btGrifar = bt('grifo', 'Marca-texto: com ele ligado, selecione o texto para grifar', function () { definirMarca(!v.marcaTexto); });
     v.bolaCor = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Escolher a cor (teclas 1 a 4)', 'aria-label': 'Escolher a cor do marca-texto', onclick: function (e) { e.stopPropagation(); menuCores(v.bolaCor); } });
-    v.btNota = bt('nota', 'Nota: clique no botão e depois no ponto da página', function () { v.notaModo = !v.notaModo; v.btNota.classList.toggle('ativo', v.notaModo); v.area.classList.toggle('modo-nota', v.notaModo); });
+    v.btNota = bt('nota', 'Nota: clique no botão e depois no ponto da página', function () { ferramenta(v.notaModo ? '' : 'nota'); });
+    try { v.corCaneta = localStorage.getItem('controle-estudos.leitor-caneta') || 'azul'; } catch (e) { v.corCaneta = 'azul'; }
+    v.btCaneta = bt('lapis', 'Caneta: escrever à mão livre no PDF', function () { ferramenta(v.caneta ? '' : 'caneta'); });
+    v.bolaCaneta = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Cor da caneta', 'aria-label': 'Escolher a cor da caneta', style: { background: corCaneta(v.corCaneta) }, onclick: function (e) { e.stopPropagation(); menuCaneta(v.bolaCaneta); } });
+    v.btBorracha = bt('borracha', 'Borracha: clique num traço da caneta para apagar', function () { ferramenta(v.borracha ? '' : 'borracha'); });
     v.btNoite = bt('lua', 'Modo noturno', function () { v.noite = !v.noite; v.area.classList.toggle('noite', v.noite); v.btNoite.classList.toggle('ativo', v.noite); try { localStorage.setItem(CHAVE_NOITE, v.noite ? '1' : '0'); } catch (e) { /* preferência */ } }, v.noite ? 'ativo' : '');
     var navegacao = el('div', { class: 'leitor-grupo' }, [bt('‹', 'Página anterior', function () { irPara(v.atual - 1); }), v.campoPagina, v.infoTotal, bt('›', 'Próxima página', function () { irPara(v.atual + 1); })]);
     var zoom = el('div', { class: 'leitor-grupo' }, [bt('−', 'Diminuir', function () { mudarZoom(v.zoom / 1.15); }), v.infoZoom, bt('+', 'Aumentar', function () { mudarZoom(v.zoom * 1.15); }), bt('↔', 'Ajustar à largura', function () { mudarZoom(1); })]);
@@ -285,7 +293,7 @@ var Leitor = (function () {
       el('div', { class: 'leitor-titulo' }, [el('strong', { text: Dados.nomeAula(a), title: Dados.nomeAula(a) }), v.infoLeitura]),
       navegacao, el('span', { class: 'leitor-sep' }), zoom, el('span', { class: 'leitor-sep' }),
       v.caixaBusca,
-      el('div', { class: 'leitor-ferramentas' }, [v.btBusca, el('span', { class: 'leitor-sep' }), el('span', { class: 'leitor-grifar' }, [v.btGrifar, v.bolaCor]), v.btNota, v.btNoite])
+      el('div', { class: 'leitor-ferramentas' }, [v.btBusca, el('span', { class: 'leitor-sep' }), el('span', { class: 'leitor-grifar' }, [v.btGrifar, v.bolaCor]), el('span', { class: 'leitor-grifar' }, [v.btCaneta, v.bolaCaneta]), v.btBorracha, v.btNota, v.btNoite])
     ]);
     definirMarca(v.marcaTexto, true);
     return b;
@@ -358,10 +366,11 @@ var Leitor = (function () {
   }
 
   // ---------- Grifos e notas ----------
-  function corHex(c) { var x = CORES.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES[0][1]; }
+  function corHex(c) { if (c === 'rosa') c = 'vermelho'; var x = CORES.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES[0][1]; }
   function desenharItens(n) {
     var p = v.paginas[n - 1]; if (!p || !p.grifos) return;
     p.grifos.innerHTML = ''; p.notas.innerHTML = '';
+    if (p.tinta) Array.prototype.slice.call(p.tinta.querySelectorAll('path')).forEach(function (x) { x.remove(); });
     v.itens.filter(function (it) { return it.pagina === n; }).forEach(function (it) {
       if (it.tipo === 'grifo') {
         it.rects.forEach(function (r) {
@@ -370,9 +379,112 @@ var Leitor = (function () {
         if (it.nota) { var r0 = it.rects[it.rects.length - 1]; p.notas.appendChild(marcador(it, r0.x + r0.w, r0.y)); }
       } else if (it.tipo === 'nota') {
         p.notas.appendChild(marcador(it, it.x, it.y));
+      } else if (it.tipo === 'tinta' && p.tinta) {
+        p.tinta.appendChild(caminho(it));
       }
     });
   }
+  // ---------- Links do PDF (ex.: imagem que abre a videoaula) ----------
+  // Links externos abrem em outra aba; links internos (sumário) levam à página.
+  function desenharLinks(page, vp, camada) {
+    return page.getAnnotations({ intent: 'display' }).then(function (anots) {
+      camada.innerHTML = '';
+      anots.forEach(function (a) {
+        if (a.subtype !== 'Link' || !a.rect) return;
+        var url = a.url || a.unsafeUrl;
+        if (!url && !a.dest) return;
+        var r = vp.convertToViewportRectangle(a.rect);
+        var x = Math.min(r[0], r[2]), y = Math.min(r[1], r[3]), w = Math.abs(r[2] - r[0]), h = Math.abs(r[3] - r[1]);
+        var estilo = { left: x / vp.width * 100 + '%', top: y / vp.height * 100 + '%', width: w / vp.width * 100 + '%', height: h / vp.height * 100 + '%' };
+        if (url) {
+          if (!/^(https?:|mailto:)/i.test(url)) url = 'https://' + url.replace(/^\/+/, '');
+          camada.appendChild(el('a', { class: 'pdf-link', href: url, target: '_blank', rel: 'noopener noreferrer', title: 'Abrir em outra aba: ' + url, style: estilo }));
+        } else {
+          camada.appendChild(el('a', { class: 'pdf-link interno', href: '#', title: 'Ir para a página indicada', style: estilo, onclick: function (e) { e.preventDefault(); irParaDestino(a.dest); } }));
+        }
+      });
+    }).catch(function (e) { console.warn('Links do PDF não lidos', e); });
+  }
+  function irParaDestino(dest) {
+    var doc = v.doc;
+    (typeof dest === 'string' ? doc.getDestination(dest) : Promise.resolve(dest)).then(function (d) {
+      if (!d || !d[0]) return null;
+      return typeof d[0] === 'number' ? d[0] : doc.getPageIndex(d[0]);
+    }).then(function (i) { if (i != null) irPara(i + 1); }).catch(function () { /* destino inválido */ });
+  }
+
+  // ---------- Escrita à mão livre (caneta) ----------
+  // Cada traço é guardado em proporção da página (0–1000 na largura), então acompanha o zoom.
+  var SVG = 'http://www.w3.org/2000/svg';
+  var CORES_CANETA = [['azul', '#1f4fd8'], ['vermelho', '#d62828'], ['preto', '#1b1b1b'], ['verde', '#1f8a4c']];
+  function corCaneta(c) { var x = CORES_CANETA.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES_CANETA[0][1]; }
+  function alturaVB(p) { return 1000 * (p.altura || v.alturaPdf) / (p.largura || v.larguraPdf); }
+  function dTraco(pts) { return pts.map(function (q, i) { return (i ? 'L' : 'M') + q[0] + ' ' + q[1]; }).join(''); }
+  function caminho(it) {
+    var c = document.createElementNS(SVG, 'path');
+    c.setAttribute('d', dTraco(it.pontos)); c.setAttribute('stroke', corCaneta(it.cor)); c.setAttribute('stroke-width', it.larg || 2.4);
+    c.setAttribute('fill', 'none'); c.setAttribute('stroke-linecap', 'round'); c.setAttribute('stroke-linejoin', 'round');
+    c.setAttribute('data-id', it.id);
+    return c;
+  }
+  function criarTinta(p, vp1) {
+    var svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('class', 'pdf-tinta');
+    svg.setAttribute('viewBox', '0 0 1000 ' + (1000 * vp1.height / vp1.width).toFixed(2));
+    svg.setAttribute('preserveAspectRatio', 'none');
+    var atual = null, traco = null, apagando = false;
+    // Borracha: apaga o traço que passa perto do ponto (os traços são finos demais para acertar o clique).
+    function apagarPerto(q) {
+      var raio = 10, alvo = v.itens.filter(function (it) {
+        return it.tipo === 'tinta' && it.pagina === p.n && it.pontos.some(function (k) { return Math.abs(k[0] - q[0]) < raio && Math.abs(k[1] - q[1]) < raio; });
+      });
+      if (!alvo.length) return;
+      v.itens = v.itens.filter(function (it) { return alvo.indexOf(it) < 0; });
+      alvo.forEach(function (it) { var c = svg.querySelector('path[data-id="' + it.id + '"]'); if (c) c.remove(); });
+      salvarAgora();
+    }
+    function ponto(e) { var r = svg.getBoundingClientRect(); return [+((e.clientX - r.left) / r.width * 1000).toFixed(1), +((e.clientY - r.top) / r.height * alturaVB(p)).toFixed(1)]; }
+    svg.addEventListener('pointerdown', function (e) {
+      if (v.borracha && e.button <= 0) { e.preventDefault(); svg.setPointerCapture(e.pointerId); apagando = true; apagarPerto(ponto(e)); return; }
+      if (!v.caneta || e.button > 0) return;
+      e.preventDefault(); svg.setPointerCapture(e.pointerId);
+      atual = { id: Dados.novoId(), tipo: 'tinta', pagina: p.n, cor: v.corCaneta, larg: 2.4, pontos: [ponto(e)], criadoEm: Date.now() };
+      traco = caminho(atual); svg.appendChild(traco);
+    });
+    svg.addEventListener('pointermove', function (e) {
+      if (apagando) { apagarPerto(ponto(e)); return; }
+      if (!atual) return;
+      var q = ponto(e), u = atual.pontos[atual.pontos.length - 1];
+      if (Math.abs(q[0] - u[0]) + Math.abs(q[1] - u[1]) < 1.2) return; // menos pontos, traço mais leve
+      atual.pontos.push(q); traco.setAttribute('d', dTraco(atual.pontos));
+    });
+    function fim() {
+      apagando = false;
+      if (!atual) return;
+      if (atual.pontos.length === 1) atual.pontos.push([atual.pontos[0][0] + 0.5, atual.pontos[0][1] + 0.5]); // um toque vira um ponto
+      v.itens.push(atual); atual = null; traco = null; salvarAgora();
+    }
+    svg.addEventListener('pointerup', fim); svg.addEventListener('pointercancel', fim);
+    return svg;
+  }
+  // Só uma ferramenta de clique por vez: nota, caneta ou borracha (o marca-texto age na seleção de texto).
+  function ferramenta(nome) {
+    v.notaModo = nome === 'nota'; v.caneta = nome === 'caneta'; v.borracha = nome === 'borracha';
+    v.btNota.classList.toggle('ativo', v.notaModo); v.btCaneta.classList.toggle('ativo', v.caneta); v.btBorracha.classList.toggle('ativo', v.borracha);
+    v.area.classList.toggle('modo-nota', v.notaModo); v.area.classList.toggle('modo-caneta', v.caneta); v.area.classList.toggle('modo-borracha', v.borracha);
+  }
+  function menuCaneta(ancora) {
+    fecharFlutuantes();
+    var r = ancora.getBoundingClientRect();
+    flutuante = el('div', { class: 'leitor-flutuante leitor-cores' }, CORES_CANETA.map(function (c) {
+      return el('button', { type: 'button', class: 'leitor-cor' + (v.corCaneta === c[0] ? ' ativa' : ''), title: 'Caneta ' + c[0], style: { background: c[1] }, onclick: function () {
+        fecharFlutuantes(); v.corCaneta = c[0]; v.bolaCaneta.style.background = c[1]; ferramenta('caneta');
+        try { localStorage.setItem('controle-estudos.leitor-caneta', c[0]); } catch (e) { /* preferência */ }
+      } });
+    }));
+    posicionar(flutuante, r.left + r.width / 2, r.bottom - 8);
+  }
+
   function marcador(it, x, y) {
     return el('button', { type: 'button', class: 'pdf-marcador' + (it.tipo === 'nota' ? ' solta' : ''), title: it.nota || it.texto || 'Nota', style: { left: x * 100 + '%', top: y * 100 + '%' },
       onclick: function (e) { e.stopPropagation(); abrirBalao(it, e.clientX, e.clientY); } }, UI.icone('nota'));
@@ -436,7 +548,7 @@ var Leitor = (function () {
     if (v.notaModo) {
       var it = { id: Dados.novoId(), tipo: 'nota', pagina: alvo.p.n, x: +px.toFixed(4), y: +py.toFixed(4), nota: '', texto: '', criadoEm: Date.now() };
       v.itens.push(it);
-      v.notaModo = false; v.btNota.classList.remove('ativo'); v.area.classList.remove('modo-nota');
+      ferramenta('');
       desenharItens(it.pagina); desenharPainel(); salvarAgora();
       abrirBalao(it, e.clientX, e.clientY);
       return;
@@ -488,7 +600,7 @@ var Leitor = (function () {
     if (!v || !document.body.contains(v.raiz) || document.querySelector('.modal-fundo')) return;
     var digitando = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ''));
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); alternarBusca(true); return; }
-    if (e.key === 'Escape') { fecharFlutuantes(); if (v.notaModo) v.btNota.click(); return; }
+    if (e.key === 'Escape') { fecharFlutuantes(); ferramenta(''); return; }
     if (digitando) return;
     if (/^[1-4]$/.test(e.key)) { e.preventDefault(); fecharFlutuantes(); definirCor(CORES[Number(e.key) - 1][0]); return; }
     if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); irPara(v.atual + 1); }

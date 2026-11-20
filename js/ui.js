@@ -56,6 +56,8 @@ var UI = (function () {
     lei: '<line x1="12" y1="4" x2="12" y2="20"/><line x1="5" y1="7" x2="19" y2="7"/><path d="M5 7l-3 6a3 3 0 0 0 6 0z"/><path d="M19 7l-3 6a3 3 0 0 0 6 0z"/><line x1="8" y1="20" x2="16" y2="20"/>',
     lupa: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/>',
     grifo: '<path d="M9 11l-6 6v3h3l6-6"/><path d="M22 6.5l-4.5-4.5L9 10.5l4.5 4.5z"/><line x1="4" y1="22" x2="20" y2="22"/>',
+    lapis: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    borracha: '<path d="M7 21h10"/><path d="M5.6 15.6l9.2-9.2a2 2 0 0 1 2.8 0l2 2a2 2 0 0 1 0 2.8l-7.8 7.8H8.4z"/><line x1="10" y1="11" x2="15" y2="16"/>',
     lua: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
     cartas: '<rect x="8" y="3" width="13" height="16" rx="2"/><path d="M8 7H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v0"/>',
     pasta: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',

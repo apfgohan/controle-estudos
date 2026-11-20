@@ -1666,11 +1666,13 @@ a.rec-caderno:hover { text-decoration: underline; }
 .leitor-area.modo-nota .pdf-pagina, .leitor-area.modo-nota .textLayer span { cursor: crosshair; }
 .pdf-pagina { position: relative; flex-shrink: 0; margin: 0 auto; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
 .pdf-canvas { display: block; position: absolute; inset: 0; }
-.leitor-area.noite .pdf-canvas { filter: invert(.92) hue-rotate(180deg); }
-.leitor-area.noite .pdf-pagina { background: #141414; }
-.pdf-grifos { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
-.pdf-grifo { position: absolute; opacity: .42; mix-blend-mode: multiply; border-radius: 2px; }
-.leitor-area.noite .pdf-grifo { mix-blend-mode: screen; opacity: .35; }
+/* Modo noturno: a página inteira (PDF, grifos e caneta) é invertida junta, assim o grifo continua certo; as notas voltam à cor normal. */
+.leitor-area.noite .pdf-pagina { filter: invert(.92) hue-rotate(180deg); }
+.leitor-area.noite .pdf-notas { filter: invert(1) hue-rotate(180deg); }
+.leitor-area.noite .pdf-pagina { background: #fff; }
+.pdf-grifos { position: absolute; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: multiply; } /* a mistura vale para a camada toda: o texto do PDF fica nítido por cima da cor */
+.pdf-grifo { position: absolute; mix-blend-mode: multiply; border-radius: 2px; }
+
 .pdf-notas { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .pdf-marcador { position: absolute; transform: translate(-30%, -60%); pointer-events: auto; width: 24px; height: 24px; border-radius: 50%; border: 0; background: #f2b33d; color: #2a1d00; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 .pdf-marcador.solta { background: #7cc4ff; color: #062a4a; }
@@ -1714,3 +1716,12 @@ a.rec-caderno:hover { text-decoration: underline; }
 /* ---------- Questões com anotações (fim do Modo Leitura) e leitura do resumo (Modo Revisão) ---------- */
 .recomendacao.rec-anotacoes, .etapa-anotacoes { --tipo-fundo: var(--rosa-claro); --tipo-borda: var(--rosa-borda); --tipo-texto: var(--rosa-texto); }
 .recomendacao.rec-resumo, .etapa-resumo { --tipo-fundo: var(--teal-claro); --tipo-borda: var(--teal-borda); --tipo-texto: var(--teal); }
+/* ---------- Leitor: links do PDF e caneta ---------- */
+.pdf-links { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.pdf-link { position: absolute; pointer-events: auto; cursor: pointer; border-radius: 2px; }
+.pdf-link:hover { background: rgba(59, 140, 240, .12); outline: 1px solid rgba(59, 140, 240, .45); }
+.pdf-tinta { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; overflow: visible; }
+.pdf-tinta path { pointer-events: none; }
+.leitor-area.modo-caneta .pdf-tinta { pointer-events: auto; cursor: crosshair; touch-action: none; }
+.leitor-area.modo-borracha .pdf-tinta { pointer-events: auto; cursor: cell; touch-action: none; }
+.leitor-area.modo-caneta .pdf-links, .leitor-area.modo-borracha .pdf-links, .leitor-area.modo-nota .pdf-links { display: none; }
