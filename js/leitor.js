@@ -6,8 +6,8 @@ var Leitor = (function () {
   var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
   // Marca-texto igual ao da extensão do TEC: faixa reta com pontas redondas, encaixada na linha de texto,
   // nas mesmas cores (mistura "multiply": o texto por baixo continua nítido).
-  var CORES = [['amarelo', '#FFE283'], ['verde', '#BFEBB2'], ['azul', '#BFDCFB'], ['rosa', '#FFC8D0'], ['lilas', '#DCCDFB']];
-  var NOMES_COR = { amarelo: 'Amarelo', verde: 'Verde', azul: 'Azul', rosa: 'Rosa', lilas: 'Lilás' };
+  var CORES = [['amarelo', '#FFE283'], ['verde', '#BFEBB2'], ['azul', '#BFDCFB'], ['vermelho', '#FF9696'], ['lilas', '#DCCDFB']];
+  var NOMES_COR = { amarelo: 'Amarelo', verde: 'Verde', azul: 'Azul', vermelho: 'Vermelho', lilas: 'Lilás' };
   var CHAVE_LEITURA = 'controle-estudos.leitura-dia', CHAVE_NOITE = 'controle-estudos.leitor-noturno';
   var SEGUNDOS_LIDA = 5;
   var carregando = null;
@@ -294,7 +294,7 @@ var Leitor = (function () {
   var CHAVE_MARCA = 'controle-estudos.leitor-marca-texto';
   function barra() {
     var x = v.x, a = x.aula;
-    try { var mt = JSON.parse(localStorage.getItem(CHAVE_MARCA) || '{}'); v.marcaTexto = !!mt.ligado; if (mt.cor === 'vermelho') mt.cor = 'rosa'; v.corAtual = CORES.some(function (c) { return c[0] === mt.cor; }) ? mt.cor : CORES[0][0]; } catch (e) { v.marcaTexto = false; v.corAtual = CORES[0][0]; }
+    try { var mt = JSON.parse(localStorage.getItem(CHAVE_MARCA) || '{}'); v.marcaTexto = !!mt.ligado; if (mt.cor === 'rosa') mt.cor = 'vermelho'; v.corAtual = CORES.some(function (c) { return c[0] === mt.cor; }) ? mt.cor : CORES[0][0]; } catch (e) { v.marcaTexto = false; v.corAtual = CORES[0][0]; }
     v.campoPagina = el('input', { type: 'number', min: 1, class: 'leitor-pagina', 'aria-label': 'Página', onchange: function () { irPara(Number(v.campoPagina.value) || 1); } });
     v.infoTotal = el('span', { class: 'leitor-total' });
     v.infoLeitura = el('span', { class: 'leitor-leitura' });
@@ -401,7 +401,7 @@ var Leitor = (function () {
   }
 
   // ---------- Grifos e notas ----------
-  function corHex(c) { if (c === 'vermelho') c = 'rosa'; var x = CORES.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES[0][1]; }
+  function corHex(c) { if (c === 'rosa') c = 'vermelho'; var x = CORES.filter(function (k) { return k[0] === c; })[0]; return x ? x[1] : CORES[0][1]; }
   function desenharItens(n) {
     var p = v.paginas[n - 1]; if (!p || !p.grifos) return;
     p.grifos.innerHTML = ''; p.notas.innerHTML = '';
@@ -636,7 +636,7 @@ var Leitor = (function () {
 
   // ---------- Marca-texto no estilo da extensão do TEC ----------
   // Faixa reta e horizontal do ponto inicial até onde o ponteiro estiver, na altura da linha de texto embaixo
-  // (80% da linha, centrada nas letras), com pontas redondas. Um toque sem arrastar vira um círculo;
+  // (a altura da linha, com folga em cima e embaixo das letras), com pontas redondas. Um toque sem arrastar vira um círculo;
   // um toque em cima de um grifo abre o balão dele (cor, nota, excluir).
   var GRIFO_SEM_LINHA = 0.02;  // altura da faixa fora do texto, em proporção da largura da página
   function spansDoTexto(p) {
@@ -655,7 +655,7 @@ var Leitor = (function () {
     });
     return melhor;
   }
-  function faixaDaLinha(l) { return { y: l.top + l.h * 0.12, h: l.h * 0.8 }; }
+  function faixaDaLinha(l) { return { y: l.top + l.h * 0.01, h: l.h * 1.02 }; }
   // Retângulo da faixa em proporção da página (meio marcador antes do início e meio depois do fim).
   function retanguloDaFaixa(g) {
     var c = g.caixa, x0 = Math.min(g.x0, g.x1) - g.h / 2, w = Math.abs(g.x1 - g.x0) + g.h;
