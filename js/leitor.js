@@ -144,6 +144,8 @@ var Leitor = (function () {
   // ---------- Montagem ----------
   function montar(caixa, x, doc, rec, pagina) {
     caixa.innerHTML = '';
+    // A caneta no estilo OneNote chega em seguida; os traços já desenhados são refeitos com ela.
+    carregarCaneta().then(function (ok) { if (ok && v && v.doc === doc) v.paginas.forEach(function (p) { if (p.desenhada) desenharItens(p.n); }); });
     var noite = false;
     try { noite = localStorage.getItem(CHAVE_NOITE) === '1'; } catch (e) { /* preferência */ }
     var lei = Dados.leituraAula(x.aula);
@@ -451,41 +453,56 @@ var Leitor = (function () {
   var GROSSURAS = [['fina', 'Fina', 2], ['media', 'Média', 3.5], ['grossa', 'Grossa', 6]];
   function grossura(g) { var x = GROSSURAS.filter(function (k) { return k[0] === g; })[0]; return x ? x[2] : 3.5; }
   function r1(n) { return Math.round(n * 10) / 10; }
-  // Traço como um contorno preenchido: a largura varia com a pressão da caneta (mesa digitalizadora) e as
-  // curvas passam pelos pontos médios (sem os "degraus" de linhas retas). Pontas redondas.
-  function contorno(it) {
-    var pts = it.pontos, base = it.larg || 2.4, n = pts.length;
-    function w(i) { var p = pts[i][2]; return p == null ? base : base * (0.3 + 1.4 * Math.max(0.05, Math.min(1, p))); }
-    if (n === 1 || (n === 2 && Math.abs(pts[0][0] - pts[1][0]) + Math.abs(pts[0][1] - pts[1][1]) < 0.6)) {
-      var c = pts[0], rr = w(0) / 2;
-      return { d: 'M' + r1(c[0] - rr) + ' ' + r1(c[1]) + 'a' + r1(rr) + ' ' + r1(rr) + ' 0 1 0 ' + r1(2 * rr) + ' 0a' + r1(rr) + ' ' + r1(rr) + ' 0 1 0 ' + r1(-2 * rr) + ' 0Z', ini: null, fim: null };
+  // Traço no estilo OneNote / Epic Pen: biblioteca perfect-freehand (estabiliza o traço, largura pela pressão
+  // e pontas afinadas). Carregada uma vez; sem internet, vale o desenho de reserva abaixo.
+  var URL_CANETA = 'https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.2/dist/esm/index.mjs';
+  var getStroke = null, carregandoCaneta = null;
+  function carregarCaneta() {
+    if (getStroke) return Promise.resolve(getStroke);
+    if (!carregandoCaneta) carregandoCaneta = import(URL_CANETA).then(function (m) { getStroke = m.getStroke; return getStroke; }).catch(function (e) { console.warn('Caneta: usando o desenho simples', e); return null; });
+    return carregandoCaneta;
+  }
+  function temPressao(it) { return it.pontos.some(function (p) { return p[2] != null; }); }
+  // Contorno do traço como caminho SVG preenchido (curvas pelos pontos médios do contorno).
+  function caminhoDoContorno(c) {
+    if (!c.length) return '';
+    var d = 'M' + r1(c[0][0]) + ' ' + r1(c[0][1]) + 'Q';
+    for (var i = 0; i < c.length; i++) {
+      var a = c[i], b = c[(i + 1) % c.length];
+      d += r1(a[0]) + ' ' + r1(a[1]) + ' ' + r1((a[0] + b[0]) / 2) + ' ' + r1((a[1] + b[1]) / 2) + ' ';
     }
+    return d + 'Z';
+  }
+  function contorno(it, previstos, emAndamento) {
+    var base = it.larg || 2.4, pressao = temPressao(it);
+    var pts = it.pontos.map(function (p) { return [p[0], p[1], p[2] != null ? p[2] : 0.5]; }).concat(previstos || []);
+    if (getStroke) {
+      return caminhoDoContorno(getStroke(pts, {
+        size: base * 1.6, thinning: pressao ? 0.55 : 0, smoothing: 0.6, streamline: 0.45, simulatePressure: false,
+        start: { taper: base * 2.5, cap: true }, end: { taper: base * 5, cap: true }, last: !emAndamento
+      }));
+    }
+    return contornoSimples(pts, base, pressao);
+  }
+  // Reserva (sem a biblioteca): suaviza os pontos, largura pela pressão e afina as pontas, sem bolinha no fim.
+  function contornoSimples(pts, base, pressao) {
+    var n = pts.length;
+    if (n < 2) { var c = pts[0], rr = base * 0.6; return 'M' + r1(c[0] - rr) + ' ' + r1(c[1]) + 'a' + rr + ' ' + rr + ' 0 1 0 ' + 2 * rr + ' 0a' + rr + ' ' + rr + ' 0 1 0 ' + -2 * rr + ' 0Z'; }
+    var s = pts.map(function (p, i) { var a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; return [(a[0] + 2 * p[0] + b[0]) / 4, (a[1] + 2 * p[1] + b[1]) / 4, p[2]]; });
     var esq = [], dir = [];
     for (var i = 0; i < n; i++) {
-      var a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      var a = s[Math.max(0, i - 1)], b = s[Math.min(n - 1, i + 1)];
       var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
-      var nx = -dy / len, ny = dx / len, h = w(i) / 2;
-      esq.push([pts[i][0] + nx * h, pts[i][1] + ny * h]); dir.push([pts[i][0] - nx * h, pts[i][1] - ny * h]);
+      var afina = Math.min(1, (i + 1) / 4, (n - i) / 7);
+      var h = base * (pressao ? 0.3 + 1.4 * s[i][2] : 1) / 2 * Math.max(0.15, afina);
+      esq.push([s[i][0] - dy / len * h, s[i][1] + dx / len * h]); dir.push([s[i][0] + dy / len * h, s[i][1] - dx / len * h]);
     }
-    function curva(l, primeiro) {
-      var s = (primeiro ? 'M' : 'L') + r1(l[0][0]) + ' ' + r1(l[0][1]);
-      for (var k = 1; k < l.length - 1; k++) s += 'Q' + r1(l[k][0]) + ' ' + r1(l[k][1]) + ' ' + r1((l[k][0] + l[k + 1][0]) / 2) + ' ' + r1((l[k][1] + l[k + 1][1]) / 2);
-      return s + 'L' + r1(l[l.length - 1][0]) + ' ' + r1(l[l.length - 1][1]);
-    }
-    return { d: curva(esq, true) + curva(dir.reverse(), false) + 'Z', ini: [pts[0], w(0) / 2], fim: [pts[n - 1], w(n - 1) / 2] };
+    return caminhoDoContorno(esq.concat(dir.reverse()));
   }
-  function desenharTraco(g, it) {
-    var c = contorno(it), cor = corCaneta(it.cor);
-    g.innerHTML = '';
-    var p = document.createElementNS(SVG, 'path');
-    p.setAttribute('d', c.d); p.setAttribute('fill', cor); p.setAttribute('fill-rule', 'nonzero');
-    g.appendChild(p);
-    [c.ini, c.fim].forEach(function (x) {
-      if (!x) return;
-      var ci = document.createElementNS(SVG, 'circle');
-      ci.setAttribute('cx', r1(x[0][0])); ci.setAttribute('cy', r1(x[0][1])); ci.setAttribute('r', r1(x[1])); ci.setAttribute('fill', cor);
-      g.appendChild(ci);
-    });
+  function desenharTraco(g, it, previstos, emAndamento) {
+    var p = g.firstChild;
+    if (!p) { p = document.createElementNS(SVG, 'path'); g.appendChild(p); }
+    p.setAttribute('d', contorno(it, previstos, emAndamento)); p.setAttribute('fill', corCaneta(it.cor));
   }
   function caminho(it) {
     var g = document.createElementNS(SVG, 'g');
@@ -498,7 +515,7 @@ var Leitor = (function () {
     svg.setAttribute('class', 'pdf-tinta');
     svg.setAttribute('viewBox', '0 0 1000 ' + (1000 * vp1.height / vp1.width).toFixed(2));
     svg.setAttribute('preserveAspectRatio', 'none');
-    var atual = null, traco = null, apagando = false, suave = null, quadro = null;
+    var atual = null, traco = null, apagando = false, quadro = null, previstos = [], ultimaPressao = 0.5;
     // Borracha: apaga o traço que passa perto do ponto (os traços são finos demais para acertar o clique).
     function apagarPerto(q) {
       var raio = 10, alvo = v.itens.filter(function (it) {
@@ -513,26 +530,30 @@ var Leitor = (function () {
     function prender(e) { try { svg.setPointerCapture(e.pointerId); } catch (x) { /* ponteiro já solto */ } }
     function ponto(e) { var r = caixa || svg.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 1000, (e.clientY - r.top) / r.height * alturaVB(p)]; }
     // Pressão só vem de caneta (mesa digitalizadora ou tela com caneta); mouse e dedo ficam com a grossura fixa.
-    function pressao(e) { return e.pointerType === 'pen' && e.pressure > 0 ? Math.round(e.pressure * 100) / 100 : null; }
+    // Pressão 0 (a caneta saindo da mesa) repete a anterior: é ela que fazia a "bolinha" no fim do traço.
+    function pressao(e) {
+      if (e.pointerType !== 'pen') return null;
+      if (e.pressure > 0.02) ultimaPressao = Math.round(e.pressure * 100) / 100;
+      return ultimaPressao;
+    }
+    function novoPonto(e) { var q = ponto(e), pt = [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10], pr = pressao(e); if (pr != null) pt.push(pr); return pt; }
     function acrescentar(e) {
-      var q = ponto(e), pr = pressao(e);
-      // Suavização leve: cada ponto anda um pouco em direção ao novo (tira o tremido da mão e do sensor).
-      suave = suave ? [suave[0] + (q[0] - suave[0]) * 0.5, suave[1] + (q[1] - suave[1]) * 0.5] : q;
-      var u = atual.pontos[atual.pontos.length - 1];
-      if (Math.abs(suave[0] - u[0]) + Math.abs(suave[1] - u[1]) < 0.35) return;
-      var pt = [Math.round(suave[0] * 10) / 10, Math.round(suave[1] * 10) / 10];
-      if (pr != null) pt.push(u[2] != null ? Math.round((u[2] * 0.6 + pr * 0.4) * 100) / 100 : pr);
+      var pt = novoPonto(e), u = atual.pontos[atual.pontos.length - 1];
+      if (Math.abs(pt[0] - u[0]) + Math.abs(pt[1] - u[1]) < 0.2) return;
       atual.pontos.push(pt);
+    }
+    function redesenhar() {
+      if (quadro) return;
+      quadro = requestAnimationFrame(function () { quadro = null; if (traco && atual) desenharTraco(traco, atual, previstos, true); });
     }
     svg.addEventListener('pointerdown', function (e) {
       caixa = svg.getBoundingClientRect();
       if (v.borracha && e.button <= 0) { e.preventDefault(); prender(e); apagando = true; apagarPerto(ponto(e)); return; }
       if (!v.caneta || e.button > 0) return;
       e.preventDefault(); prender(e);
-      var q = ponto(e), pr = pressao(e);
-      suave = q;
-      var pt = [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10]; if (pr != null) pt.push(pr);
-      atual = { id: Dados.novoId(), tipo: 'tinta', pagina: p.n, cor: v.corCaneta, larg: grossura(v.grossuraCaneta), pontos: [pt], criadoEm: Date.now() };
+      ultimaPressao = e.pressure > 0.02 ? e.pressure : 0.5;
+      atual = { id: Dados.novoId(), tipo: 'tinta', pagina: p.n, cor: v.corCaneta, larg: grossura(v.grossuraCaneta), pontos: [novoPonto(e)], criadoEm: Date.now() };
+      previstos = [];
       traco = caminho(atual); svg.appendChild(traco);
     });
     svg.addEventListener('pointermove', function (e) {
@@ -541,16 +562,18 @@ var Leitor = (function () {
       // Todos os pontos que o navegador juntou entre um quadro e outro (a caneta manda mais de 100 por segundo).
       var lista = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
       (lista && lista.length ? lista : [e]).forEach(acrescentar);
-      // Redesenha no máximo uma vez por quadro da tela.
-      if (!quadro) quadro = requestAnimationFrame(function () { quadro = null; if (traco && atual) desenharTraco(traco, atual); });
+      // Pontos previstos (só na prévia): a tinta acompanha a ponta da caneta sem atraso.
+      var prev = e.getPredictedEvents ? e.getPredictedEvents() : [];
+      previstos = prev.slice(0, 2).map(function (x) { var q = novoPonto(x); return [q[0], q[1], q[2] != null ? q[2] : 0.5]; });
+      redesenhar();
     });
-    function fim(e) {
+    function fim() {
       apagando = false; caixa = null;
       if (!atual) return;
-      if (e && e.type === 'pointerup') acrescentar(e);
       if (quadro) { cancelAnimationFrame(quadro); quadro = null; }
-      desenharTraco(traco, atual);
-      v.itens.push(atual); atual = null; traco = null; suave = null; salvarAgora();
+      previstos = [];
+      desenharTraco(traco, atual, null, false);
+      v.itens.push(atual); atual = null; traco = null; salvarAgora();
     }
     svg.addEventListener('pointerup', fim); svg.addEventListener('pointercancel', fim);
     return svg;
