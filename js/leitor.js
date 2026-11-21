@@ -1,6 +1,7 @@
 // Leitor de PDF das aulas (#/leitor/<aulaId>[/<pagina>]): PDF.js, grifos coloridos e anotações.
 // O PDF fica só neste aparelho (PdfsDados); grifos, notas e a última página vão para a nuvem.
-// A página "lida" é a que ficou na tela por 5 s ou mais; isso preenche "Páginas lidas" ao lançar a tarefa.
+// "Páginas lidas" ao lançar a tarefa: pelo marcador de continuidade (lido até a página antes dele) ou,
+// sem ele, pelas páginas que ficaram na tela por 5 s ou mais.
 var Leitor = (function () {
   var el = UI.el;
   var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
@@ -47,6 +48,7 @@ var Leitor = (function () {
   // Leitura feita hoje em outro aparelho (vem com os grifos da aula, pela nuvem): junta com a deste aparelho.
   function trazerLeitura(aulaId) {
     return PdfsDados.sincronizarGrifos(aulaId).then(function (rec) {
+      if (rec && rec.itens) guardarMarcador(aulaId, marcadorDosItens(rec.itens));
       var r = rec && rec.leituraDia;
       if (!r || r.dia !== UI.hoje()) return leituraDoDia(aulaId);
       var x = lerLeituras(), l = x[aulaId];
@@ -54,6 +56,19 @@ var Leitor = (function () {
       gravarLeituras(x);
       return x[aulaId];
     }).catch(function () { return leituraDoDia(aulaId); });
+  }
+  // ---------- Marcador de continuidade ----------
+  // Um por aula: a linha onde a leitura parou. Marcado na linha 3 da página 20 = lido até a página 19;
+  // a próxima leitura começa ali. Vai para a nuvem junto com os grifos (item tipo 'marcador'); aqui fica uma
+  // cópia para o formulário da tarefa ler sem abrir o PDF.
+  var CHAVE_MARCADORES = 'controle-estudos.leitor-marcadores';
+  function lerMarcadores() { try { return JSON.parse(localStorage.getItem(CHAVE_MARCADORES) || '{}') || {}; } catch (e) { return {}; } }
+  function marcadorDe(aulaId) { return lerMarcadores()[aulaId] || null; }
+  function marcadorDosItens(itens) { return (itens || []).filter(function (i) { return i.tipo === 'marcador'; })[0] || null; }
+  function guardarMarcador(aulaId, m) {
+    var x = lerMarcadores();
+    if (m) x[aulaId] = { pagina: m.pagina, y: m.y, dia: m.dia, em: m.em }; else delete x[aulaId];
+    try { localStorage.setItem(CHAVE_MARCADORES, JSON.stringify(x)); } catch (e) { /* só a cópia */ }
   }
   function limparLeituraNaNuvem(aulaId) { PdfsDados.obterGrifos(aulaId).then(function (rec) { if (rec.leituraDia) PdfsDados.salvarGrifos(aulaId, rec.itens, rec.ultimaPagina, null); }).catch(function () {}); }
   function limparLeitura(aulaId) { var x = lerLeituras(); delete x[aulaId]; gravarLeituras(x); limparLeituraNaNuvem(aulaId); }
@@ -66,7 +81,7 @@ var Leitor = (function () {
     // A tela é redesenhada a cada atualização do programa: o leitor aberto é reaproveitado (não recarrega o PDF).
     if (v && v.aulaId === aulaId) {
       raiz.appendChild(v.raiz);
-      if (pagina && pagina !== v.paginaPedida) { v.paginaPedida = pagina; irPara(pagina); }
+      if (pagina && pagina !== v.paginaPedida) { v.paginaPedida = pagina; irParaPagina(pagina); }
       atualizarInfo();
       return;
     }
@@ -157,7 +172,9 @@ var Leitor = (function () {
       zoom: 1, base: 1, paginas: [], visiveis: {}, ocupado: false, atual: 1, desdeAtual: Date.now(), notaModo: false, textos: {}, busca: { termo: '', pos: 0 },
       paginaPedida: pagina, noite: noite
     };
-    var inicial = pagina || v.ultima || (lei.total && !x.aula.concluido ? lei.inicio : 1);
+    guardarMarcador(v.aulaId, marcadorDosItens(v.itens));
+    var marca = marcadorDosItens(v.itens);
+    var inicial = pagina || (marca && marca.pagina) || v.ultima || (lei.total && !x.aula.concluido ? lei.inicio : 1);
     inicial = Math.max(1, Math.min(v.total, inicial));
 
     v.area = el('div', { class: 'leitor-area' + (noite ? ' noite' : '') });
@@ -183,7 +200,7 @@ var Leitor = (function () {
       }, { root: v.area, rootMargin: '600px 0px' });
       v.paginas.forEach(function (p) { v.observador.observe(p.el); });
       dimensionar();
-      irPara(inicial, true);
+      irParaPagina(inicial, true);
       desenharPainel();
       atualizarInfo();
     });
@@ -272,6 +289,49 @@ var Leitor = (function () {
     v.area.scrollTo({ top: topoDa(n), behavior: semAnimar ? 'auto' : 'smooth' });
     definirAtual(n);
   }
+  // Abrir numa página: se o marcador de continuidade está nela ou mais à frente, vai direto para a linha dele
+  // (a página pedida costuma ser "onde a leitura começa", e o marcador diz isso com exatidão).
+  function irParaPagina(n, semAnimar) {
+    var m = marcadorDosItens(v.itens), p = m && v.paginas[m.pagina - 1];
+    if (!p || m.pagina < n) { irPara(n, semAnimar); return; }
+    v.area.scrollTo({ top: Math.max(0, p.el.offsetTop + m.y * p.el.offsetHeight - v.area.clientHeight * 0.3), behavior: semAnimar ? 'auto' : 'smooth' });
+    definirAtual(m.pagina);
+    v.piscarAte = Date.now() + 2500;
+    var f = p.el.querySelector('.pdf-continuar'); if (f) piscar(f);
+  }
+  function piscar(f) { f.classList.remove('piscando'); void f.offsetWidth; f.classList.add('piscando'); }
+  function colocarMarcador(alvo, e) {
+    var p = alvo.p, r = alvo.r, l = linhaDeTexto(p, r.left, r.right, e.clientY);
+    var topo = l ? l.top - Math.max(2, l.h * 0.25) : e.clientY - 8;
+    var antigo = marcadorDosItens(v.itens);
+    var m = { id: Dados.novoId(), tipo: 'marcador', pagina: p.n, y: +Math.max(0, (topo - r.top) / r.height).toFixed(4), dia: UI.hoje(), em: Date.now() };
+    v.itens = v.itens.filter(function (i) { return i.tipo !== 'marcador'; });
+    v.itens.push(m);
+    guardarMarcador(v.aulaId, m);
+    ferramenta('');
+    if (antigo && antigo.pagina !== p.n) desenharItens(antigo.pagina);
+    desenharItens(p.n);
+    salvarAgora(); atualizarInfo();
+    UI.aviso(p.n > 1 ? 'Marcador na p. ' + p.n + ': lido até a p. ' + (p.n - 1) : 'Marcador na p. 1');
+  }
+  function removerMarcador() {
+    var m = marcadorDosItens(v.itens); if (!m) return;
+    v.itens = v.itens.filter(function (i) { return i !== m; });
+    guardarMarcador(v.aulaId, null);
+    desenharItens(m.pagina); salvarAgora(); atualizarInfo();
+  }
+  // Modelo A: fita na margem, linha tracejada acima da linha marcada e a etiqueta "Continuar daqui".
+  function fitaMarcador(it) {
+    var quando = new Date(it.em || Date.now());
+    var f = el('div', { class: 'pdf-continuar', style: { top: it.y * 100 + '%' } }, [
+      el('span', { class: 'pdf-continuar-fita' }),
+      el('button', { type: 'button', class: 'pdf-continuar-rotulo', text: 'Continuar daqui',
+        title: 'Marcado em ' + quando.toLocaleDateString('pt-BR') + ' às ' + quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '. Clique para remover.',
+        onclick: function (e) { e.stopPropagation(); UI.confirmar('Remover o marcador de continuidade desta aula?', removerMarcador, 'Remover'); } })
+    ]);
+    if (v.piscarAte && Date.now() < v.piscarAte) piscar(f);
+    return f;
+  }
   function definirAtual(n) {
     if (v.atual === n) return;
     v.atual = n; v.desdeAtual = Date.now();
@@ -313,6 +373,7 @@ var Leitor = (function () {
     v.btGrifar = bt('grifo', 'Marca-texto: arraste sobre a linha para grifar', function () { definirMarca(!v.marcaTexto); });
     v.bolaCor = el('button', { type: 'button', class: 'leitor-cor-atual', title: 'Escolher a cor (teclas 1 a 5)', 'aria-label': 'Escolher a cor do marca-texto', onclick: function (e) { e.stopPropagation(); menuCores(v.bolaCor); } });
     v.btNota = bt('nota', 'Nota: clique no botão e depois no ponto da página', function () { ferramenta(v.notaModo ? '' : 'nota'); });
+    v.btMarcador = bt('fita', 'Marcador de continuidade: clique no botão e depois na linha onde parou', function () { ferramenta(v.marcadorModo ? '' : 'marcador'); });
     try { v.corCaneta = localStorage.getItem('controle-estudos.leitor-caneta') || 'azul'; } catch (e) { v.corCaneta = 'azul'; }
     try { v.grossuraCaneta = localStorage.getItem('controle-estudos.leitor-grossura') || 'media'; } catch (e) { v.grossuraCaneta = 'media'; }
     v.btCaneta = bt('lapis', 'Caneta: escrever à mão livre no PDF', function () { ferramenta(v.caneta ? '' : 'caneta'); });
@@ -326,7 +387,7 @@ var Leitor = (function () {
       el('div', { class: 'leitor-titulo' }, [el('strong', { text: Dados.nomeAula(a), title: Dados.nomeAula(a) }), v.infoLeitura]),
       navegacao, el('span', { class: 'leitor-sep' }), zoom, el('span', { class: 'leitor-sep' }),
       v.caixaBusca,
-      el('div', { class: 'leitor-ferramentas' }, [v.btBusca, el('span', { class: 'leitor-sep' }), el('span', { class: 'leitor-grifar' }, [v.btGrifar, v.bolaCor]), el('span', { class: 'leitor-grifar' }, [v.btCaneta, v.bolaCaneta]), v.btBorracha, v.btNota, v.btNoite])
+      el('div', { class: 'leitor-ferramentas' }, [v.btBusca, el('span', { class: 'leitor-sep' }), el('span', { class: 'leitor-grifar' }, [v.btGrifar, v.bolaCor]), el('span', { class: 'leitor-grifar' }, [v.btCaneta, v.bolaCaneta]), v.btBorracha, v.btNota, v.btMarcador, v.btNoite])
     ]);
     definirMarca(v.marcaTexto, true);
     return b;
@@ -337,7 +398,7 @@ var Leitor = (function () {
     if (ver) { v.campoBusca.focus(); v.campoBusca.select(); } else { v.busca = { termo: '', pos: 0 }; v.infoBusca.textContent = ''; limparBusca(); }
   }
   function definirMarca(ligado, semGravar) {
-    if (ligado && (v.caneta || v.borracha || v.notaModo)) ferramenta('');
+    if (ligado && (v.caneta || v.borracha || v.notaModo || v.marcadorModo)) ferramenta('');
     v.marcaTexto = ligado;
     if (!ligado) esconderMira();
     v.btGrifar.classList.toggle('ativo', ligado);
@@ -363,6 +424,8 @@ var Leitor = (function () {
     var a = (Dados.aula(v.aulaId) || v.x).aula || v.x.aula, l = Dados.leituraAula(a), hoje = leituraDoDia(v.aulaId);
     v.infoLeitura.textContent = (l.total ? 'Teoria: ' + l.total + ' págs.' + (a.concluido ? ' · concluída' : ' · lidas ' + l.lidas) : '') +
       (hoje ? (l.total ? ' · ' : '') + 'hoje: da ' + hoje.de + 'ª à ' + hoje.ate + 'ª' : '');
+    var mc = marcadorDosItens(v.itens);
+    if (mc) v.infoLeitura.textContent += (v.infoLeitura.textContent ? ' · ' : '') + 'marcador na p. ' + mc.pagina;
   }
   function mudarZoom(z) {
     var n = v.atual;
@@ -412,6 +475,8 @@ var Leitor = (function () {
           p.grifos.appendChild(el('div', { class: 'pdf-grifo', 'data-id': it.id, style: { left: r.x * 100 + '%', top: r.y * 100 + '%', width: r.w * 100 + '%', height: r.h * 100 + '%', background: corHex(it.cor) } }));
         });
         if (it.nota) { var r0 = it.rects[it.rects.length - 1]; p.notas.appendChild(marcador(it, r0.x + r0.w, r0.y)); }
+      } else if (it.tipo === 'marcador') {
+        p.notas.appendChild(fitaMarcador(it));
       } else if (it.tipo === 'nota') {
         p.notas.appendChild(marcador(it, it.x, it.y));
       } else if (it.tipo === 'tinta' && p.tinta) {
@@ -597,9 +662,9 @@ var Leitor = (function () {
   // Só uma ferramenta por vez: marca-texto, nota, caneta ou borracha.
   function ferramenta(nome) {
     if (nome && v.marcaTexto) definirMarca(false);
-    v.notaModo = nome === 'nota'; v.caneta = nome === 'caneta'; v.borracha = nome === 'borracha';
-    v.btNota.classList.toggle('ativo', v.notaModo); v.btCaneta.classList.toggle('ativo', v.caneta); v.btBorracha.classList.toggle('ativo', v.borracha);
-    v.area.classList.toggle('modo-nota', v.notaModo); v.area.classList.toggle('modo-caneta', v.caneta); v.area.classList.toggle('modo-borracha', v.borracha);
+    v.notaModo = nome === 'nota'; v.caneta = nome === 'caneta'; v.borracha = nome === 'borracha'; v.marcadorModo = nome === 'marcador';
+    v.btNota.classList.toggle('ativo', v.notaModo); v.btCaneta.classList.toggle('ativo', v.caneta); v.btBorracha.classList.toggle('ativo', v.borracha); v.btMarcador.classList.toggle('ativo', v.marcadorModo);
+    v.area.classList.toggle('modo-nota', v.notaModo); v.area.classList.toggle('modo-caneta', v.caneta); v.area.classList.toggle('modo-borracha', v.borracha); v.area.classList.toggle('modo-marcador', v.marcadorModo);
   }
   function menuCaneta(ancora) {
     fecharFlutuantes();
@@ -727,6 +792,7 @@ var Leitor = (function () {
     if (e.target.closest('.pdf-marcador') || v.marcaTexto) return;
     var alvo = paginaDoPonto(e.clientX, e.clientY); if (!alvo) return;
     var px = (e.clientX - alvo.r.left) / alvo.r.width, py = (e.clientY - alvo.r.top) / alvo.r.height;
+    if (v.marcadorModo) { colocarMarcador(alvo, e); return; }
     if (v.notaModo) {
       var it = { id: Dados.novoId(), tipo: 'nota', pagina: alvo.p.n, x: +px.toFixed(4), y: +py.toFixed(4), nota: '', texto: '', criadoEm: Date.now() };
       v.itens.push(it);
@@ -795,5 +861,5 @@ var Leitor = (function () {
     v.timerTam = setTimeout(function () { var n = v.atual; v.base = Math.min(2.2, Math.max(0.5, (v.area.clientWidth - 48) / v.larguraPdf)); dimensionar(); irPara(n, true); atualizarInfo(); }, 250);
   });
 
-  return { render: render, enviarPdf: enviarPdf, contarPaginas: contarPaginas, leituraDoDia: leituraDoDia, trazerLeitura: trazerLeitura, limparLeitura: limparLeitura };
+  return { render: render, enviarPdf: enviarPdf, contarPaginas: contarPaginas, leituraDoDia: leituraDoDia, trazerLeitura: trazerLeitura, limparLeitura: limparLeitura, marcador: marcadorDe };
 })();

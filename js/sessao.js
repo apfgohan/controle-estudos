@@ -337,8 +337,15 @@ var Sessao = (function () {
     // Páginas sugeridas para um PDF: as páginas de uma meta (Configurações) ou, sem elas, tudo o que falta.
     function leitura(a) { return Dados.leituraAula(Object.assign({}, a, { concluido: false }), est.sessaoId); }
     // Leitura feita hoje no leitor de PDF: as páginas vistas além do que já estava lido (só as de teoria contam).
+    // Com o marcador de continuidade: lido do começo que faltava até a página antes do marcador
+    // (marcador na p. 20 depois de já lidas 1–9 = da 10ª à 19ª).
     function peloLeitor(a) {
-      var r = window.Leitor && Leitor.leituraDoDia(a.id), l = leitura(a);
+      var l = leitura(a), m = window.Leitor && Leitor.marcador && Leitor.marcador(a.id);
+      if (m && l.total) {
+        var fim = Math.min(m.pagina - 1, l.total);
+        if (fim >= l.inicio) return { de: l.inicio, ate: fim, n: fim - l.inicio + 1, marcador: m.pagina };
+      }
+      var r = window.Leitor && Leitor.leituraDoDia(a.id);
       if (!r || !l.total || r.ate < l.inicio) return null;
       var ate = Math.min(r.ate, l.total);
       return { de: l.inicio, ate: ate, n: ate - l.inicio + 1 };
@@ -364,7 +371,7 @@ var Sessao = (function () {
               oninput: function (e) { est.paginas[a.id] = e.target.value; delete est.paginasAuto[a.id]; } }));
             caixaPag.appendChild(el('span', { class: 'data-fraca', text: l.lidas ? 'já lidas ' + l.lidas + ' de ' + total + ' (falta da ' + l.inicio + 'ª à ' + total + 'ª)' : 'de ' + total + ' páginas' }));
             var pl = peloLeitor(a);
-            if (pl) caixaPag.appendChild(el('span', { class: 'aula-pelo-leitor', text: 'pelo leitor: da ' + pl.de + 'ª à ' + pl.ate + 'ª' }));
+            if (pl) caixaPag.appendChild(el('span', { class: 'aula-pelo-leitor', text: (pl.marcador ? 'pelo marcador (p. ' + pl.marcador + '): ' : 'pelo leitor: ') + 'da ' + pl.de + 'ª à ' + pl.ate + 'ª' }));
             if (PdfsDados.temPdf(a.id)) caixaPag.appendChild(el('a', { class: 'link', href: '#/leitor/' + a.id + '/' + l.inicio, text: 'Ler', title: 'Abre o PDF (fecha este formulário)', onclick: function () { var f = caixaPag.closest('.modal-fundo'); if (f) f.remove(); } }));
           }
           desenharPag();

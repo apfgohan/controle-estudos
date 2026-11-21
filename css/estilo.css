@@ -1678,6 +1678,15 @@ a.rec-caderno:hover { text-decoration: underline; }
 .pdf-notas { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .pdf-marcador { position: absolute; transform: translate(-30%, -60%); pointer-events: auto; width: 24px; height: 24px; border-radius: 50%; border: 0; background: #f2b33d; color: #2a1d00; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 .pdf-marcador.solta { background: #7cc4ff; color: #062a4a; }
+/* Marcador de continuidade (modelo A): fita na margem, linha tracejada e a etiqueta "Continuar daqui". */
+.pdf-continuar { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed #d62828; pointer-events: none; }
+.pdf-continuar-fita { position: absolute; left: 10px; top: -13px; width: 14px; height: 26px; background: #d62828; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%); }
+.pdf-continuar-rotulo { position: absolute; right: 10px; top: -21px; pointer-events: auto; border: 0; border-radius: 4px; background: #d62828; color: #fff; font: 600 11px/20px var(--fonte, sans-serif); padding: 0 8px; cursor: pointer; white-space: nowrap; }
+.pdf-continuar-rotulo:hover { background: #b51f1f; }
+.pdf-continuar.piscando { animation: piscar-continuar .7s ease-in-out 3; }
+@keyframes piscar-continuar { 50% { opacity: .2; } }
+.leitor-area.modo-marcador .pdf-pagina, .leitor-area.modo-marcador .textLayer span { cursor: crosshair; }
+.leitor-area.modo-marcador .pdf-links { display: none; }
 .pdf-marcador .icone { width: 14px; height: 14px; }
 .textLayer { position: absolute; inset: 0; overflow: hidden; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 2; }
 .textLayer span, .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
