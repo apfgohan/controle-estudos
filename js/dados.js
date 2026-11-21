@@ -1328,13 +1328,191 @@ var Dados = (function () {
     if (i >= 0 && i < db.ciclo.itens.length) { db.ciclo.posicaoAtual = i; salvar(); }
   }
 
-  function definirCiclo(itens) {
-    db.ciclo.itens = itens.map(function (x) {
+  // extras (opcional): { materias: [ids escolhidos], ordem: 'equilibrada' | 'manual' }. Guarda também o modo de cada
+  // matéria no momento (ciclo.modos), para avisar quando uma delas passar de Leitura para Revisão ou o contrário.
+  function definirCiclo(itens, extras) {
+    var c = db.ciclo, vez = c.itens[c.posicaoAtual];
+    c.itens = reaproveitarIds(c.itens, itens).map(function (x) {
       return { id: x.id || novoId(), disciplinaId: x.disciplinaId, minutosPlanejados: Math.max(0, Number(x.minutosPlanejados) || 0) };
     });
-    if (db.ciclo.posicaoAtual >= db.ciclo.itens.length) db.ciclo.posicaoAtual = 0;
+    if (extras) {
+      if (extras.materias) c.materias = extras.materias.slice();
+      if (extras.ordem) c.ordem = extras.ordem;
+    }
+    c.modos = retratoModos(c.itens);
+    // A matéria da vez continua a vez: a mesma vaga, se ficou; senão, a 1ª vaga da mesma matéria.
+    var i = -1;
+    if (vez) {
+      c.itens.forEach(function (x, k) { if (i < 0 && x.id === vez.id) i = k; });
+      if (i < 0) c.itens.forEach(function (x, k) { if (i < 0 && x.disciplinaId === vez.disciplinaId) i = k; });
+    }
+    if (i >= 0) c.posicaoAtual = i;
+    else if (c.posicaoAtual >= c.itens.length) c.posicaoAtual = 0;
     salvar();
   }
+
+  // Posições sem id herdam, por matéria e na ordem, os ids das antigas: o registro "o que foi estudado nesta volta"
+  // continua apontando para uma vaga da mesma matéria.
+  function reaproveitarIds(antigos, novos) {
+    var livres = {};
+    var usados = {};
+    novos.forEach(function (x) { if (x.id) usados[x.id] = true; });
+    antigos.forEach(function (x) { if (!usados[x.id]) (livres[x.disciplinaId] = livres[x.disciplinaId] || []).push(x.id); });
+    return novos.map(function (x) {
+      if (x.id) return x;
+      var l = livres[x.disciplinaId];
+      return { id: l && l.length ? l.shift() : null, disciplinaId: x.disciplinaId, minutosPlanejados: x.minutosPlanejados };
+    });
+  }
+
+  function retratoModos(itens) {
+    var r = {};
+    itens.forEach(function (x) { if (!r[x.disciplinaId] && disciplina(x.disciplinaId)) r[x.disciplinaId] = modoDeEstudo(x.disciplinaId).modo; });
+    return r;
+  }
+
+  // Grupo de afinidade pelo nome, para não pôr matérias parecidas em sequência no ciclo: [grupo, família].
+  function grupoAfinidade(nome) {
+    var n = String(nome || '').toLowerCase();
+    if (/tribut|legisla/.test(n)) return ['tributario', 'direito'];
+    if (/constitu|administra|financeiro|\bafo\b/.test(n)) return ['publico', 'direito'];
+    if (/civil|penal|empresarial|comercial|trabalh|previd/.test(n)) return ['privado', 'direito'];
+    if (/direito/.test(n)) return ['direito', 'direito'];
+    if (/contab|custo|auditor/.test(n)) return ['contabil', 'contabil'];
+    if (/exata|flu[eê]ncia|dados|econ|estat|matem|racioc|finan|inform|tecnolog/.test(n)) return ['quantitativo', 'quantitativo'];
+    if (/portugu|ingl|espanh|reda[cç]/.test(n)) return ['lingua', 'lingua'];
+    return ['outra:' + n, 'outra:' + n];
+  }
+
+  // Vagas por matéria no ciclo: 2 no Modo Leitura, 1 no Modo Revisão.
+  function vagasNoCiclo(disciplinaId) { return modoDeEstudo(disciplinaId).modo === 'revisao' ? 1 : 2; }
+
+  // Ordem equilibrada (determinística): as vagas da mesma matéria ficam espaçadas (~meio ciclo) e matérias do mesmo
+  // grupo não ficam lado a lado. Guloso pela vaga mais "atrasada", com penalidades por vizinhança; testa várias
+  // rotações iniciais e fica com a de menor custo, contando a emenda do fim com o começo (o ciclo se repete).
+  function gerarOrdemCiclo(ids) {
+    var ms = ids.map(function (id) { return disciplina(id); }).filter(Boolean).map(function (d) {
+      var g = grupoAfinidade(d.nome);
+      return { id: d.id, grupo: g[0], familia: g[1], n: vagasNoCiclo(d.id) };
+    });
+    var N = ms.reduce(function (s, m) { return s + m.n; }, 0);
+    if (!N) return [];
+
+    function montar(rot) {
+      var usados = {}, seq = [];
+      ms.forEach(function (m, i) {
+        usados[m.id] = 0;
+        m.gap = N / m.n;
+        m.devida = (((i + rot) % ms.length) * N / ms.length) % m.gap;
+      });
+      for (var k = 0; k < N; k++) {
+        var melhor = null, nota = -Infinity;
+        ms.forEach(function (m) {
+          if (usados[m.id] >= m.n) return;
+          var s = -(m.devida + usados[m.id] * m.gap - k) * 3; // quanto mais atrasada, melhor
+          s -= vizinhanca(seq, k, m);
+          if (s > nota) { nota = s; melhor = m; }
+        });
+        usados[melhor.id]++;
+        seq.push(melhor);
+      }
+      return seq;
+    }
+    function vizinhanca(seq, k, m) {
+      var p = 0, a = seq[k - 1], b = seq[k - 2], c = seq[k - 3];
+      if (a) { if (a.id === m.id) p += 1000; else if (a.grupo === m.grupo) p += 60; else if (a.familia === m.familia) p += 25; }
+      if (b) { if (b.id === m.id) p += 200; else if (b.grupo === m.grupo) p += 15; }
+      if (c && c.id === m.id) p += 80;
+      return p;
+    }
+    function custo(seq) {
+      var t = 0;
+      seq.forEach(function (m, k) {
+        var a = seq[(k + 1) % N], b = seq[(k + 2) % N];
+        if (N > 1 && a.id === m.id) t += 1000; else if (a.grupo === m.grupo) t += 60; else if (a.familia === m.familia) t += 25;
+        if (N > 2 && b.id === m.id) t += 200; else if (b.grupo === m.grupo) t += 15;
+      });
+      // Espaçamento: a menor distância entre vagas da mesma matéria, comparada com a ideal.
+      ms.forEach(function (m) {
+        if (m.n < 2) return;
+        var pos = [];
+        seq.forEach(function (x, k) { if (x.id === m.id) pos.push(k); });
+        var d = Math.min(pos[1] - pos[0], N - (pos[1] - pos[0]));
+        t += Math.max(0, N / 2 - d) * 4;
+      });
+      return t;
+    }
+    var melhorSeq = null, melhorCusto = Infinity;
+    for (var rot = 0; rot < ms.length; rot++) {
+      var seq = montar(rot), c = custo(seq);
+      if (c < melhorCusto) { melhorCusto = c; melhorSeq = seq; }
+    }
+    return melhorSeq.map(function (m) { return m.id; });
+  }
+
+  // Na ordem da lista: cada matéria nas vagas dela, a 2ª vaga a meio ciclo da 1ª (para depois ajustar à mão).
+  function ordemDaLista(ids) {
+    var primeiras = ids.filter(function (id) { return disciplina(id); });
+    var segundas = primeiras.filter(function (id) { return vagasNoCiclo(id) === 2; });
+    return primeiras.concat(segundas);
+  }
+
+  // Matérias cujo modo mudou desde que o ciclo foi salvo: [{ id, de, para }].
+  function mudancasDeModo() {
+    var c = db.ciclo, r = [];
+    if (!c.itens.length) return r;
+    if (!c.modos) { c.modos = retratoModos(c.itens); return r; } // ciclo de antes deste registro: o retrato começa agora
+    Object.keys(c.modos).forEach(function (id) {
+      if (!disciplina(id)) return;
+      var agora = modoDeEstudo(id).modo;
+      if (agora !== c.modos[id]) r.push({ id: id, de: c.modos[id], para: agora });
+    });
+    return r;
+  }
+
+  // Matérias que ficaram fora do ciclo, na ordem do cadastro (só as que ainda têm teoria).
+  function materiasForaDoCiclo() {
+    var dentro = {};
+    db.ciclo.itens.forEach(function (x) { dentro[x.disciplinaId] = true; });
+    return disciplinas().filter(function (d) { return !dentro[d.id] && modoDeEstudo(d.id).modo === 'leitura'; });
+  }
+
+  // Ajusta o ciclo aos modos atuais (e inclui matérias, se pedido), mantendo a matéria da vez na posição atual.
+  function atualizarCicloPorModo(incluir) {
+    var c = db.ciclo, atual = c.itens[c.posicaoAtual];
+    var ids = [];
+    c.itens.forEach(function (x) { if (ids.indexOf(x.disciplinaId) < 0 && disciplina(x.disciplinaId)) ids.push(x.disciplinaId); });
+    (incluir || []).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+    var minutos = {};
+    c.itens.forEach(function (x) { if (minutos[x.disciplinaId] == null) minutos[x.disciplinaId] = x.minutosPlanejados || 0; });
+    var novos;
+    if (c.ordem === 'equilibrada') {
+      novos = gerarOrdemCiclo(ids).map(function (id) { return { disciplinaId: id, minutosPlanejados: minutos[id] || 0 }; });
+    } else {
+      // Ordem manual: só tira a vaga que sobra ou acrescenta a que falta (a meio ciclo), sem mexer no resto.
+      novos = c.itens.map(function (x) { return { id: x.id, disciplinaId: x.disciplinaId, minutosPlanejados: x.minutosPlanejados }; });
+      ids.forEach(function (id) {
+        var quer = vagasNoCiclo(id), tem = novos.filter(function (x) { return x.disciplinaId === id; }).length;
+        while (tem > quer) {
+          for (var k = novos.length - 1; k >= 0; k--) if (novos[k].disciplinaId === id && !(atual && novos[k].id === atual.id)) { novos.splice(k, 1); break; }
+          tem--;
+        }
+        while (tem < quer) {
+          var primeira = -1;
+          novos.forEach(function (x, k) { if (primeira < 0 && x.disciplinaId === id) primeira = k; });
+          var onde = primeira < 0 ? novos.length : (primeira + Math.ceil((novos.length + 1) / 2)) % (novos.length + 1);
+          novos.splice(onde, 0, { disciplinaId: id, minutosPlanejados: minutos[id] || 0 });
+          tem++;
+        }
+      });
+    }
+    var materias = (c.materias || []).slice();
+    ids.forEach(function (id) { if (materias.indexOf(id) < 0) materias.push(id); });
+    definirCiclo(novos, { materias: materias }); // mantém a matéria da vez
+  }
+
+  // "Agora não": o ciclo fica como está e o aviso some (até o próximo modo mudar).
+  function aceitarModosAtuais() { db.ciclo.modos = retratoModos(db.ciclo.itens); salvar(); }
 
   function recomecarCiclo() { db.ciclo.posicaoAtual = 0; salvar(); }
 
@@ -1935,6 +2113,9 @@ var Dados = (function () {
     proximaDoCiclo: itemAtualCiclo, avancarCiclo: avancarCiclo, irParaPosicaoCiclo: irParaPosicaoCiclo,
     sessoesDaPosicaoCiclo: sessoesDaPosicaoCiclo,
     definirCiclo: definirCiclo, recomecarCiclo: recomecarCiclo,
+    grupoAfinidade: grupoAfinidade, vagasNoCiclo: vagasNoCiclo, gerarOrdemCiclo: gerarOrdemCiclo, ordemDaLista: ordemDaLista,
+    mudancasDeModo: mudancasDeModo, materiasForaDoCiclo: materiasForaDoCiclo, atualizarCicloPorModo: atualizarCicloPorModo,
+    aceitarModosAtuais: aceitarModosAtuais,
     revisto: revisto, marcarRevisto: marcarRevisto,
     sessao: sessao, criarSessao: criarSessao, atualizarSessao: atualizarSessao, excluirSessao: excluirSessao,
     statsQuestoes: statsQuestoes, statsCaderno: statsCaderno, statsPasta: statsPasta,

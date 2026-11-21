@@ -1,7 +1,8 @@
 // Previsão de conclusão do edital: quando toda a teoria estará feita e todas as matérias só no Modo Revisão.
 // Nada é gravado: o cálculo sai dos estudos lançados, do plano de cada matéria e do ciclo.
 var Previsao = (function () {
-  var JANELA_DIAS = 28;
+  var JANELA_DIAS = 28;    // etapas concluídas por semana (informativo)
+  var JANELA_RITMO = 84;   // horas por semana usadas na data: 12 semanas, para uma pausa curta não distorcer
   var MIN_TOPICOS = 5, MIN_QUESTOES = 100;   // abaixo disso, a matéria usa a média geral
   var FAVORITAS_PADRAO = 20;                 // questões por rodada, enquanto nenhuma foi lançada
   var HORAS_TOPICO_PADRAO = 1.25, QUESTOES_HORA_PADRAO = 24, ERRO_PADRAO = 0.25, BATERIA_PADRAO = 30;
@@ -130,8 +131,30 @@ var Previsao = (function () {
     return { horas: horas, modo: m.modo, etapas: etapas, feitas: feitas };
   }
 
-  // Duração média de uma sessão de teoria: da matéria (com 5 ou mais) ou de todas; sem histórico, a estimativa por aula.
+  // Tempo de uma meta de teoria: minutos por página (sessões com páginas lançadas) × páginas por meta. Usa a matéria
+  // com 5 ou mais sessões assim; senão, todas. Sem páginas lançadas: duração média de uma sessão de teoria.
   function horasPorMetaTeoria(disciplinaId, padrao) {
+    var ppm = Dados.paginasPorMeta();
+    function porPagina(filtro) {
+      var seg = 0, pag = 0, n = 0;
+      Dados.db.sessoes.forEach(function (s) {
+        if (s.tipo !== 'teoria' || !(s.segundos > 0) || !s.paginas || !filtro(s)) return;
+        var p = 0;
+        for (var k in s.paginas) p += Number(s.paginas[k]) || 0;
+        if (p > 0) { seg += s.segundos; pag += p; n++; }
+      });
+      return { h: pag ? seg / pag / 3600 : 0, n: n };
+    }
+    if (ppm) {
+      var pp = porPagina(function (s) { return s.disciplinaId === disciplinaId; });
+      if (pp.n >= MIN_TOPICOS) return pp.h * ppm;
+      var pg = porPagina(function () { return true; });
+      if (pg.n) return pg.h * ppm;
+    }
+    return duracaoMediaTeoria(disciplinaId, padrao);
+  }
+
+  function duracaoMediaTeoria(disciplinaId, padrao) {
     function media(filtro) {
       var seg = 0, n = 0;
       Dados.db.sessoes.forEach(function (s) { if (s.tipo === 'teoria' && (s.segundos || 0) > 0 && filtro(s)) { seg += s.segundos; n++; } });
@@ -187,21 +210,31 @@ var Previsao = (function () {
     return contagem;
   }
 
-  // Ritmo real da janela: horas por semana e tempo médio de cada posição do ciclo (cerca de uma sessão).
-  function ritmo() {
-    var de = UI.somarDias(UI.hoje(), -(JANELA_DIAS - 1)), seg = 0, n = 0;
+  // Ritmo real: horas por semana e tempo médio de cada posição do ciclo (cerca de uma sessão), nos últimos "dias".
+  // Com menos histórico que isso, conta desde a primeira sessão; dias de pausa (patente) não entram na divisão.
+  function ritmo(dias) {
+    var hoje = UI.hoje(), de = UI.somarDias(hoje, -(dias - 1)), seg = 0, n = 0, primeira = null;
     Dados.db.sessoes.forEach(function (s) {
-      if (s.data < de || s.tipo === 'anki') return; // o Anki não avança o edital
+      if (s.tipo === 'anki') return; // o Anki não avança o edital
+      if (!primeira || s.data < primeira) primeira = s.data;
+      if (s.data < de) return;
       seg += s.segundos || 0;
       n++;
     });
-    return { horasSemana: seg / 3600 / (JANELA_DIAS / 7), horasPosicao: n ? seg / 3600 / n : 0 };
+    if (primeira && primeira > de) de = primeira;
+    var total = UI.diasEntre(de, hoje) + 1;
+    (Dados.db.pausas || []).forEach(function (p) {
+      var a = p.inicio > de ? p.inicio : de, b = p.fim < hoje ? p.fim : hoje;
+      if (a <= b) total -= UI.diasEntre(a, b) + 1;
+    });
+    total = Math.max(7, total); // menos de uma semana não dá média confiável
+    return { horasSemana: seg / 3600 / (total / 7), horasPosicao: n ? seg / 3600 / n : 0 };
   }
 
   // Repete o ciclo a partir da posição atual, descontando o tempo de cada posição da matéria dela. Regras do ciclo:
-  //  - matéria em Revisão ocupa no máximo 1 vaga; em Leitura, pode ocupar 2;
+  //  - matéria em Revisão ocupa no máximo 1 vaga; em Leitura, 2;
   //  - ao terminar o Modo Leitura, a matéria continua no ciclo, com 1 vaga, e entra a próxima matéria de fora (ordem alfabética);
-  //  - se a matéria tinha 2 vagas, a vaga extra passa para a nova; se tinha 1, o ciclo ganha uma vaga no fim.
+  //  - a que entra fica com a vaga liberada (ou uma no fim) e ganha a 2ª a meio ciclo de distância.
   // Sem ciclo montado, não há tempo em Revisão: as horas são divididas entre as matérias que faltam.
   function simular(materias, horasPosicao) {
     var resto = {}, fim = {};
@@ -222,9 +255,17 @@ var Previsao = (function () {
         else if (entraNova && fila.length && !entrou) { novo.push(fila.shift()); entrou = true; }
         if (k === i) novoI = Math.max(0, novo.length - 1);
       });
-      if (entraNova && !entrou && fila.length) novo.push(fila.shift());
+      if (entraNova && !entrou && fila.length) { novo.push(fila.shift()); entrou = true; }
       posicoes = novo;
       i = novoI;
+    }
+    // Regra do ciclo: matéria em Leitura tem 2 vagas. A que entra ganha a 2ª a meio ciclo da 1ª.
+    function segundaVaga(idNova) {
+      var k = posicoes.indexOf(idNova);
+      if (k < 0 || posicoes.lastIndexOf(idNova) !== k) return;
+      var onde = (k + Math.ceil((posicoes.length + 1) / 2)) % (posicoes.length + 1);
+      posicoes.splice(onde, 0, idNova);
+      if (onde <= i) i++;
     }
     // Matérias que já estão em Revisão começam com 1 vaga só.
     materias.forEach(function (x) { if (x.horas <= 0) umaVaga(x.d.id, false); });
@@ -235,8 +276,10 @@ var Previsao = (function () {
     for (var passo = 0; passo < LIMITE_PASSOS; passo++) {
       if (!ativa()) {
         if (!fila.length) break;
-        posicoes.push(fila.shift()); // ciclo só com Revisão: a próxima matéria de fora entra
+        var entra = fila.shift();
+        posicoes.push(entra); // ciclo só com Revisão: a próxima matéria de fora entra
         i = posicoes.length - 1;
+        segundaVaga(entra);
       }
       var id = posicoes[i];
       if (resto[id] > 0) {
@@ -251,7 +294,9 @@ var Previsao = (function () {
             i--;
             if (!posicoes.length) break;
           } else {
+            var proxima = fila[0];
             umaVaga(id, true);
+            if (proxima && fila[0] !== proxima) segundaVaga(proxima);
           }
         }
       } else {
@@ -294,13 +339,24 @@ var Previsao = (function () {
     r.etapasPorSemana = etapasVazias();
     for (var k in feitas) r.etapasPorSemana[k] = feitas[k] / semanas;
     r.mediaEtapasSemana = somaEtapas(feitas) / semanas;
-    var ri = ritmo();
+    var ri = ritmo(JANELA_RITMO);
     r.horasSemana = ri.horasSemana;
+    r.horasSemanaRecente = ritmo(JANELA_DIAS).horasSemana;
+    r.ritmoRecenteBaixo = ri.horasSemana > 0 && r.horasSemanaRecente < ri.horasSemana * 0.5;
+    // Meta de horas da semana (Dashboard): a mesma simulação, como se a meta fosse cumprida toda semana.
+    r.metaHoras = Number((Dados.db.metas || {}).horas) || 0;
+    r.dataMeta = null;
     if (r.vazio || r.concluido) return r;
-    if (!ri.horasSemana) { r.semRitmo = true; return r; }
-    var sim = simular(materias, ri.horasPosicao);
-    r.data = dataEm(sim.horas, ri.horasSemana);
-    materias.forEach(function (x) { if (sim.fim[x.d.id] !== undefined) x.data = dataEm(sim.fim[x.d.id], ri.horasSemana); });
+    if (!ri.horasSemana) r.semRitmo = true;
+    if (!ri.horasSemana && !r.metaHoras) return r;
+    var sim = simular(materias, ri.horasPosicao || HORAS_TOPICO_PADRAO);
+    if (r.metaHoras) r.dataMeta = dataEm(sim.horas, r.metaHoras);
+    materias.forEach(function (x) {
+      if (sim.fim[x.d.id] === undefined) return;
+      if (ri.horasSemana) x.data = dataEm(sim.fim[x.d.id], ri.horasSemana);
+      if (r.metaHoras) x.dataMeta = dataEm(sim.fim[x.d.id], r.metaHoras);
+    });
+    if (ri.horasSemana) r.data = dataEm(sim.horas, ri.horasSemana);
     return r;
   }
 
@@ -308,5 +364,5 @@ var Previsao = (function () {
     return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(' de ', '/');
   }
 
-  return { calcular: calcular, fmtMes: fmtMes, JANELA_DIAS: JANELA_DIAS };
+  return { calcular: calcular, fmtMes: fmtMes, JANELA_DIAS: JANELA_DIAS, JANELA_RITMO: JANELA_RITMO };
 })();
