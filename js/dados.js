@@ -1390,11 +1390,14 @@ var Dados = (function () {
   // Ordem equilibrada (determinística): as vagas da mesma matéria ficam espaçadas (~meio ciclo) e matérias do mesmo
   // grupo não ficam lado a lado. Guloso pela vaga mais "atrasada", com penalidades por vizinhança; testa várias
   // rotações iniciais e fica com a de menor custo, contando a emenda do fim com o começo (o ciclo se repete).
-  function gerarOrdemCiclo(ids) {
+  // contagens (opcional): { id: vagas } para o ciclo manual (qualquer número de vagas por matéria).
+  function gerarOrdemCiclo(ids, contagens) {
     var ms = ids.map(function (id) { return disciplina(id); }).filter(Boolean).map(function (d) {
       var g = grupoAfinidade(d.nome);
-      return { id: d.id, grupo: g[0], familia: g[1], n: vagasNoCiclo(d.id) };
-    });
+      var n = contagens && contagens[d.id] != null ? Math.max(0, Math.floor(contagens[d.id])) : vagasNoCiclo(d.id);
+      return { id: d.id, grupo: g[0], familia: g[1], n: n };
+    }).filter(function (m) { return m.n > 0; });
+    if (!ms.length) return [];
     var N = ms.reduce(function (s, m) { return s + m.n; }, 0);
     if (!N) return [];
 
@@ -1420,7 +1423,7 @@ var Dados = (function () {
     }
     function vizinhanca(seq, k, m) {
       var p = 0, a = seq[k - 1], b = seq[k - 2], c = seq[k - 3];
-      if (a) { if (a.id === m.id) p += 1000; else if (a.grupo === m.grupo) p += 60; else if (a.familia === m.familia) p += 25; }
+      if (a) { if (a.id === m.id) p += ms.length > 1 ? 1000 : 0; else if (a.grupo === m.grupo) p += 60; else if (a.familia === m.familia) p += 25; }
       if (b) { if (b.id === m.id) p += 200; else if (b.grupo === m.grupo) p += 15; }
       if (c && c.id === m.id) p += 80;
       return p;
@@ -1432,13 +1435,14 @@ var Dados = (function () {
         if (N > 1 && a.id === m.id) t += 1000; else if (a.grupo === m.grupo) t += 60; else if (a.familia === m.familia) t += 25;
         if (N > 2 && b.id === m.id) t += 200; else if (b.grupo === m.grupo) t += 15;
       });
-      // Espaçamento: a menor distância entre vagas da mesma matéria, comparada com a ideal.
+      // Espaçamento: a menor distância entre vagas seguidas da mesma matéria (com a volta), comparada com a ideal N/n.
       ms.forEach(function (m) {
         if (m.n < 2) return;
         var pos = [];
         seq.forEach(function (x, k) { if (x.id === m.id) pos.push(k); });
-        var d = Math.min(pos[1] - pos[0], N - (pos[1] - pos[0]));
-        t += Math.max(0, N / 2 - d) * 4;
+        var menor = N;
+        pos.forEach(function (p, j) { var q = j + 1 < pos.length ? pos[j + 1] : pos[0] + N; menor = Math.min(menor, q - p); });
+        t += Math.max(0, Math.floor(N / m.n) - menor) * 4;
       });
       return t;
     }
@@ -1489,19 +1493,20 @@ var Dados = (function () {
     if (c.ordem === 'equilibrada') {
       novos = gerarOrdemCiclo(ids).map(function (id) { return { disciplinaId: id, minutosPlanejados: minutos[id] || 0 }; });
     } else {
-      // Ordem manual: só tira a vaga que sobra ou acrescenta a que falta (a meio ciclo), sem mexer no resto.
+      // Ordem manual (quantidades livres): quem passou para Revisão perde 1 vaga (fica com pelo menos 1); quem voltou
+      // para Leitura ganha 1; matéria incluída entra com 2. O resto não muda.
       novos = c.itens.map(function (x) { return { id: x.id, disciplinaId: x.disciplinaId, minutosPlanejados: x.minutosPlanejados }; });
+      var mud = {};
+      mudancasDeModo().forEach(function (x) { mud[x.id] = x.para; });
       ids.forEach(function (id) {
-        var quer = vagasNoCiclo(id), tem = novos.filter(function (x) { return x.disciplinaId === id; }).length;
+        var tem = novos.filter(function (x) { return x.disciplinaId === id; }).length;
+        var quer = !tem ? vagasNoCiclo(id) : mud[id] === 'revisao' ? Math.max(1, tem - 1) : mud[id] === 'leitura' ? tem + 1 : tem;
         while (tem > quer) {
           for (var k = novos.length - 1; k >= 0; k--) if (novos[k].disciplinaId === id && !(atual && novos[k].id === atual.id)) { novos.splice(k, 1); break; }
           tem--;
         }
         while (tem < quer) {
-          var primeira = -1;
-          novos.forEach(function (x, k) { if (primeira < 0 && x.disciplinaId === id) primeira = k; });
-          var onde = primeira < 0 ? novos.length : (primeira + Math.ceil((novos.length + 1) / 2)) % (novos.length + 1);
-          novos.splice(onde, 0, { disciplinaId: id, minutosPlanejados: minutos[id] || 0 });
+          novos.splice(lugarMaisLonge(novos, id), 0, { disciplinaId: id, minutosPlanejados: minutos[id] || 0 });
           tem++;
         }
       });
@@ -1509,6 +1514,19 @@ var Dados = (function () {
     var materias = (c.materias || []).slice();
     ids.forEach(function (id) { if (materias.indexOf(id) < 0) materias.push(id); });
     definirCiclo(novos, { materias: materias }); // mantém a matéria da vez
+  }
+
+  // Onde inserir mais uma vaga da matéria: no meio do maior intervalo entre as vagas que ela já tem (contando a volta).
+  function lugarMaisLonge(itens, id) {
+    var pos = [];
+    itens.forEach(function (x, k) { if (x.disciplinaId === id) pos.push(k); });
+    if (!pos.length) return itens.length;
+    var onde = itens.length, maior = -1;
+    pos.forEach(function (p, j) {
+      var q = j + 1 < pos.length ? pos[j + 1] : pos[0] + itens.length;
+      if (q - p > maior) { maior = q - p; onde = (p + Math.ceil((q - p) / 2)) % (itens.length + 1); }
+    });
+    return onde;
   }
 
   // "Agora não": o ciclo fica como está e o aviso some (até o próximo modo mudar).
@@ -2115,7 +2133,7 @@ var Dados = (function () {
     definirCiclo: definirCiclo, recomecarCiclo: recomecarCiclo,
     grupoAfinidade: grupoAfinidade, vagasNoCiclo: vagasNoCiclo, gerarOrdemCiclo: gerarOrdemCiclo, ordemDaLista: ordemDaLista,
     mudancasDeModo: mudancasDeModo, materiasForaDoCiclo: materiasForaDoCiclo, atualizarCicloPorModo: atualizarCicloPorModo,
-    aceitarModosAtuais: aceitarModosAtuais,
+    aceitarModosAtuais: aceitarModosAtuais, lugarMaisLonge: lugarMaisLonge,
     revisto: revisto, marcarRevisto: marcarRevisto,
     sessao: sessao, criarSessao: criarSessao, atualizarSessao: atualizarSessao, excluirSessao: excluirSessao,
     statsQuestoes: statsQuestoes, statsCaderno: statsCaderno, statsPasta: statsPasta,

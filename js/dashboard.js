@@ -723,6 +723,7 @@ var Dashboard = (function () {
         totalMin ? el('span', { class: 'data-fraca', text: 'Ciclo completo: ' + fmtMinutos(totalMin) }) : null
       ]),
       UI.barra(pct),
+      resumoModosCiclo(c.itens),
       el('ol', { class: 'ciclo-lista' }, c.itens.map(function (item, i) {
         var d = Dados.disciplina(item.disciplinaId);
         var estado = i < c.posicaoAtual ? 'feito' : i === c.posicaoAtual ? 'atual' : '';
@@ -817,111 +818,254 @@ var Dashboard = (function () {
     m.caixa.querySelectorAll('.recomendacao .btn, .recomendacao a:not([target])').forEach(function (b) { b.addEventListener('click', m.fechar); });
   }
 
+  // Duração média de uma sessão da matéria nas últimas 12 semanas (sem Anki), para estimar o tempo das vagas sem tempo
+  // planejado; sem sessões da matéria, a média de todas.
+  function duracoesMedias() {
+    var de = UI.somarDias(UI.hoje(), -83), por = {}, tot = { s: 0, n: 0 };
+    Dados.db.sessoes.forEach(function (s) {
+      if (s.tipo === 'anki' || s.data < de || !(s.segundos > 0)) return;
+      var x = por[s.disciplinaId] || (por[s.disciplinaId] = { s: 0, n: 0 });
+      x.s += s.segundos; x.n++; tot.s += s.segundos; tot.n++;
+    });
+    return function (id) { var x = por[id]; return x && x.n ? x.s / x.n / 60 : tot.n ? tot.s / tot.n / 60 : 60; };
+  }
+
+  // Resumo do ciclo por modo: matérias, vagas e tempo (planejado; "≈" quando alguma vaga usa a duração média).
+  function resumoModosCiclo(itens, media) {
+    media = media || duracoesMedias();
+    var r = { leitura: { mats: {}, vagas: 0, min: 0, est: false }, revisao: { mats: {}, vagas: 0, min: 0, est: false } };
+    itens.forEach(function (x) {
+      if (!Dados.disciplina(x.disciplinaId)) return;
+      var g = r[Dados.modoDeEstudo(x.disciplinaId).modo === 'revisao' ? 'revisao' : 'leitura'];
+      g.mats[x.disciplinaId] = true;
+      g.vagas++;
+      if (x.minutosPlanejados) g.min += x.minutosPlanejados;
+      else { g.min += media(x.disciplinaId); g.est = true; }
+    });
+    function bloco(classe, titulo, g) {
+      var n = Object.keys(g.mats).length;
+      return el('div', { class: 'ciclo-modo-bloco ' + classe }, [
+        el('span', { class: 'selo-modo ' + classe, text: titulo }),
+        el('strong', { text: n + (n === 1 ? ' matéria' : ' matérias') }),
+        el('span', { class: 'data-fraca', text: g.vagas + (g.vagas === 1 ? ' vaga' : ' vagas') + (g.vagas ? ' · ' + (g.est ? '≈ ' : '') + fmtHoras(Math.round(g.min) * 60) : '') })
+      ]);
+    }
+    var total = r.leitura.min + r.revisao.min, est = r.leitura.est || r.revisao.est;
+    return el('div', { class: 'ciclo-modos', title: est ? 'Vagas sem tempo planejado usam a duração média das sessões da matéria nas últimas 12 semanas.' : 'Pelo tempo planejado de cada vaga.' }, [
+      bloco('leitura', 'Modo Leitura', r.leitura),
+      bloco('revisao', 'Modo Revisão', r.revisao),
+      el('div', { class: 'ciclo-modo-bloco total' }, [
+        el('span', { class: 'ciclo-modo-rotulo', text: 'Ciclo completo' }),
+        el('strong', { text: itens.length + (itens.length === 1 ? ' vaga' : ' vagas') }),
+        el('span', { class: 'data-fraca', text: itens.length ? (est ? '≈ ' : '') + fmtHoras(Math.round(total) * 60) : '' })
+      ])
+    ]);
+  }
+
+  // Editor do ciclo, em dois modos:
+  //  - automático: marca as matérias; Leitura entra 2×, Revisão 1×, em ordem equilibrada (ciclo.ordem = 'equilibrada');
+  //  - manual: escolhe quantas vezes cada matéria aparece (1, 2, 3 ou mais) e a ordem (ciclo.ordem = 'manual').
   function editarCiclo() {
     var discs = Dados.disciplinas();
     var c0 = Dados.db.ciclo;
     var itens = c0.itens.map(function (i) { return { id: i.id, disciplinaId: i.disciplinaId, minutosPlanejados: i.minutosPlanejados }; });
-    var lista = el('div', { class: 'editor-ciclo' });
+    var modo = c0.ordem === 'equilibrada' ? 'auto' : c0.itens.length ? 'manual' : 'auto';
+    var media = duracoesMedias();
     var erro = el('div', { class: 'erro-form', hidden: true });
-    var avisoRegra = el('div', { class: 'aviso-suave', hidden: true });
-    var ordem = c0.ordem || 'manual';
+    var lista = el('div', { class: 'editor-ciclo' });
+    var resumo = el('div');
+    var painelAuto = el('div', { class: 'ciclo-painel-modo' });
+    var painelManual = el('div', { class: 'ciclo-painel-modo' });
+    var acoesLista = el('div', { class: 'editor-acoes' });
 
-    // Matérias escolhidas: as salvas antes ou, na primeira vez, as que já estão no ciclo.
+    // Matérias marcadas no automático: as salvas antes ou, na primeira vez, as que já estão no ciclo.
     var marcadas = {};
     (c0.materias && c0.materias.length ? c0.materias : itens.map(function (x) { return x.disciplinaId; }))
       .forEach(function (id) { marcadas[id] = true; });
-    var escolha = el('div', { class: 'ciclo-escolha' }, discs.map(function (d) {
-      var n = Dados.vagasNoCiclo(d.id);
-      var caixa = el('input', { type: 'checkbox', checked: !!marcadas[d.id], onchange: function () { marcadas[d.id] = caixa.checked; } });
-      return el('label', { class: 'ciclo-escolha-item' }, [
-        caixa,
-        el('span', { class: 'bolinha', style: { background: d.cor } }),
-        el('span', { class: 'ciclo-escolha-nome', text: d.nome }),
-        el('span', { class: 'selo-modo ' + (n === 2 ? 'leitura' : 'revisao'), text: n === 2 ? 'Leitura · 2×' : 'Revisão · 1×' })
-      ]);
-    }));
     function escolhidas() { return discs.filter(function (d) { return marcadas[d.id]; }).map(function (d) { return d.id; }); }
-    // Tempo planejado de cada matéria, para não se perder ao refazer a lista.
+
+    // Progresso do Modo Leitura de cada matéria: etapas concluídas / total (as mesmas da previsão).
+    var progresso = {};
+    Previsao.calcular().materias.forEach(function (x) {
+      var total = x.concluidas + x.restantes;
+      progresso[x.d.id] = { feitas: x.concluidas, total: total, pct: total ? x.concluidas / total * 100 : 0 };
+    });
+    function nomeComProgresso(d) {
+      var nome = el('span', { class: 'ciclo-escolha-nome', text: d.nome }), pr = progresso[d.id];
+      if (Dados.vagasNoCiclo(d.id) !== 2 || !pr) return nome;
+      return el('span', { class: 'ciclo-escolha-texto', title: pr.total ? UI.fmtNum(pr.feitas) + ' de ' + UI.fmtNum(pr.total) + ' etapas do Modo Leitura (' + Math.round(pr.pct) + '%)' : 'Sem etapas cadastradas' }, [
+        nome,
+        el('span', { class: 'ciclo-mini-barra' }, [
+          el('span', { class: 'ciclo-mini-trilho' }, el('span', { style: { width: pr.pct + '%', background: d.cor } })),
+          el('span', { class: 'ciclo-mini-pct', text: Math.round(pr.pct) + '%' })
+        ])
+      ]);
+    }
+    // Duas colunas: Modo Leitura à esquerda, Modo Revisão à direita.
+    function colunas(titulos, item) {
+      function coluna(titulo, ds) {
+        return el('div', { class: 'ciclo-escolha-coluna' }, [
+          el('div', { class: 'ciclo-escolha-titulo', text: titulo + ' (' + ds.length + ')' }),
+          ds.length ? null : el('p', { class: 'data-fraca', text: 'Nenhuma matéria.' })
+        ].concat(ds.map(item)));
+      }
+      return el('div', { class: 'ciclo-escolha' }, [
+        coluna(titulos[0], discs.filter(function (d) { return Dados.vagasNoCiclo(d.id) === 2; })),
+        coluna(titulos[1], discs.filter(function (d) { return Dados.vagasNoCiclo(d.id) === 1; }))
+      ]);
+    }
+
     function minutosPorMateria() {
       var m = {};
       itens.forEach(function (x) { if (m[x.disciplinaId] == null && x.minutosPlanejados) m[x.disciplinaId] = x.minutosPlanejados; });
       return m;
     }
-    function refazer(ids, tipo) {
-      if (!escolhidas().length) { erro.textContent = 'Marque pelo menos uma matéria.'; erro.hidden = false; return; }
-      erro.hidden = true;
+    function contagem() {
+      var c = {};
+      itens.forEach(function (x) { c[x.disciplinaId] = (c[x.disciplinaId] || 0) + 1; });
+      return c;
+    }
+    function usarOrdem(ids) {
       var min = minutosPorMateria();
       itens = ids.map(function (id) { return { disciplinaId: id, minutosPlanejados: min[id] || 0 }; });
-      ordem = tipo;
-      desenhar();
     }
 
-    // Aviso (não impede salvar) quando o número de vagas foge da regra: Leitura 2×, Revisão 1×.
-    function conferirRegra() {
-      var cont = {};
-      itens.forEach(function (x) { cont[x.disciplinaId] = (cont[x.disciplinaId] || 0) + 1; });
-      var fora = Object.keys(cont).map(function (id) {
-        var d = Dados.disciplina(id), quer = Dados.vagasNoCiclo(id);
-        return d && cont[id] !== quer ? d.nome + ' está em ' + (quer === 2 ? 'Leitura' : 'Revisão') + ' e aparece ' + cont[id] + '×' : null;
-      }).filter(Boolean);
-      avisoRegra.hidden = !fora.length;
-      avisoRegra.textContent = fora.length ? 'Fora da regra (Leitura 2×, Revisão 1×): ' + fora.join('; ') + '.' : '';
+    // ----- Automático -----
+    function desenharAuto() {
+      painelAuto.innerHTML = '';
+      painelAuto.appendChild(el('p', { class: 'data-fraca', text: 'Marque as matérias do ciclo. Cada matéria em Leitura entra 2 vezes e cada uma em Revisão, 1 vez. A ordem espaça as vagas da mesma matéria e evita matérias parecidas em sequência.' }));
+      painelAuto.appendChild(colunas(['Modo Leitura · 2× no ciclo', 'Modo Revisão · 1× no ciclo'], function (d) {
+        var n = Dados.vagasNoCiclo(d.id);
+        var caixa = el('input', { type: 'checkbox', checked: !!marcadas[d.id], onchange: function () { marcadas[d.id] = caixa.checked; } });
+        return el('label', { class: 'ciclo-escolha-item' }, [
+          caixa,
+          el('span', { class: 'bolinha', style: { background: d.cor } }),
+          nomeComProgresso(d),
+          el('span', { class: 'selo-modo ' + (n === 2 ? 'leitura' : 'revisao'), text: n === 2 ? 'Leitura · 2×' : 'Revisão · 1×' })
+        ]);
+      }));
+      painelAuto.appendChild(el('div', { class: 'ciclo-gerar' }, [
+        UI.botao('Gerar ciclo automaticamente', function () {
+          if (!escolhidas().length) { erro.textContent = 'Marque pelo menos uma matéria.'; erro.hidden = false; return; }
+          erro.hidden = true;
+          usarOrdem(Dados.gerarOrdemCiclo(escolhidas()));
+          desenhar();
+        }, 'btn-primario')
+      ]));
     }
 
-    function desenhar() {
-      conferirRegra();
+    // ----- Manual -----
+    function desenharManual() {
+      painelManual.innerHTML = '';
+      var cont = contagem();
+      painelManual.appendChild(el('p', { class: 'data-fraca', text: 'Escolha quantas vezes cada matéria aparece no ciclo (0 tira a matéria). Depois ajuste a ordem na sequência, com ↑ e ↓, ou espace as vagas automaticamente.' }));
+      painelManual.appendChild(colunas(['Modo Leitura', 'Modo Revisão'], function (d) {
+        var n = cont[d.id] || 0;
+        function mudar(delta) {
+          var novo = Math.max(0, Math.min(9, n + delta));
+          if (novo === n) return;
+          if (delta > 0) {
+            // Nova vaga o mais longe possível das outras da mesma matéria.
+            itens.splice(Dados.lugarMaisLonge(itens, d.id), 0, { disciplinaId: d.id, minutosPlanejados: minutosPorMateria()[d.id] || 0 });
+          } else {
+            for (var k = itens.length - 1; k >= 0; k--) if (itens[k].disciplinaId === d.id) { itens.splice(k, 1); break; }
+          }
+          desenhar();
+        }
+        return el('div', { class: 'ciclo-escolha-item' + (n ? '' : ' fora') }, [
+          el('span', { class: 'bolinha', style: { background: d.cor } }),
+          nomeComProgresso(d),
+          el('div', { class: 'ciclo-contador', title: 'Vezes no ciclo' }, [
+            el('button', { type: 'button', class: 'btn-icone', text: '−', disabled: !n, title: 'Uma vez a menos', onclick: function () { mudar(-1); } }),
+            el('span', { class: 'ciclo-contador-num', text: n + '×' }),
+            el('button', { type: 'button', class: 'btn-icone', text: '+', disabled: n >= 9, title: 'Uma vez a mais', onclick: function () { mudar(1); } })
+          ])
+        ]);
+      }));
+      painelManual.appendChild(el('div', { class: 'ciclo-gerar' }, [
+        UI.botao('Espaçar as vagas automaticamente', function () {
+          var cont2 = contagem(), ids = discs.filter(function (d) { return cont2[d.id]; }).map(function (d) { return d.id; });
+          usarOrdem(Dados.gerarOrdemCiclo(ids, cont2));
+          desenhar();
+        }, 'btn-secundario'),
+        el('span', { class: 'data-fraca', text: 'Mantém as quantidades e reorganiza a ordem.' })
+      ]));
+    }
+
+    function desenharLista() {
+      var manual = modo === 'manual';
       lista.innerHTML = '';
-      if (!itens.length) lista.appendChild(el('p', { class: 'data-fraca', text: 'Adicione as matérias na ordem em que quer estudá-las. A mesma matéria pode aparecer mais de uma vez.' }));
+      if (!itens.length) lista.appendChild(el('p', { class: 'data-fraca', text: manual ? 'Use o + ao lado das matérias para montar o ciclo.' : 'Marque as matérias e clique em "Gerar ciclo automaticamente".' }));
       itens.forEach(function (item, i) {
-        var sel = el('select', { onchange: function () { item.disciplinaId = sel.value; ordem = 'manual'; conferirRegra(); } }, discs.map(function (d) {
-          return el('option', { value: d.id, text: d.nome, selected: d.id === item.disciplinaId });
-        }));
+        var d = Dados.disciplina(item.disciplinaId);
         var h = el('input', { type: 'number', min: 0, step: 1, value: item.minutosPlanejados ? Math.floor(item.minutosPlanejados / 60) : '', placeholder: '0', oninput: tempo });
         var m = el('input', { type: 'number', min: 0, max: 59, step: 5, value: item.minutosPlanejados ? item.minutosPlanejados % 60 : '', placeholder: '0', oninput: tempo });
-        function tempo() { item.minutosPlanejados = (Number(h.value) || 0) * 60 + (Number(m.value) || 0); }
+        function tempo() { item.minutosPlanejados = (Number(h.value) || 0) * 60 + (Number(m.value) || 0); resumo.replaceChildren(resumoModosCiclo(itens, media)); }
         function mover(dir) {
           var j = i + dir;
           if (j < 0 || j >= itens.length) return;
           itens.splice(j, 0, itens.splice(i, 1)[0]);
-          ordem = 'manual';
           desenhar();
+        }
+        var materia;
+        if (manual) {
+          var sel = el('select', { onchange: function () { item.disciplinaId = sel.value; desenhar(); } }, discs.map(function (x) {
+            return el('option', { value: x.id, text: x.nome, selected: x.id === item.disciplinaId });
+          }));
+          materia = sel;
+        } else {
+          materia = el('div', { class: 'editor-materia' }, [el('span', { class: 'bolinha', style: { background: d ? d.cor : '#ccc' } }), ' ' + (d ? d.nome : '(disciplina excluída)')]);
         }
         lista.appendChild(el('div', { class: 'editor-linha' }, [
           el('span', { class: 'ciclo-num', text: String(i + 1) }),
-          sel,
+          materia,
           el('div', { class: 'tempo', title: 'Tempo planejado (opcional)' }, [h, el('span', { text: 'h' }), m, el('span', { text: 'min' })]),
-          el('div', { class: 'editor-botoes' }, [
+          manual ? el('div', { class: 'editor-botoes' }, [
             el('button', { type: 'button', class: 'btn-icone', title: 'Subir', text: '↑', disabled: i === 0, onclick: function () { mover(-1); } }),
             el('button', { type: 'button', class: 'btn-icone', title: 'Descer', text: '↓', disabled: i === itens.length - 1, onclick: function () { mover(1); } }),
-            el('button', { type: 'button', class: 'btn-icone', title: 'Remover', text: '✕', onclick: function () { itens.splice(i, 1); ordem = 'manual'; desenhar(); } })
-          ])
+            el('button', { type: 'button', class: 'btn-icone', title: 'Remover', text: '✕', onclick: function () { itens.splice(i, 1); desenhar(); } })
+          ]) : null
         ]));
       });
+      acoesLista.innerHTML = '';
+      if (manual) acoesLista.appendChild(el('button', { type: 'button', class: 'link', text: '+ Adicionar matéria no fim', onclick: function () {
+        var ultimo = itens[itens.length - 1];
+        itens.push({ disciplinaId: ultimo ? ultimo.disciplinaId : discs[0].id, minutosPlanejados: 0 });
+        desenhar();
+        var s = lista.querySelectorAll('select');
+        if (s.length) s[s.length - 1].focus();
+      } }));
+    }
+
+    var opAuto, opManual;
+    function opcao(valor, titulo, texto) {
+      return el('button', { type: 'button', class: 'ciclo-opcao', onclick: function () { modo = valor; erro.hidden = true; desenhar(); } }, [
+        el('strong', { text: titulo }),
+        el('span', { text: texto })
+      ]);
+    }
+    opAuto = opcao('auto', 'Gerar ciclo automaticamente', 'Leitura 2×, Revisão 1×, em ordem equilibrada.');
+    opManual = opcao('manual', 'Criar ciclo manualmente', 'Você escolhe quantas vezes cada matéria aparece e a ordem.');
+
+    function desenhar() {
+      opAuto.classList.toggle('ativa', modo === 'auto');
+      opManual.classList.toggle('ativa', modo === 'manual');
+      painelAuto.hidden = modo !== 'auto';
+      painelManual.hidden = modo !== 'manual';
+      if (modo === 'auto') desenharAuto(); else desenharManual();
+      desenharLista();
+      resumo.replaceChildren(resumoModosCiclo(itens, media));
     }
 
     desenhar();
     var m = UI.modal('Ciclo de estudos', [
-      el('p', { class: 'modal-desc', text: 'Matéria no Modo Leitura entra 2 vezes no ciclo; no Modo Revisão, 1 vez. Marque as matérias e gere a ordem, ou monte a sequência à mão. O tempo de cada etapa é opcional.' }),
-      el('h3', { class: 'processo-titulo', text: 'Matérias do ciclo' }),
-      escolha,
-      el('div', { class: 'ciclo-gerar' }, [
-        UI.botao('Gerar ordem equilibrada', function () { refazer(Dados.gerarOrdemCiclo(escolhidas()), 'equilibrada'); }, 'btn-primario'),
-        UI.botao('Montar na ordem da lista', function () { refazer(Dados.ordemDaLista(escolhidas()), 'manual'); }, 'btn-secundario'),
-        el('span', { class: 'data-fraca', text: 'A ordem equilibrada espaça as 2 vagas de cada matéria e evita matérias parecidas em sequência.' })
-      ]),
+      el('div', { class: 'ciclo-opcoes' }, [opAuto, opManual]),
+      resumo,
+      painelAuto,
+      painelManual,
       el('h3', { class: 'processo-titulo', text: 'Sequência' }),
-      avisoRegra,
       lista,
-      el('div', { class: 'editor-acoes' }, [
-        el('button', { type: 'button', class: 'link', text: '+ Adicionar matéria', onclick: function () {
-          var ultimo = itens[itens.length - 1];
-          itens.push({ disciplinaId: ultimo ? ultimo.disciplinaId : discs[0].id, minutosPlanejados: 0 });
-          ordem = 'manual';
-          desenhar();
-          var s = lista.querySelectorAll('select');
-          s[s.length - 1].focus();
-        } })
-      ]),
+      acoesLista,
       erro
     ], [
       Dados.db.ciclo.itens.length ? { texto: 'Recomeçar do 1º', classe: 'btn-secundario btn-esquerda', acao: function () {
@@ -931,15 +1075,14 @@ var Dashboard = (function () {
       } } : null,
       { texto: 'Cancelar', classe: 'btn-secundario' },
       { texto: 'Salvar ciclo', classe: 'btn-primario', acao: function () {
-        if (!itens.length) { erro.textContent = 'Adicione pelo menos uma matéria.'; erro.hidden = false; return false; }
-        // Matérias escolhidas: as marcadas mais as que foram postas à mão na sequência.
-        var mats = escolhidas();
+        if (!itens.length) { erro.textContent = 'Monte o ciclo antes de salvar.'; erro.hidden = false; return false; }
+        var mats = modo === 'auto' ? escolhidas() : [];
         itens.forEach(function (x) { if (mats.indexOf(x.disciplinaId) < 0) mats.push(x.disciplinaId); });
-        Dados.definirCiclo(itens, { materias: mats, ordem: ordem });
+        Dados.definirCiclo(itens, { materias: mats, ordem: modo === 'auto' ? 'equilibrada' : 'manual' });
         App.atualizar();
         UI.aviso('Ciclo salvo');
       } }
-    ].filter(Boolean));
+    ].filter(Boolean), { subtitulo: 'Escolha como montar o ciclo' });
     m.caixa.classList.add('modal-largo');
   }
 
