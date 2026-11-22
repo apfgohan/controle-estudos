@@ -30,7 +30,97 @@ var Sessao = (function () {
     return cron.acumulado + (cron.inicio ? Math.floor((Date.now() - cron.inicio) / 1000) : 0);
   }
 
-  function iniciarCron(contexto) { gravarCron({ inicio: Date.now(), acumulado: 0, contexto: contexto || null }); }
+  // ---------- Aviso de tempo (alarme suave; não para o cronômetro) ----------
+  // cron.aviso: minutos (0 = sem aviso); cron.avisado: já tocou. Meta do ciclo: tempo planejado da vaga (sem ele, 1 h).
+  // Cronômetro do topo: o tempo escolhido ao iniciar (o último fica lembrado).
+  var CHAVE_AVISO = 'controle-estudos.cron-aviso';
+  var AVISO_PADRAO = 60;
+  var OPCOES_AVISO = [0, 30, 45, 60, 90, 120];
+
+  function ultimoAviso() {
+    var v = null;
+    try { v = localStorage.getItem(CHAVE_AVISO); } catch (e) { /* sem armazenamento */ }
+    return v === null || isNaN(Number(v)) ? AVISO_PADRAO : Number(v);
+  }
+  function lembrarAviso(min) { try { localStorage.setItem(CHAVE_AVISO, String(min)); } catch (e) { /* ok */ } }
+  function avisoDaMeta() {
+    var c = Dados.db.ciclo, it = c.itens[c.posicaoAtual];
+    return (it && it.minutosPlanejados) || AVISO_PADRAO;
+  }
+  function fmtAviso(min) {
+    if (!min) return 'Sem aviso';
+    var h = Math.floor(min / 60), m = min % 60;
+    return h ? h + 'h' + (m ? String(m).padStart(2, '0') : '') : m + ' min';
+  }
+
+  // Som "duas notas" (ding-dong ascendente), gerado no navegador: baixo e curto.
+  var audio = null;
+  function contextoAudio() {
+    var A = window.AudioContext || window.webkitAudioContext;
+    if (!A) return null;
+    if (!audio) audio = new A();
+    if (audio.state === 'suspended') audio.resume();
+    return audio;
+  }
+  // O navegador só libera som depois de um clique: o primeiro clique na página já deixa o áudio pronto.
+  document.addEventListener('pointerdown', function liberar() { contextoAudio(); document.removeEventListener('pointerdown', liberar); });
+  function tocarAviso() {
+    var ctx = contextoAudio();
+    if (!ctx) return;
+    var t = ctx.currentTime + 0.05;
+    [[659, 0, 1.0], [988, 0.35, 1.4]].forEach(function (n) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = n[0];
+      g.gain.setValueAtTime(0, t + n[1]);
+      g.gain.linearRampToValueAtTime(0.16, t + n[1] + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + n[1] + n[2]);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(t + n[1]);
+      o.stop(t + n[1] + n[2] + 0.05);
+    });
+  }
+
+  function conferirAviso() {
+    if (!cron || !cron.inicio || !cron.aviso || cron.avisado) return;
+    if (segundosCron() < cron.aviso * 60) return;
+    cron.avisado = true;
+    gravarCron(cron);
+    tocarAviso();
+  }
+
+  // Janela para escolher o tempo do aviso: ao iniciar pelo topo ou, com o cronômetro rodando, pelo sino.
+  function escolherAviso(atual, titulo, textoBotao, aoEscolher) {
+    var escolhido = atual;
+    var outro = el('input', { type: 'number', min: 1, max: 600, step: 5, placeholder: 'min', class: 'aviso-outro',
+      value: OPCOES_AVISO.indexOf(atual) < 0 ? atual : '', oninput: function () { escolhido = Math.max(1, Math.round(Number(outro.value) || 0)); marcar(); } });
+    var chips = OPCOES_AVISO.map(function (min) {
+      return el('button', { type: 'button', class: 'aviso-chip', text: fmtAviso(min), onclick: function () { escolhido = min; outro.value = ''; marcar(); } });
+    });
+    function marcar() { chips.forEach(function (b, i) { b.classList.toggle('ativo', OPCOES_AVISO[i] === escolhido); }); }
+    marcar();
+    UI.modal(titulo, [
+      el('p', { class: 'modal-desc', text: 'Um som suave avisa quando o tempo chegar. O cronômetro continua contando.' }),
+      el('div', { class: 'aviso-chips' }, chips.concat([el('label', { class: 'aviso-outro-rotulo' }, ['Outro: ', outro, ' min'])]))
+    ], [
+      { texto: 'Cancelar', classe: 'btn-secundario' },
+      { texto: textoBotao, classe: 'btn-primario', acao: function () { lembrarAviso(escolhido); aoEscolher(escolhido); } }
+    ]);
+  }
+
+  function mudarAviso() {
+    escolherAviso(cron.aviso || 0, 'Aviso do cronômetro', 'Salvar', function (min) {
+      cron.aviso = min;
+      cron.avisado = !!min && segundosCron() >= min * 60; // tempo já passado: não toca de novo
+      gravarCron(cron);
+    });
+  }
+
+  function iniciarCron(contexto, aviso) {
+    if (aviso == null) aviso = contexto && contexto.daMeta ? avisoDaMeta() : contexto && contexto.tipo === 'anki' ? 0 : ultimoAviso();
+    gravarCron({ inicio: Date.now(), acumulado: 0, contexto: contexto || null, aviso: aviso, avisado: false });
+  }
   function pausarCron() { cron.acumulado = segundosCron(); cron.inicio = null; gravarCron(cron); }
   function retomarCron() { cron.inicio = Date.now(); gravarCron(cron); }
   function finalizarCron() {
@@ -49,8 +139,11 @@ var Sessao = (function () {
     var caixa = document.getElementById('acoes-topo');
     if (!caixa) return;
     caixa.innerHTML = '';
+    atualizarTitulo();
     if (!cron) {
-      caixa.appendChild(UI.botao('Cronômetro', function () { iniciarCron(null); }, 'btn-secundario btn-cron', 'relogio'));
+      caixa.appendChild(UI.botao('Cronômetro', function () {
+        escolherAviso(ultimoAviso(), 'Iniciar cronômetro', 'Iniciar', function (min) { iniciarCron(null, min); });
+      }, 'btn-secundario btn-cron', 'relogio'));
       var btnAnki = UI.botao('Anki', function () { abrirAnki({}); }, 'btn-secundario btn-cron', 'cartas');
       btnAnki.title = 'Registrar o tempo gasto no Anki';
       btnAnki.setAttribute('aria-label', 'Anki');
@@ -60,20 +153,36 @@ var Sessao = (function () {
     }
     var anki = !!(cron.contexto && cron.contexto.tipo === 'anki');
     var d = cron.contexto && Dados.disciplina(cron.contexto.disciplinaId);
-    caixa.appendChild(el('div', { class: 'cron-ativo' + (cron.inicio ? ' rodando' : '') }, [
+    var alcancou = !!(cron.aviso && cron.avisado);
+    caixa.appendChild(el('div', { class: 'cron-ativo' + (cron.inicio ? ' rodando' : '') + (alcancou ? ' meta-ok' : '') }, [
       el('span', { class: 'cron-ponto' }),
       el('span', { class: 'cron-tempo', id: 'cron-tempo', text: UI.fmtDuracao(segundosCron()) }),
+      alcancou ? el('span', { class: 'cron-meta-ok', text: 'meta ✓', title: 'Tempo de ' + fmtAviso(cron.aviso) + ' alcançado' }) : null,
       d || anki ? el('span', { class: 'cron-disc', text: anki ? 'Anki' : d.nome }) : null,
+      el('button', { type: 'button', class: 'cron-btn cron-sino' + (cron.aviso ? '' : ' mudo'),
+        title: cron.aviso ? 'Aviso em ' + fmtAviso(cron.aviso) + (alcancou ? ' (já tocou)' : '') + ': clique para mudar' : 'Sem aviso: clique para escolher um tempo',
+        onclick: mudarAviso }, [UI.icone(cron.aviso ? 'sino' : 'sino-mudo'), cron.aviso ? el('span', { text: fmtAviso(cron.aviso) }) : null]),
       cron.inicio ? botaoMini('Pausar', pausarCron) : botaoMini('Retomar', retomarCron),
       botaoMini('Finalizar', finalizarCron, 'cron-finalizar', 'Finalizar e lançar o estudo'),
       botaoMini('✕', descartarCron, 'descartar', 'Descartar cronômetro')
     ]));
   }
 
+  // Título da aba: "0:42:15 · Contabilidade" (pausado: "⏸ ..."); sem cronômetro, o título normal.
+  var TITULO_BASE = document.title;
+  function atualizarTitulo() {
+    if (!cron) { document.title = TITULO_BASE; return; }
+    var anki = !!(cron.contexto && cron.contexto.tipo === 'anki');
+    var d = cron.contexto && Dados.disciplina(cron.contexto.disciplinaId);
+    document.title = (cron.inicio ? '' : '⏸ ') + UI.fmtDuracao(segundosCron()) + ' · ' + (anki ? 'Anki' : d ? d.nome : 'Cronômetro');
+  }
+
   setInterval(function () {
     if (!cron || !cron.inicio) return;
     var t = document.getElementById('cron-tempo');
     if (t) t.textContent = UI.fmtDuracao(segundosCron());
+    atualizarTitulo();
+    conferirAviso();
   }, 1000);
 
   // ---------- Formulário ----------
