@@ -1921,3 +1921,71 @@ a.rec-caderno:hover { text-decoration: underline; }
 .lei-sem-ligacao { margin-top: 14px; }
 .lei-sem-ligacao summary { cursor: pointer; font-weight: 700; margin-bottom: 10px; }
 @media (max-width: 640px) { .lei-barra { position: static; } .lei-busca { min-width: 0; width: 100%; } .lei-cartao { scroll-margin-top: 70px; } .lei-cartao-corpo { padding: 8px 12px 10px 14px; font-size: 15px; } .lei-parte.tipo-inc { padding-left: 16px; } .lei-parte.tipo-ali { padding-left: 30px; } }
+/* Lei Seca: folha branca corrida (como os Resumos) + sumário à esquerda */
+.lei-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-direction: row; }
+.lei-barra-espaco { flex: 1; }
+.lei-grifar { gap: 6px; padding: 0 12px; }
+.lei-grifar.ativo { background: var(--azul-claro); border-color: var(--azul); color: var(--azul-escuro); }
+.lei-bola-cor { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--superficie); box-shadow: 0 0 0 1px var(--borda); cursor: pointer; }
+.lei-linha-ic { display: inline-block; width: 16px; height: 2px; background: currentColor; vertical-align: middle; }
+.lei-corpo { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
+.lei-nav { position: sticky; top: calc(var(--altura-topo, 64px) + 70px); max-height: calc(100vh - var(--altura-topo, 64px) - 86px); display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--superficie); border: 1px solid var(--borda); border-radius: 16px; overflow: hidden; }
+.lei-nav-busca { width: 100%; }
+.lei-nav-filtros { display: flex; gap: 4px; flex-wrap: wrap; }
+.lei-nav-filtros .chip-filtro { padding: 4px 10px; font-size: 12px; }
+.lei-nav-ordem { width: 100%; font-size: 13px; }
+.lei-nav-lista { overflow-y: auto; display: flex; flex-direction: column; gap: 1px; margin: 0 -6px; padding: 0 6px; }
+.lei-nav-div { font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: var(--texto-3); margin-top: 8px; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lei-nav-art { display: flex; justify-content: space-between; gap: 6px; padding: 4px 6px; border: 0; border-radius: 7px; background: none; color: var(--texto-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.lei-nav-art:hover { background: var(--superficie-2); color: var(--texto); }
+.lei-nav-art.atual { background: var(--azul-claro); color: var(--azul-escuro); font-weight: 700; }
+.lei-nav-est { color: var(--amarelo-texto); font-size: 11px; letter-spacing: 1px; white-space: nowrap; }
+.lei-folha { min-width: 0; }
+.lei-doc { box-sizing: border-box; max-width: 1000px; padding: 36px 52px; background: #fbfbfd; color: #1f2330; border-radius: 14px; border: 1px solid var(--borda); font-size: 16px; line-height: 1.7; overflow-wrap: anywhere; }
+.lei-doc .lei-vazio { color: #6b7385; }
+.lei-div { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 26px 0 10px; text-align: center; color: #4a5875; font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; }
+.lei-div:first-child { margin-top: 0; }
+.lei-div strong { color: #17306b; font-size: 15px; letter-spacing: .03em; }
+.lei-div.nivel-0 strong, .lei-div.nivel-1 strong, .lei-div.nivel-2 strong { font-size: 17px; }
+.lei-art { padding: 12px 0 10px; border-top: 2px solid #c9cfdb; scroll-margin-top: calc(var(--altura-topo, 64px) + 80px); }
+.lei-div + .lei-art, .lei-doc > .lei-art:first-child { border-top: 0; }
+.lei-art.lei-piscar { background: #eef3ff; box-shadow: -10px 0 0 #eef3ff, 10px 0 0 #eef3ff; }
+.lei-doc .lei-parte { margin: 0 0 6px; padding: 1px 4px; border-radius: 5px; position: relative; }
+.lei-doc .lei-parte.tipo-inc { padding-left: 30px; }
+.lei-doc .lei-parte.tipo-ali { padding-left: 56px; }
+.lei-doc .lei-parte.atencao { background: #fdecec; box-shadow: inset 3px 0 0 #d62828; border-radius: 0 6px 6px 0; }
+.lei-doc .lei-rotulo { font-weight: 800; color: #17306b; }
+.lei-doc .lei-rubrica { display: block; font-size: 13.5px; font-weight: 700; font-style: italic; color: #4a5875; margin: 2px 0; }
+.lei-imp { display: inline-flex; align-items: center; gap: 6px; margin: 0 6px 0 0; padding: 0 8px; border: 1px solid #f0d78a; border-radius: 999px; background: #fff6d6; color: #7a5600; font: inherit; font-size: 12px; line-height: 20px; vertical-align: 1px; cursor: pointer; }
+.lei-imp-est { color: #d49b00; letter-spacing: 1px; }
+.lei-doc .lei-texto { outline: none; }
+/* Marca-texto igual ao do leitor de PDF: faixa reta com pontas redondas e o texto nítido por baixo. */
+.lei-doc .lei-texto span[style*="background"], .lei-coment-texto span[style*="background"] { border-radius: 999px; padding: 1px 2px; margin: 0 -1px; mix-blend-mode: multiply; -webkit-box-decoration-break: clone; box-decoration-break: clone; color: #1f2330; cursor: pointer; }
+.lei-doc.modo-grifo .lei-texto, .lei-doc.modo-grifo .lei-coment-texto { cursor: text; caret-color: transparent; }
+.lei-doc.modo-grifo { --mira: 1; }
+.lei-doc .lei-cobrado { border-bottom: 2px solid #e0a800; background: none; }
+.lei-cit { color: #1d4fb8; border-bottom: 1px dashed #1d4fb8; cursor: help; }
+.lei-dica { position: fixed; z-index: 60; max-width: 440px; max-height: 50vh; overflow: auto; padding: 10px 12px; border-radius: 10px; border: 1px solid #c9cfdb; background: #ffffff; color: #1f2330; font-size: 13.5px; line-height: 1.55; box-shadow: 0 8px 24px rgba(0, 0, 0, .28); pointer-events: none; }
+.lei-dica-item + .lei-dica-item { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e3e7ef; }
+.lei-dica-item strong { display: block; color: #17306b; font-size: 12.5px; margin-bottom: 2px; }
+.lei-comentar { margin-left: 6px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: #1d4fb8; font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.lei-parte:hover .lei-comentar, .lei-comentar:focus { opacity: .8; }
+@media (hover: none) { .lei-comentar { opacity: .6; } }
+/* Caixa de comentário: fundo neutro (o amarelo do marca-texto continua aparecendo bem). */
+.lei-coment { position: relative; margin: 2px 0 10px 18px; padding: 10px 14px 26px; border-radius: 10px; background: #eef2f8; border: 1px solid #cdd6e6; color: #26324a; font-size: 14.5px; line-height: 1.6; }
+.lei-parte.tipo-inc + .lei-coment { margin-left: 44px; }
+.lei-parte.tipo-ali + .lei-coment { margin-left: 70px; }
+.lei-coment.editando { border-color: #6c8cd5; box-shadow: 0 0 0 2px rgba(108, 140, 213, .25); background: #f6f8fc; }
+.lei-coment-texto { outline: none; min-height: 1.6em; }
+.lei-coment-texto p, .lei-coment-texto div { margin: 0; }
+.lei-coment-texto hr { border: 0; border-top: 1px solid #b8c3d8; margin: 8px 0; }
+.lei-coment-acoes { position: absolute; right: 10px; bottom: 4px; display: flex; gap: 10px; font-size: 12px; }
+.lei-coment-acoes .link { color: #1d4fb8; }
+.lei-coment-acoes .link-perigo { color: #c0392b; }
+.lei-doc .lei-parte-acoes { display: inline-flex; gap: 10px; margin-left: 10px; font-size: 12px; }
+.lei-doc .lei-parte-acoes .link { color: #1d4fb8; }
+.lei-doc .lei-parte.removida { opacity: .45; text-decoration: line-through; }
+.lei-item-nome .lei-item-excluir { margin-left: auto; display: inline-flex; padding: 4px; border: 0; border-radius: 7px; background: none; color: var(--texto-3); cursor: pointer; }
+.lei-item-nome .lei-item-excluir:hover { background: var(--vermelho-claro); color: var(--vermelho); }
+.lei-item-nome .lei-item-excluir .icone { width: 16px; height: 16px; color: inherit; }
+@media (max-width: 900px) { .lei-corpo { grid-template-columns: 1fr; } .lei-nav { position: static; max-height: 320px; } .lei-doc { padding: 22px 18px; } }

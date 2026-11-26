@@ -35,7 +35,13 @@ var LeiSeca = (function () {
       lista.forEach(function (l) {
         var d = l.disciplinaId && Dados.disciplina(l.disciplinaId);
         caixa.appendChild(el('a', { class: 'lei-item', href: '#/lei-seca/' + l.id }, [
-          el('div', { class: 'lei-item-nome' }, [UI.icone('livro'), el('span', { text: l.nome || 'Lei sem nome' })]),
+          el('div', { class: 'lei-item-nome' }, [UI.icone('livro'), el('span', { text: l.nome || 'Lei sem nome' }),
+            el('button', { type: 'button', class: 'lei-item-excluir', title: 'Excluir esta lei', 'aria-label': 'Excluir esta lei', onclick: function (e) {
+              e.preventDefault(); e.stopPropagation();
+              UI.confirmar('Excluir "' + (l.nome || 'Lei') + '" com as marcações, os comentários e as questões importadas? Não dá para desfazer.', function () {
+                LeiSecaDados.apagar(l.id).then(function () { UI.aviso('Lei excluída'); App.atualizar(); });
+              }, 'Excluir');
+            } }, UI.icone('lixeira'))]),
           el('div', { class: 'lei-item-info' }, [
             d ? el('span', null, [el('span', { class: 'bolinha', style: { background: d.cor } }), ' ' + d.nome]) : null,
             el('span', { text: UI.fmtNum(l.artigos || 0) + ' artigos' }),
@@ -168,6 +174,8 @@ var LeiSeca = (function () {
     timerSalvar = setTimeout(function () { if (v && v.rec) LeiSecaDados.salvar(v.rec); }, 600);
   }
 
+  // Layout A: sumário em árvore à esquerda (busca, filtros, divisões e artigos) e a lei numa folha branca corrida,
+  // com uma linha entre os artigos (como nos Resumos).
   function desenhar() {
     var rec = v.rec, raiz = v.raiz;
     v.mapa = mapear(rec);
@@ -185,78 +193,21 @@ var LeiSeca = (function () {
       ]),
       el('div', { class: 'lei-topo-acoes' }, [botaoImportarQuestoes(), UI.botao('Dados da lei', editarDados, 'btn-secundario')])
     ]));
-    raiz.appendChild(barraFerramentas());
-    var lista = el('div', { class: 'lei-cartoes' });
-    raiz.appendChild(lista);
-    desenharCartoes(lista);
+    raiz.appendChild(barraDestaque());
+    var nav = el('aside', { class: 'lei-nav' });
+    var doc = el('div', { class: 'lei-doc' + (v.marcaTexto ? ' modo-grifo' : '') });
+    v.nav = nav; v.doc = doc;
+    raiz.appendChild(el('div', { class: 'lei-corpo' }, [nav, el('div', { class: 'lei-folha' }, doc)]));
+    desenharLei();
     raiz.appendChild(painelQuestoes());
   }
 
-  // Busca, ordem, filtro, edição e a barra de destaque (fica presa no topo ao rolar).
-  function barraFerramentas() {
-    var f = v.filtros;
-    var busca = el('input', { type: 'search', class: 'lei-busca', placeholder: 'Buscar: "art 20", "estágio probatório"…', value: f.busca });
-    var timer = null;
-    busca.addEventListener('input', function () {
-      clearTimeout(timer);
-      timer = setTimeout(function () {
-        f.busca = busca.value;
-        var m = f.busca.trim().match(/^art(?:igo)?\.?\s*(\d+(?:-[a-z])?)\s*$/i);
-        if (m) { irPara('art-' + m[1].toLowerCase()); return; }
-        var lista = v.raiz.querySelector('.lei-cartoes'); desenharCartoes(lista);
-      }, 250);
-    });
-    busca.addEventListener('keydown', function (e) { if (e.key === 'Enter') { var m = busca.value.trim().match(/^art(?:igo)?\.?\s*(\d+(?:-[a-z])?)/i); if (m) irPara('art-' + m[1].toLowerCase()); } });
-    function chip(valor, texto) {
-      return el('button', { type: 'button', class: 'chip-filtro' + (f.filtro === valor ? ' ativo' : ''), text: texto, onclick: function () { f.filtro = valor; App.atualizar(); } });
-    }
-    var ordem = el('select', { onchange: function () { f.ordem = ordem.value; App.atualizar(); } }, [
-      el('option', { value: 'lei', text: 'Ordem da lei', selected: f.ordem === 'lei' }),
-      el('option', { value: 'cobrados', text: 'Mais cobrados primeiro', selected: f.ordem === 'cobrados' })
-    ]);
-    var editar = UI.botao(v.editando ? 'Concluir edição' : 'Editar texto', function () { v.editando = !v.editando; App.atualizar(); }, v.editando ? 'btn-primario' : 'btn-secundario', 'lapis');
-
-    var cores = Leitor.CORES.map(function (c, i) {
-      return el('button', { type: 'button', class: 'lei-cor', style: { background: c[1] }, title: 'Marca-texto ' + c[0] + ' (' + (i + 1) + ')', onmousedown: function (e) { e.preventDefault(); marcar(c[1]); } });
-    });
-    function cmd(nome, valor, titulo, conteudo) {
-      return el('button', { type: 'button', class: 'lei-cmd', title: titulo, onmousedown: function (e) { e.preventDefault(); formatar(nome, valor); } }, conteudo);
-    }
-    return el('div', { class: 'lei-barra' }, [
-      el('div', { class: 'lei-barra-linha' }, [busca, ordem, chip('tudo', 'Tudo'), chip('cobrados', 'Só cobrados'), chip('4', '★★★★ ou mais'), editar]),
-      el('div', { class: 'lei-barra-linha lei-destaques' }, [el('span', { class: 'data-fraca', text: 'Destacar:' })].concat(cores).concat([
-        el('span', { class: 'lei-sep' }),
-        cmd('bold', null, 'Negrito (Ctrl+B)', el('b', { text: 'N' })),
-        cmd('underline', null, 'Sublinhado (Ctrl+U)', el('u', { text: 'S' })),
-        cmd('italic', null, 'Itálico (Ctrl+I)', el('i', { text: 'I' })),
-        cmd('foreColor', '#e24b4a', 'Texto em vermelho', el('span', { class: 'lei-a-vermelho', text: 'A' })),
-        el('button', { type: 'button', class: 'lei-cmd', title: 'Caixa de atenção no dispositivo', onmousedown: function (e) { e.preventDefault(); alternarAtencao(); } }, UI.icone('alerta')),
-        el('span', { class: 'lei-sep' }),
-        cmd('removeFormat', null, 'Limpar os destaques do trecho selecionado', el('span', { text: 'Limpar' }))
-      ]))
-    ]);
-  }
-
-  function irPara(artId) {
-    var c = v.raiz.querySelector('[data-art="' + artId + '"]');
-    if (!c) {
-      v.filtros.busca = ''; v.filtros.filtro = 'tudo';
-      desenharCartoes(v.raiz.querySelector('.lei-cartoes'));
-      c = v.raiz.querySelector('[data-art="' + artId + '"]');
-    }
-    if (!c) { UI.aviso('Artigo não encontrado'); return; }
-    c.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    c.classList.add('lei-piscar'); setTimeout(function () { c.classList.remove('lei-piscar'); }, 1600);
-  }
-
-  // ---------- Cartões ----------
-  function desenharCartoes(lista) {
-    lista.innerHTML = '';
+  // Artigos que passam na busca e no filtro, na ordem escolhida.
+  function artigosVisiveis() {
     var rec = v.rec, f = v.filtros, e = v.estat;
-    var arts = rec.artigos.slice();
     var termo = norm(f.busca.trim());
     if (/^art(?:igo)?\.?\s*\d/.test(termo)) termo = '';
-    arts = arts.filter(function (a) {
+    var arts = rec.artigos.filter(function (a) {
       var ea = e.porArt[a.id];
       if (f.filtro === 'cobrados' && !ea) return false;
       if (f.filtro === '4' && !(ea && ea.estrelas >= 4)) return false;
@@ -264,46 +215,184 @@ var LeiSeca = (function () {
       return true;
     });
     if (f.ordem === 'cobrados') arts.sort(function (x, y) { return ((e.porArt[y.id] || {}).peso || 0) - ((e.porArt[x.id] || {}).peso || 0); });
-    if (!arts.length) { lista.appendChild(el('p', { class: 'data-fraca', text: 'Nenhum artigo com esse filtro.' })); return; }
-    var ultimaDiv = -1;
+    return arts;
+  }
+
+  function desenharLei() {
+    desenharNav();
+    desenharDoc();
+  }
+
+  function textoEstrelas(n) { return n ? '★★★★★'.slice(0, n) : ''; }
+
+  // ---------- Sumário (à esquerda) ----------
+  function desenharNav() {
+    var nav = v.nav, f = v.filtros, rec = v.rec, e = v.estat;
+    nav.innerHTML = '';
+    var busca = el('input', { type: 'search', class: 'lei-nav-busca', placeholder: 'Buscar: "art 20", "estágio"…', value: f.busca });
+    var timer = null;
+    busca.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        f.busca = busca.value;
+        var m = f.busca.trim().match(/^art(?:igo)?\.?\s*(\d+(?:-[a-z])?)\s*$/i);
+        if (m) { irPara('art-' + m[1].toLowerCase()); return; }
+        desenharLei(); v.nav.querySelector('.lei-nav-busca').focus();
+        var campo = v.nav.querySelector('.lei-nav-busca'); campo.setSelectionRange(campo.value.length, campo.value.length);
+      }, 300);
+    });
+    busca.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { var m = busca.value.trim().match(/^art(?:igo)?\.?\s*(\d+(?:-[a-z])?)/i); if (m) irPara('art-' + m[1].toLowerCase()); } });
+    function chip(valor, texto) {
+      return el('button', { type: 'button', class: 'chip-filtro' + (f.filtro === valor ? ' ativo' : ''), text: texto, onclick: function () { f.filtro = valor; desenharLei(); } });
+    }
+    var ordem = el('select', { class: 'lei-nav-ordem', onchange: function () { f.ordem = ordem.value; desenharLei(); } }, [
+      el('option', { value: 'lei', text: 'Ordem da lei', selected: f.ordem === 'lei' }),
+      el('option', { value: 'cobrados', text: 'Mais cobrados primeiro', selected: f.ordem === 'cobrados' })
+    ]);
+    var lista = el('div', { class: 'lei-nav-lista' });
+    var arts = artigosVisiveis(), ultimaDiv = -1;
+    var niveis = rec.divisoes.map(function (dv) { return dv.nivel || 0; }), menor = niveis.length ? Math.min.apply(null, niveis) : 0;
     arts.forEach(function (a) {
-      if (f.ordem === 'lei' && a.divisao != null && a.divisao !== ultimaDiv) {
-        // Divisões entre o artigo anterior e este (título, capítulo, seção).
+      if (f.ordem === 'lei' && a.divisao != null && a.divisao > ultimaDiv) {
         for (var k = ultimaDiv + 1; k <= a.divisao; k++) {
           var dv = rec.divisoes[k];
-          if (dv) lista.appendChild(el('div', { class: 'lei-divisao nivel-' + (dv.nivel || 0) }, [el('span', { text: dv.rotulo }), dv.nome ? el('strong', { text: dv.nome }) : null]));
+          if (dv) lista.appendChild(el('div', { class: 'lei-nav-div', style: { paddingLeft: ((dv.nivel || 0) - menor) * 10 + 'px' }, title: dv.rotulo + (dv.nome ? ' – ' + dv.nome : ''), text: dv.rotulo + (dv.nome ? ' · ' + dv.nome : '') }));
         }
         ultimaDiv = a.divisao;
       }
-      lista.appendChild(cartao(a));
+      var ea = e.porArt[a.id];
+      var nivelArt = a.divisao != null && rec.divisoes[a.divisao] ? (rec.divisoes[a.divisao].nivel || 0) - menor + 1 : 0;
+      lista.appendChild(el('button', { type: 'button', class: 'lei-nav-art', 'data-art': a.id, style: { paddingLeft: (f.ordem === 'lei' ? nivelArt * 10 : 0) + 6 + 'px' }, title: a.rubrica || a.partes[0].texto.slice(0, 120), onclick: function () { irPara(a.id); } }, [
+        el('span', { text: a.rotulo }),
+        ea ? el('span', { class: 'lei-nav-est', text: textoEstrelas(ea.estrelas) }) : null
+      ]));
     });
+    if (!arts.length) lista.appendChild(el('p', { class: 'data-fraca', text: 'Nenhum artigo com esse filtro.' }));
+    nav.appendChild(busca);
+    nav.appendChild(el('div', { class: 'lei-nav-filtros' }, [chip('tudo', 'Tudo'), chip('cobrados', 'Cobrados'), chip('4', '★★★★+')]));
+    nav.appendChild(ordem);
+    nav.appendChild(lista);
   }
 
-  function estrelas(n) {
-    return el('span', { class: 'lei-estrelas', title: n ? 'Importância: ' + n + ' de 5' : 'Sem questões' }, [1, 2, 3, 4, 5].map(function (i) { return el('span', { class: i <= n ? 'cheia' : '', text: '★' }); }));
+  function irPara(artId) {
+    var c = v.doc.querySelector('[data-art="' + artId + '"]');
+    if (!c) {
+      v.filtros.busca = ''; v.filtros.filtro = 'tudo';
+      desenharLei();
+      c = v.doc.querySelector('[data-art="' + artId + '"]');
+    }
+    if (!c) { UI.aviso('Artigo não encontrado'); return; }
+    c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    c.classList.add('lei-piscar'); setTimeout(function () { c.classList.remove('lei-piscar'); }, 1600);
+    marcarNoSumario(artId);
+  }
+  function marcarNoSumario(artId) {
+    v.nav.querySelectorAll('.lei-nav-art.atual').forEach(function (b) { b.classList.remove('atual'); });
+    var b = v.nav.querySelector('.lei-nav-art[data-art="' + artId + '"]');
+    if (b) { b.classList.add('atual'); var l = v.nav.querySelector('.lei-nav-lista'), r = b.getBoundingClientRect(), rl = l.getBoundingClientRect(); if (r.top < rl.top || r.bottom > rl.bottom) l.scrollTop += r.top - rl.top - rl.height / 3; }
   }
 
-  function cartao(a) {
+  // ---------- Folha branca ----------
+  function desenharDoc() {
+    var doc = v.doc, rec = v.rec, f = v.filtros;
+    doc.innerHTML = '';
+    var arts = artigosVisiveis(), ultimaDiv = -1;
+    if (!arts.length) { doc.appendChild(el('p', { class: 'lei-vazio', text: 'Nenhum artigo com esse filtro.' })); return; }
+    arts.forEach(function (a) {
+      if (f.ordem === 'lei' && a.divisao != null && a.divisao > ultimaDiv) {
+        for (var k = ultimaDiv + 1; k <= a.divisao; k++) {
+          var dv = rec.divisoes[k];
+          if (dv) doc.appendChild(el('div', { class: 'lei-div nivel-' + (dv.nivel || 0) }, [el('span', { text: dv.rotulo }), dv.nome ? el('strong', { text: dv.nome }) : null]));
+        }
+        ultimaDiv = a.divisao;
+      }
+      doc.appendChild(artigo(a));
+    });
+    // O sumário acompanha o artigo que está na tela.
+    if (v.observador) v.observador.disconnect();
+    if (window.IntersectionObserver) {
+      v.observador = new IntersectionObserver(function (itens) {
+        var vis = itens.filter(function (i) { return i.isIntersecting; }).sort(function (x, y) { return x.boundingClientRect.top - y.boundingClientRect.top; })[0];
+        if (vis) marcarNoSumario(vis.target.getAttribute('data-art'));
+      }, { rootMargin: '-140px 0px -60% 0px' });
+      doc.querySelectorAll('.lei-art').forEach(function (n) { v.observador.observe(n); });
+    }
+  }
+
+  function artigo(a) {
     var rec = v.rec, ea = v.estat.porArt[a.id];
-    var calor = ea ? Math.min(5, ea.estrelas) : 0;
-    var corpo = el('div', { class: 'lei-cartao-corpo' });
+    var bloco = el('section', { class: 'lei-art', 'data-art': a.id });
+    if (a.rubrica) bloco.appendChild(el('div', { class: 'lei-rubrica', text: a.rubrica }));
     a.partes.forEach(function (p) {
       if (rec.removidas[p.id] && !v.editando) return;
-      corpo.appendChild(parte(a, p));
+      var cab = p.tipo === 'caput' ? [
+        el('strong', { class: 'lei-rotulo', text: a.rotulo + '. ' }),
+        ea ? el('button', { type: 'button', class: 'lei-imp', contenteditable: 'false', title: 'Importância ' + ea.estrelas + ' de 5 · ver as questões', onclick: function () { verQuestoes(a); } }, [
+          el('span', { class: 'lei-imp-est', text: textoEstrelas(ea.estrelas) }),
+          el('span', { class: 'lei-imp-q', text: ea.n + (ea.n === 1 ? ' questão' : ' questões') })
+        ]) : null
+      ] : null;
+      bloco.appendChild(parte(a, p, cab));
+      // Caixa de comentário do dispositivo, logo abaixo dele.
+      if ((rec.comentarios || {})[p.id] != null) bloco.appendChild(caixaComentario(p.id, false));
     });
-    return el('article', { class: 'lei-cartao calor-' + calor, 'data-art': a.id }, [
-      el('header', { class: 'lei-cartao-topo' }, [
-        el('div', { class: 'lei-cartao-titulo' }, [el('strong', { text: a.rotulo }), a.rubrica ? el('span', { text: ' · ' + a.rubrica }) : null]),
-        el('div', { class: 'lei-cartao-info' }, [
-          estrelas(ea ? ea.estrelas : 0),
-          ea ? el('button', { type: 'button', class: 'lei-selo-q', text: ea.n + (ea.n === 1 ? ' questão' : ' questões'), onclick: function () { verQuestoes(a); } }) : null
-        ])
-      ]),
-      corpo
-    ]);
+    return bloco;
   }
 
-  function parte(a, p) {
+  // ---------- Comentários (uma caixa por dispositivo; texto com formatação, marca-texto e linhas separadoras) ----------
+  function caixaComentario(parteId, editar) {
+    var rec = v.rec;
+    rec.comentarios = rec.comentarios || {};
+    var texto = el('div', { class: 'lei-coment-texto', 'data-coment': parteId, contenteditable: 'true', spellcheck: 'true' });
+    texto.innerHTML = rec.comentarios[parteId] || '';
+    var editando = !!editar;
+    var caixa = el('div', { class: 'lei-coment' + (editando ? ' editando' : ''), 'data-coment-de': parteId });
+    texto.addEventListener('beforeinput', function (e) {
+      if (editando) return;
+      if (/^format/.test(e.inputType) || /^history/.test(e.inputType)) return;
+      e.preventDefault();
+    });
+    texto.addEventListener('input', function () { gravarComentario(parteId, texto); });
+    var btEditar = el('button', { type: 'button', class: 'link', text: editando ? 'concluir' : 'editar', onclick: function () {
+      editando = !editando;
+      caixa.classList.toggle('editando', editando);
+      btEditar.textContent = editando ? 'concluir' : 'editar';
+      if (editando) { texto.focus(); colocarCursorNoFim(texto); }
+      else { gravarComentario(parteId, texto); if (!rec.comentarios[parteId]) caixa.remove(); }
+    } });
+    caixa.appendChild(texto);
+    caixa.appendChild(el('div', { class: 'lei-coment-acoes' }, [
+      btEditar,
+      el('button', { type: 'button', class: 'link link-perigo', text: 'excluir', onclick: function () {
+        if (!texto.textContent.trim()) { delete rec.comentarios[parteId]; salvarRec(); caixa.remove(); return; }
+        UI.confirmar('Excluir a caixa de comentário deste dispositivo?', function () { delete rec.comentarios[parteId]; salvarRec(); caixa.remove(); }, 'Excluir');
+      } })
+    ]));
+    if (editando) setTimeout(function () { texto.focus(); colocarCursorNoFim(texto); }, 0);
+    return caixa;
+  }
+  function colocarCursorNoFim(n) {
+    var r = document.createRange(); r.selectNodeContents(n); r.collapse(false);
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  function gravarComentario(parteId, texto) {
+    var html = texto.innerHTML.trim();
+    if (!texto.textContent.trim() && !texto.querySelector('hr')) { if (v.rec.comentarios[parteId] != null) v.rec.comentarios[parteId] = ''; }
+    else v.rec.comentarios[parteId] = html;
+    salvarRec();
+  }
+  // Abre (ou cria) a caixa de comentário do dispositivo, já em edição.
+  function comentar(parteId) {
+    var rec = v.rec;
+    rec.comentarios = rec.comentarios || {};
+    var existente = v.doc.querySelector('[data-coment-de="' + parteId + '"]');
+    if (existente) { var t = existente.querySelector('.lei-coment-texto'); if (!existente.classList.contains('editando')) existente.querySelector('.lei-coment-acoes .link').click(); else t.focus(); return; }
+    if (rec.comentarios[parteId] == null) rec.comentarios[parteId] = '';
+    var linha = v.doc.querySelector('[data-parte="' + parteId + '"]');
+    if (linha) linha.parentNode.insertBefore(caixaComentario(parteId, true), linha.nextSibling);
+  }
+
+  function parte(a, p, cabeca) {
     var rec = v.rec;
     var texto = el('span', { class: 'lei-texto', contenteditable: 'true', spellcheck: 'false', 'data-id': p.id });
     texto.innerHTML = rec.marcas[p.id] != null ? rec.marcas[p.id] : esc(p.texto);
@@ -314,30 +403,170 @@ var LeiSeca = (function () {
       e.preventDefault();
     });
     texto.addEventListener('input', function () { guardarMarcas(texto, p); });
-    texto.addEventListener('keydown', function (e) {
-      if (v.editando || e.ctrlKey || e.metaKey || e.altKey) return;
-      var n = Number(e.key);
-      if (n >= 1 && n <= Leitor.CORES.length) { e.preventDefault(); marcar(Leitor.CORES[n - 1][1]); }
-    });
     var ligadas = v.estat.porParte[p.id] || [];
-    var div = el('div', { class: 'lei-parte tipo-' + p.tipo + (rec.atencao[p.id] ? ' atencao' : '') + (rec.removidas[p.id] ? ' removida' : '') + (ligadas.length ? ' cobrada' : ''), 'data-parte': p.id }, [
-      p.rubrica ? el('div', { class: 'lei-rubrica', text: p.rubrica }) : null,
-      el('span', { class: 'lei-rotulo', text: p.tipo === 'caput' ? '' : p.rotulo + ' ' }),
+    return el('p', { class: 'lei-parte tipo-' + p.tipo + (rec.atencao[p.id] ? ' atencao' : '') + (rec.removidas[p.id] ? ' removida' : '') + (ligadas.length ? ' cobrada' : ''), 'data-parte': p.id }, [
+      p.rubrica ? el('span', { class: 'lei-rubrica', text: p.rubrica }) : null
+    ].concat(cabeca || [el('strong', { class: 'lei-rotulo', text: p.rotulo + ' ' })]).concat([
       texto,
-      v.editando ? el('span', { class: 'lei-parte-acoes' }, [
+      v.editando ? null : el('button', { type: 'button', class: 'lei-comentar', contenteditable: 'false', title: 'Comentar este dispositivo', text: '+ comentário', onclick: function () { comentar(p.id); } }),
+      v.editando ? el('span', { class: 'lei-parte-acoes', contenteditable: 'false' }, [
         rec.marcas[p.id] != null ? el('button', { type: 'button', class: 'link', text: 'texto original', title: 'Voltar ao texto extraído da lei (apaga as marcações deste dispositivo)', onclick: function () { delete rec.marcas[p.id]; salvarRec(); App.atualizar(); } }) : null,
         el('button', { type: 'button', class: 'link link-perigo', text: rec.removidas[p.id] ? 'restaurar' : 'remover', onclick: function () {
           if (rec.removidas[p.id]) delete rec.removidas[p.id]; else rec.removidas[p.id] = true;
           salvarRec(); App.atualizar();
         } })
       ]) : null
-    ]);
-    return div;
+    ]));
   }
 
-  // ---------- Decoração (não é gravada): trechos cobrados e remissões ----------
+  // ---------- Barra: marca-texto (igual ao do leitor de PDF), formatação e edição ----------
+  var CHAVE_MARCA = 'controle-estudos.lei-marca';
+  function lerPreferenciaMarca() {
+    try { var x = JSON.parse(localStorage.getItem(CHAVE_MARCA) || '{}'); v.marcaTexto = !!x.ligado; v.corAtual = Leitor.CORES.some(function (c) { return c[0] === x.cor; }) ? x.cor : Leitor.CORES[0][0]; }
+    catch (e) { v.marcaTexto = false; v.corAtual = Leitor.CORES[0][0]; }
+  }
+  function corHex(nome) { var c = Leitor.CORES.filter(function (x) { return x[0] === nome; })[0]; return c ? c[1] : Leitor.CORES[0][1]; }
+  function definirMarca(ligado) {
+    v.marcaTexto = ligado;
+    if (v.btGrifar) v.btGrifar.classList.toggle('ativo', ligado);
+    if (v.bolaCor) v.bolaCor.style.background = corHex(v.corAtual);
+    if (v.doc) v.doc.classList.toggle('modo-grifo', ligado);
+    try { localStorage.setItem(CHAVE_MARCA, JSON.stringify({ ligado: ligado, cor: v.corAtual })); } catch (e) { /* preferência */ }
+  }
+  function definirCor(cor) { v.corAtual = cor; definirMarca(true); }
+
+  function barraDestaque() {
+    if (v.marcaTexto == null) lerPreferenciaMarca();
+    function cmd(nome, valor, titulo, conteudo) {
+      return el('button', { type: 'button', class: 'lei-cmd', title: titulo, onmousedown: function (e) { e.preventDefault(); formatar(nome, valor); } }, conteudo);
+    }
+    v.btGrifar = el('button', { type: 'button', class: 'lei-cmd lei-grifar' + (v.marcaTexto ? ' ativo' : ''), title: 'Marca-texto: selecione (arraste sobre) o trecho para grifar · teclas 1 a 5 trocam a cor · Esc desliga', onclick: function () { definirMarca(!v.marcaTexto); } }, [UI.icone('grifo'), el('span', { text: 'Marca-texto' })]);
+    v.bolaCor = el('button', { type: 'button', class: 'lei-bola-cor', title: 'Cor do marca-texto', style: { background: corHex(v.corAtual) }, onclick: function (e) { menuCores(e.currentTarget); } });
+    var editar = UI.botao(v.editando ? 'Concluir edição' : 'Editar texto', function () { v.editando = !v.editando; App.atualizar(); }, v.editando ? 'btn-primario' : 'btn-secundario', 'lapis');
+    return el('div', { class: 'lei-barra' }, [
+      v.btGrifar, v.bolaCor,
+      el('span', { class: 'lei-sep' }),
+      cmd('bold', null, 'Negrito (Ctrl+B)', el('b', { text: 'N' })),
+      cmd('underline', null, 'Sublinhado (Ctrl+U)', el('u', { text: 'S' })),
+      cmd('italic', null, 'Itálico (Ctrl+I)', el('i', { text: 'I' })),
+      cmd('foreColor', '#d62828', 'Texto em vermelho', el('span', { class: 'lei-a-vermelho', text: 'A' })),
+      el('button', { type: 'button', class: 'lei-cmd', title: 'Caixa de atenção no dispositivo', onmousedown: function (e) { e.preventDefault(); alternarAtencao(); } }, UI.icone('alerta')),
+      cmd('insertHorizontalRule', null, 'Linha separadora (dentro do comentário em edição)', el('span', { class: 'lei-linha-ic' })),
+      cmd('removeFormat', null, 'Limpar os destaques do trecho selecionado', el('span', { text: 'Limpar' })),
+      el('span', { class: 'lei-barra-espaco' }),
+      editar
+    ]);
+  }
+
+  // ---------- Flutuantes (cores, balão do grifo, caixa da remissão) ----------
+  var flutuante = null, dica = null;
+  function fecharFlutuantes() { if (flutuante) { flutuante.remove(); flutuante = null; } }
+  function posicionar(no, cx, cy) {
+    document.body.appendChild(no);
+    var w = no.offsetWidth, h = no.offsetHeight;
+    no.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, cx - w / 2)) + 'px';
+    no.style.top = (cy + 14 + h > window.innerHeight ? Math.max(8, cy - h - 14) : cy + 14) + 'px';
+  }
+  function menuCores(ancora) {
+    fecharFlutuantes();
+    var r = ancora.getBoundingClientRect();
+    flutuante = el('div', { class: 'leitor-flutuante leitor-cores' }, Leitor.CORES.map(function (c, i) {
+      return el('button', { type: 'button', class: 'leitor-cor' + (v.corAtual === c[0] ? ' ativa' : ''), title: c[0] + ' (' + (i + 1) + ')', style: { background: c[1] }, onclick: function () { fecharFlutuantes(); definirCor(c[0]); } });
+    }));
+    posicionar(flutuante, r.left + r.width / 2, r.bottom - 8);
+  }
+  function corDoGrifo(span) {
+    var bg = getComputedStyle(span).backgroundColor, m = bg.match(/\d+/g);
+    if (!m) return null;
+    var hex = '#' + m.slice(0, 3).map(function (n) { return ('0' + Number(n).toString(16)).slice(-2); }).join('').toUpperCase();
+    var c = Leitor.CORES.filter(function (x) { return x[1].toUpperCase() === hex; })[0];
+    return c ? c[0] : null;
+  }
+  // Balão do grifo: trecho, trocar a cor, anotação e excluir (como no leitor de PDF).
+  function abrirBalao(span, cx, cy) {
+    fecharFlutuantes();
+    var texto = span.closest('.lei-texto, .lei-coment-texto');
+    function gravar() { gravarEditavel(texto); }
+    var nota = el('textarea', { rows: 3, value: span.getAttribute('data-nota') || '', placeholder: 'Anotação sobre o trecho (opcional)' });
+    nota.addEventListener('change', function () { if (nota.value.trim()) span.setAttribute('data-nota', nota.value.trim()); else span.removeAttribute('data-nota'); span.title = nota.value.trim(); gravar(); });
+    var atual = corDoGrifo(span);
+    flutuante = el('div', { class: 'leitor-flutuante leitor-balao' }, [
+      el('div', { class: 'leitor-balao-trecho', text: '“' + (span.textContent.length > 160 ? span.textContent.slice(0, 160) + '…' : span.textContent) + '”' }),
+      el('div', { class: 'leitor-cores-linha' }, Leitor.CORES.map(function (c) {
+        return el('button', { type: 'button', class: 'leitor-cor' + (atual === c[0] ? ' ativa' : ''), style: { background: c[1] }, title: 'Trocar a cor', onclick: function () { span.style.backgroundColor = c[1]; gravar(); abrirBalao(span, cx, cy); } });
+      })),
+      nota,
+      el('div', { class: 'leitor-balao-acoes' }, [
+        el('button', { type: 'button', class: 'link link-perigo', text: 'Excluir', onclick: function () {
+          span.style.backgroundColor = ''; span.removeAttribute('data-nota');
+          if (!span.getAttribute('style')) { while (span.firstChild) span.parentNode.insertBefore(span.firstChild, span); span.remove(); }
+          fecharFlutuantes(); gravar();
+        } }),
+        el('button', { type: 'button', class: 'btn btn-primario', text: 'OK', onclick: function () { nota.dispatchEvent(new Event('change')); fecharFlutuantes(); } })
+      ])
+    ]);
+    posicionar(flutuante, cx, cy);
+  }
+  // Caixa flutuante da remissão: o texto do dispositivo citado, ao passar o mouse (ou tocar) na citação.
+  function mostrarDica(cit) {
+    esconderDica();
+    var ids = (cit.getAttribute('data-alvos') || '').split(' ').filter(Boolean);
+    dica = el('div', { class: 'lei-dica' }, ids.map(function (id) {
+      var x = v.mapa.partes[id];
+      if (!x) return null;
+      return el('div', { class: 'lei-dica-item' }, [el('strong', { text: rotuloCompleto(v.mapa, id) }), el('div', { text: x.p.texto })]);
+    }));
+    document.body.appendChild(dica);
+    var r = cit.getBoundingClientRect(), w = dica.offsetWidth, h = dica.offsetHeight;
+    dica.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + 'px';
+    dica.style.top = (r.bottom + 8 + h > window.innerHeight ? Math.max(8, r.top - h - 8) : r.bottom + 8) + 'px';
+  }
+  function esconderDica() { if (dica) { dica.remove(); dica = null; } }
+
+  // Eventos da folha (uma vez): grifar ao soltar a seleção, balão ao clicar no grifo, caixa da remissão.
+  document.addEventListener('mouseup', function (e) {
+    if (!v || !v.doc || !v.marcaTexto || v.editando || !v.doc.contains(e.target)) return;
+    setTimeout(function () {
+      var s = window.getSelection();
+      if (!s.rangeCount || s.isCollapsed || !dentroDeTexto()) return;
+      document.execCommand('styleWithCSS', false, true);
+      document.execCommand('hiliteColor', false, corHex(v.corAtual));
+      s.removeAllRanges();
+    }, 0);
+  });
+  document.addEventListener('click', function (e) {
+    if (!v || !v.doc || !v.doc.contains(e.target)) return;
+    var cit = e.target.closest('.lei-cit');
+    if (cit && e.pointerType !== 'mouse') { mostrarDica(cit); return; }
+    if (v.editando || e.target.closest('.lei-coment.editando')) return;
+    var s = window.getSelection();
+    if (s && !s.isCollapsed) return;
+    var g = e.target.closest('.lei-texto span[style*="background"], .lei-coment-texto span[style*="background"]');
+    if (g) abrirBalao(g, e.clientX, e.clientY);
+  });
+  document.addEventListener('mouseover', function (e) {
+    if (!v || !v.doc) return;
+    var cit = e.target.closest && e.target.closest('.lei-cit');
+    if (cit && v.doc.contains(cit)) mostrarDica(cit);
+  });
+  document.addEventListener('mouseout', function (e) {
+    if (dica && e.target.closest && e.target.closest('.lei-cit') && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.lei-cit'))) esconderDica();
+  });
+  document.addEventListener('mousedown', function (e) { if (flutuante && !flutuante.contains(e.target)) fecharFlutuantes(); });
+  document.addEventListener('scroll', esconderDica, true);
+  document.addEventListener('keydown', function (e) {
+    if (!v || !v.doc || !document.body.contains(v.doc) || document.querySelector('.modal-fundo')) return;
+    var digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || '') || (v.editando && e.target.closest && e.target.closest('.lei-texto')) ||
+      (e.target.closest && e.target.closest('.lei-coment.editando'));
+    if (e.key === 'Escape') { fecharFlutuantes(); esconderDica(); if (v.marcaTexto) definirMarca(false); return; }
+    if (digitando || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/^[1-5]$/.test(e.key)) { e.preventDefault(); fecharFlutuantes(); definirCor(Leitor.CORES[Number(e.key) - 1][0]); }
+  });
+  window.addEventListener('hashchange', function () { fecharFlutuantes(); esconderDica(); });
+
+  // ---------- Decoração (não é gravada): trechos cobrados e citações com a caixa flutuante ----------
   function nosDeTexto(raiz) {
-    var r = [], w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, { acceptNode: function (n) { return n.parentNode.closest('.lei-ref') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } });
+    var r = [], w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
     while (w.nextNode()) r.push(w.currentNode);
     return r;
   }
@@ -354,23 +583,15 @@ var LeiSeca = (function () {
       var w = criar(); meio.parentNode.insertBefore(w, meio); w.appendChild(meio);
     });
   }
-  function inserirEm(raiz, posicao, no) {
-    var pos = 0, feito = false;
-    nosDeTexto(raiz).forEach(function (n) {
-      if (feito) return;
-      var b = pos + n.data.length;
-      if (posicao <= b) {
-        var depois = n.splitText(posicao - pos);
-        depois.parentNode.insertBefore(no, depois);
-        feito = true;
-      }
-      pos = b;
-    });
-    if (!feito) raiz.appendChild(no);
-  }
 
   function decorar(elTexto, a, p) {
     var plano = elTexto.textContent, mapa = v.mapa;
+    // Citações a outros dispositivos desta lei: ficam sublinhadas; o texto citado aparece na caixa flutuante.
+    var ctx = { art: a.id, par: p.tipo === 'par' ? p.id : (p.pai && /-p(\d|u)/.test(p.pai) ? p.pai.replace(/(-p(?:u|\d+[a-z-]*)).*$/, '$1') : null), parte: p.id };
+    var achados = LeiSecaLer.remissoes(plano, ctx, function (id) { return !!mapa.partes[id] || !!mapa.artigos[id]; });
+    achados.forEach(function (r) {
+      envolver(elTexto, r.ini, r.fim, function () { return el('span', { class: 'lei-cit', 'data-temp': '1', 'data-alvos': r.alvos.join(' ') }); });
+    });
     // Trechos cobrados (a parte exata em comum com as questões).
     var vistos = {};
     (v.estat.porParte[p.id] || []).forEach(function (x) {
@@ -381,34 +602,11 @@ var LeiSeca = (function () {
       if (i < 0) { i = norm(plano).indexOf(norm(t)); if (i < 0) return; }
       envolver(elTexto, i, i + t.length, function () { return el('span', { class: 'lei-cobrado', 'data-temp': '1', title: 'Trecho cobrado em questão' }); });
     });
-    // Remissões: o texto do dispositivo citado aparece entre parênteses logo depois da citação.
-    var ctx = { art: a.id, par: p.tipo === 'par' ? p.id : (p.pai && /-p(\d|u)/.test(p.pai) ? p.pai.replace(/(-p(?:u|\d+[a-z-]*)).*$/, '$1') : null), parte: p.id };
-    var achados = LeiSecaLer.remissoes(plano, ctx, function (id) { return !!mapa.partes[id] || !!mapa.artigos[id]; });
-    achados.reverse().forEach(function (r) {
-      var textos = r.alvos.map(function (id) {
-        var x = mapa.partes[id];
-        if (!x) return '';
-        return (x.p.tipo === 'caput' ? '' : x.p.tipo === 'ali' ? x.p.rotulo + ' ' : x.p.rotulo.replace(/\s*–$/, '') + ' – ') + x.p.texto;
-      }).filter(Boolean);
-      if (!textos.length) return;
-      var cheio = textos.join(' ');
-      var ref = el('span', { class: 'lei-ref', contenteditable: 'false', 'data-temp': '1', title: r.alvos.map(function (id) { return rotuloCompleto(mapa, id); }).join('; ') });
-      function mostrar(tudo) {
-        ref.innerHTML = '';
-        ref.appendChild(document.createTextNode('(' + (tudo || cheio.length <= 300 ? cheio : cheio.slice(0, 280).replace(/\s+\S*$/, '') + '…')));
-        if (cheio.length > 300) ref.appendChild(el('button', { type: 'button', class: 'lei-ref-mais', text: tudo ? 'menos' : 'ver tudo', onclick: function (e) { e.preventDefault(); mostrar(!tudo); } }));
-        ref.appendChild(document.createTextNode(')'));
-      }
-      mostrar(false);
-      inserirEm(elTexto, r.fim, ref);
-      inserirEm(elTexto, r.fim, document.createTextNode(' '));
-    });
   }
 
   // Grava as marcações do dispositivo (sem a decoração).
   function guardarMarcas(elTexto, p) {
     var c = elTexto.cloneNode(true);
-    c.querySelectorAll('.lei-ref').forEach(function (n) { if (n.previousSibling && n.previousSibling.nodeType === 3 && n.previousSibling.data === ' ') n.previousSibling.remove(); n.remove(); });
     c.querySelectorAll('[data-temp]').forEach(function (n) { while (n.firstChild) n.parentNode.insertBefore(n.firstChild, n); n.remove(); });
     c.normalize();
     var html = c.innerHTML;
@@ -416,28 +614,35 @@ var LeiSeca = (function () {
     salvarRec();
   }
 
+  // Texto da lei ou de um comentário onde está a seleção.
   function dentroDeTexto() {
     var s = window.getSelection();
     if (!s.rangeCount) return null;
     var n = s.anchorNode;
-    var t = n && (n.nodeType === 1 ? n : n.parentNode).closest('.lei-texto');
-    return t && v && v.raiz.contains(t) ? t : null;
+    var t = n && (n.nodeType === 1 ? n : n.parentNode).closest('.lei-texto, .lei-coment-texto');
+    return t && v && v.doc && v.doc.contains(t) ? t : null;
+  }
+  // Grava o que mudou no elemento (dispositivo da lei ou comentário).
+  function gravarEditavel(t) {
+    if (t.classList.contains('lei-coment-texto')) { gravarComentario(t.getAttribute('data-coment'), t); return; }
+    var x = v.mapa.partes[t.getAttribute('data-id')];
+    if (x) guardarMarcas(t, x.p);
   }
   function formatar(nome, valor) {
     var t = dentroDeTexto();
-    if (!t) { UI.aviso('Selecione um trecho da lei primeiro'); return; }
+    if (!t) { UI.aviso('Selecione um trecho da lei ou do comentário primeiro'); return; }
+    if (nome === 'insertHorizontalRule') {
+      if (!t.classList.contains('lei-coment-texto') || !t.closest('.lei-coment').classList.contains('editando')) { UI.aviso('A linha separadora vai dentro de um comentário em edição'); return; }
+      document.execCommand('insertHTML', false, '<hr><p><br></p>');
+      gravarEditavel(t);
+      return;
+    }
     document.execCommand('styleWithCSS', false, true);
     document.execCommand(nome, false, valor || null);
   }
-  function marcar(cor) {
-    var t = dentroDeTexto(), s = window.getSelection();
-    if (!t || s.isCollapsed) { UI.aviso('Selecione um trecho da lei primeiro'); return; }
-    document.execCommand('styleWithCSS', false, true);
-    document.execCommand('hiliteColor', false, cor);
-    s.removeAllRanges();
-  }
   function alternarAtencao() {
     var t = dentroDeTexto();
+    if (t && t.classList.contains('lei-coment-texto')) t = null;
     if (!t) { UI.aviso('Clique em um dispositivo da lei primeiro'); return; }
     var id = t.getAttribute('data-id');
     if (v.rec.atencao[id]) delete v.rec.atencao[id]; else v.rec.atencao[id] = true;
