@@ -233,7 +233,7 @@ var Previsao = (function () {
 
   // Repete o ciclo a partir da posição atual, descontando o tempo de cada posição da matéria dela. Regras do ciclo:
   //  - matéria em Revisão ocupa no máximo 1 vaga; em Leitura, 2;
-  //  - ao terminar o Modo Leitura, a matéria continua no ciclo, com 1 vaga, e entra a próxima matéria de fora (ordem alfabética);
+  //  - ao terminar o Modo Leitura, a matéria continua no ciclo, com 1 vaga, e entra a próxima matéria de fora (na ordem das matérias);
   //  - a que entra fica com a vaga liberada (ou uma no fim) e ganha a 2ª a meio ciclo de distância.
   // Sem ciclo montado, não há tempo em Revisão: as horas são divididas entre as matérias que faltam.
   function simular(materias, horasPosicao) {

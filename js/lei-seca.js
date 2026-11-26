@@ -225,6 +225,13 @@ var LeiSeca = (function () {
 
   function textoEstrelas(n) { return n ? '★★★★★'.slice(0, n) : ''; }
 
+  // "CAPÍTULO I DAS ORGANIZAÇÕES SOCIAIS" (tudo numa linha) → rótulo "CAPÍTULO I" e nome "DAS ORGANIZAÇÕES SOCIAIS".
+  function partesDivisao(dv) {
+    if (dv.nome) return { rotulo: dv.rotulo, nome: dv.nome };
+    var m = String(dv.rotulo || '').match(/^((?:PARTE|LIVRO|T[ÍI]TULO|CAP[ÍI]TULO|SE[ÇC][ÃA]O|SUBSE[ÇC][ÃA]O)\s+(?:[IVXLCDM]+|[ÚU]NIC[OA]|\d+)(?:-[A-Z])?)\b\s*[-–—.:]?\s*(.*)$/i);
+    return m ? { rotulo: m[1], nome: m[2] } : { rotulo: dv.rotulo, nome: '' };
+  }
+
   // ---------- Sumário (à esquerda) ----------
   function desenharNav() {
     var nav = v.nav, f = v.filtros, rec = v.rec, e = v.estat;
@@ -249,25 +256,33 @@ var LeiSeca = (function () {
       el('option', { value: 'lei', text: 'Ordem da lei', selected: f.ordem === 'lei' }),
       el('option', { value: 'cobrados', text: 'Mais cobrados primeiro', selected: f.ordem === 'cobrados' })
     ]);
+    // Modelo C: títulos/capítulos/seções e, embaixo de cada um, a grade com o número dos artigos,
+    // colorida pela importância (estrelas).
     var lista = el('div', { class: 'lei-nav-lista' });
-    var arts = artigosVisiveis(), ultimaDiv = -1;
+    var arts = artigosVisiveis(), ultimaDiv = -1, grade = null;
     var niveis = rec.divisoes.map(function (dv) { return dv.nivel || 0; }), menor = niveis.length ? Math.min.apply(null, niveis) : 0;
+    function novaGrade() { grade = el('div', { class: 'lei-nav-grade' }); lista.appendChild(grade); }
     arts.forEach(function (a) {
       if (f.ordem === 'lei' && a.divisao != null && a.divisao > ultimaDiv) {
         for (var k = ultimaDiv + 1; k <= a.divisao; k++) {
           var dv = rec.divisoes[k];
-          if (dv) lista.appendChild(el('div', { class: 'lei-nav-div', style: { paddingLeft: ((dv.nivel || 0) - menor) * 10 + 'px' }, title: dv.rotulo + (dv.nome ? ' – ' + dv.nome : ''), text: dv.rotulo + (dv.nome ? ' · ' + dv.nome : '') }));
+          var pd = dv && partesDivisao(dv);
+          if (dv) lista.appendChild(el('div', { class: 'lei-nav-div nivel-' + Math.min(3, (dv.nivel || 0) - menor), title: pd.rotulo + (pd.nome ? ' – ' + pd.nome : '') }, [
+            el('span', { class: 'lei-nav-div-rotulo', text: pd.rotulo }),
+            pd.nome ? el('span', { class: 'lei-nav-div-nome', text: pd.nome }) : null
+          ]));
         }
         ultimaDiv = a.divisao;
+        grade = null;
       }
-      var ea = e.porArt[a.id];
-      var nivelArt = a.divisao != null && rec.divisoes[a.divisao] ? (rec.divisoes[a.divisao].nivel || 0) - menor + 1 : 0;
-      lista.appendChild(el('button', { type: 'button', class: 'lei-nav-art', 'data-art': a.id, style: { paddingLeft: (f.ordem === 'lei' ? nivelArt * 10 : 0) + 6 + 'px' }, title: a.rubrica || a.partes[0].texto.slice(0, 120), onclick: function () { irPara(a.id); } }, [
-        el('span', { text: a.rotulo }),
-        ea ? el('span', { class: 'lei-nav-est', text: textoEstrelas(ea.estrelas) }) : null
-      ]));
+      if (!grade) novaGrade();
+      var ea = e.porArt[a.id], est = ea ? ea.estrelas : 0;
+      grade.appendChild(el('button', { type: 'button', class: 'lei-nav-num imp-' + est, 'data-art': a.id,
+        title: a.rotulo + (a.rubrica ? ' · ' + a.rubrica : '') + (ea ? ' · ' + textoEstrelas(est) + ' · ' + ea.n + (ea.n === 1 ? ' questão' : ' questões') : ''),
+        onclick: function () { irPara(a.id); } }, String(a.num).replace(/-/g, '-')));
     });
     if (!arts.length) lista.appendChild(el('p', { class: 'data-fraca', text: 'Nenhum artigo com esse filtro.' }));
+    nav.appendChild(el('div', { class: 'lei-nav-titulo', title: rec.nome, text: rec.nome }));
     nav.appendChild(busca);
     nav.appendChild(el('div', { class: 'lei-nav-filtros' }, [chip('tudo', 'Tudo'), chip('cobrados', 'Cobrados'), chip('4', '★★★★+')]));
     nav.appendChild(ordem);
@@ -287,8 +302,8 @@ var LeiSeca = (function () {
     marcarNoSumario(artId);
   }
   function marcarNoSumario(artId) {
-    v.nav.querySelectorAll('.lei-nav-art.atual').forEach(function (b) { b.classList.remove('atual'); });
-    var b = v.nav.querySelector('.lei-nav-art[data-art="' + artId + '"]');
+    v.nav.querySelectorAll('.lei-nav-num.atual').forEach(function (b) { b.classList.remove('atual'); });
+    var b = v.nav.querySelector('.lei-nav-num[data-art="' + artId + '"]');
     if (b) { b.classList.add('atual'); var l = v.nav.querySelector('.lei-nav-lista'), r = b.getBoundingClientRect(), rl = l.getBoundingClientRect(); if (r.top < rl.top || r.bottom > rl.bottom) l.scrollTop += r.top - rl.top - rl.height / 3; }
   }
 
@@ -302,7 +317,8 @@ var LeiSeca = (function () {
       if (f.ordem === 'lei' && a.divisao != null && a.divisao > ultimaDiv) {
         for (var k = ultimaDiv + 1; k <= a.divisao; k++) {
           var dv = rec.divisoes[k];
-          if (dv) doc.appendChild(el('div', { class: 'lei-div nivel-' + (dv.nivel || 0) }, [el('span', { text: dv.rotulo }), dv.nome ? el('strong', { text: dv.nome }) : null]));
+          var pdv = dv && partesDivisao(dv);
+          if (dv) doc.appendChild(el('div', { class: 'lei-div nivel-' + (dv.nivel || 0) }, [el('span', { text: pdv.rotulo }), pdv.nome ? el('strong', { text: pdv.nome }) : null]));
         }
         ultimaDiv = a.divisao;
       }

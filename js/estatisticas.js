@@ -178,7 +178,7 @@ var Estatisticas = (function () {
       d.topicos.forEach(function (t) { t.folha = !t.filhos.length; });
       d.contagem = contarClasses(d.topicos);
       return d;
-    }).sort(function (a, b) { return a.disciplina.nome.localeCompare(b.disciplina.nome, 'pt-BR'); });
+    }).sort(function (a, b) { return (a.disciplina.ordem || 0) - (b.disciplina.ordem || 0) || a.disciplina.nome.localeCompare(b.disciplina.nome, 'pt-BR'); });
   }
 
   function contarClasses(topicos) {

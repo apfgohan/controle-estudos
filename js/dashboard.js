@@ -1283,7 +1283,7 @@ var Dashboard = (function () {
       el('ul', { class: 'previsao-premissas' }, [
         'O ritmo é a média de horas por semana das últimas 12 semanas (ou desde o primeiro estudo, se for menos), sem contar os dias de pausa. Assim, uma semana fraca não derruba a previsão.',
         'O ciclo é repetido no futuro a partir da posição atual. Posições de matérias em Revisão gastam tempo, mas não adiantam o edital.',
-        'Quando uma matéria termina o Modo Leitura, continua no ciclo com 1 vaga, em Revisão, e entra a próxima matéria de fora, em ordem alfabética, com 2 vagas (Leitura 2×, Revisão 1×).',
+        'Quando uma matéria termina o Modo Leitura, continua no ciclo com 1 vaga, em Revisão, e entra a próxima matéria de fora, na ordem de importância das matérias, com 2 vagas (Leitura 2×, Revisão 1×).',
         'Com páginas por meta (Configurações), cada meta de teoria custa os seus minutos por página × as páginas da meta, pelas sessões em que as páginas foram lançadas.',
         'Cada matéria usa as próprias médias; com menos de 5 aulas concluídas ou 100 questões, usa as gerais: ' + UI.fmtNum(Math.round(m.horasTopico * 60)) + ' min por aula e ' + UI.fmtNum(Math.round(m.questoesHora)) + ' questões por hora.',
         'Cadernos ainda não cadastrados são estimados pela média dos outros; favoritadas sem total, pela média das rodadas já lançadas.',

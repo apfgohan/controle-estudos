@@ -22,7 +22,7 @@ var Dados = (function () {
       apelidos: {},      // nome da disciplina na planilha (normalizado) -> disciplinaId ou 'ignorar'
       // Incidência dos assuntos nas provas (planilha do TEC), uma por disciplina e banca.
       incidencias: [],   // { id, disciplinaId, banca, nomeArquivo, importadoEm, total, assuntos: [{ chave, codigo, nome, caminho, qtd }] }
-      migracoes: { tec1: true, tec2: true },
+      migracoes: { tec1: true, tec2: true, ordemMaterias: true },
       // Pontos fracos (das Estatísticas) marcados como revistos numa sessão de Revisão.
       // 'disciplinaId|chaveDoAssunto' -> { data, ate } ; 'ate' = fim da última planilha quando foi marcado.
       revistos: {},
@@ -223,6 +223,12 @@ var Dados = (function () {
     (d.incidencias || []).forEach(function (i) { if (!Array.isArray(i.assuntos)) i.assuntos = []; });
     if (migrar) { migrarParaTec(d); d.migracoes = Object.assign({}, d.migracoes, { tec1: true }); migrouAgora = true; }
     if (migrar2) { migrarParaAulas(d); d.migracoes = Object.assign({}, d.migracoes, { tec2: true }); migrouAgora = true; }
+    if (!(d.migracoes && d.migracoes.ordemMaterias)) {
+      migrarOrdemMaterias(d);
+      Object.keys(d.espacos || {}).forEach(function (id) { if (d.espacos[id]) migrarOrdemMaterias(d.espacos[id]); });
+      d.migracoes = Object.assign({}, d.migracoes, { ordemMaterias: true });
+      migrouAgora = true;
+    }
     cacheRel = null;
     return d;
   }
@@ -376,10 +382,31 @@ var Dados = (function () {
   }
 
   // ---------- Disciplinas ----------
-  // Sempre em ordem alfabética (ignora acentos e maiúsculas).
+  // Na ordem de importância definida no Controle de Teoria (arrastando as matérias); vale para todas as abas.
   function disciplinas() {
     return db.disciplinas.slice().sort(function (a, b) {
-      return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+      return (a.ordem || 0) - (b.ordem || 0) || a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+    });
+  }
+  // Põe a matéria na posição "pos" (0 = a mais importante) e renumera as outras.
+  function moverDisciplina(id, pos) {
+    var lista = disciplinas(), d = disciplina(id);
+    if (!d) return;
+    lista = lista.filter(function (x) { return x.id !== id; });
+    pos = Math.max(0, Math.min(lista.length, pos));
+    lista.splice(pos, 0, d);
+    lista.forEach(function (x, i) { x.ordem = i + 1; });
+    salvar();
+  }
+
+  // Migração única: as matérias tinham o número no nome ("01. Direito Tributário") para ficarem em ordem; a ordem
+  // passa a ser o campo "ordem" (pela ordem atual dos nomes) e o número sai do nome.
+  function migrarOrdemMaterias(espaco) {
+    var lista = (espaco.disciplinas || []).slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base', numeric: true }); });
+    lista.forEach(function (d, i) {
+      d.ordem = i + 1;
+      var sem = d.nome.replace(/^\s*\d{1,3}\s*[.\-–—)]\s*/, '').trim();
+      if (sem) d.nome = sem;
     });
   }
   function disciplina(id) { return buscar(db.disciplinas, id); }
@@ -2175,7 +2202,7 @@ var Dados = (function () {
     novoId: novoId,
     porOrdem: porOrdem,
     disciplinas: disciplinas, disciplina: disciplina,
-    criarDisciplina: criarDisciplina, atualizarDisciplina: atualizarDisciplina, excluirDisciplina: excluirDisciplina,
+    criarDisciplina: criarDisciplina, atualizarDisciplina: atualizarDisciplina, excluirDisciplina: excluirDisciplina, moverDisciplina: moverDisciplina,
     modoDeEstudo: modoDeEstudo,
     blocosDe: blocosDe, bloco: bloco, criarBloco: criarBloco, atualizarBloco: atualizarBloco, excluirBloco: excluirBloco,
     relevancia: relevancia, definirRelevancia: definirRelevancia,

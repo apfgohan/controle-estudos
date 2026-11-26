@@ -28,13 +28,56 @@ var Teoria = (function () {
       return;
     }
 
-    raiz.appendChild(el('div', { class: 'lista-disciplinas' }, lista.map(linhaDisciplina)));
+    raiz.appendChild(el('p', { class: 'data-fraca lista-ordem-ajuda', text: 'Arraste pela alça ⋮⋮ (ou use as setas) para pôr as matérias em ordem de importância. A ordem vale para todas as abas.' }));
+    raiz.appendChild(el('div', { class: 'lista-disciplinas' }, lista.map(function (d, i) { return linhaDisciplina(d, i, lista.length); })));
   }
 
-  function linhaDisciplina(d) {
+  // Arrastar uma matéria para outra posição (ordem de importância).
+  var arrastando = null;
+  function alcaOrdem(d, i, total) {
+    var alca = el('span', { class: 'linha-alca', draggable: 'true', title: 'Arraste para mudar a ordem', text: '⋮⋮' });
+    alca.addEventListener('dragstart', function (e) {
+      arrastando = d.id;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', d.id); } catch (x) { /* IE */ }
+      var linha = alca.closest('.linha-disciplina');
+      if (e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(linha, 20, 20);
+      setTimeout(function () { linha.classList.add('arrastando'); }, 0);
+    });
+    alca.addEventListener('dragend', function () { arrastando = null; document.querySelectorAll('.linha-disciplina').forEach(function (l) { l.classList.remove('arrastando', 'soltar-antes', 'soltar-depois'); }); });
+    return el('div', { class: 'linha-ordem' }, [
+      el('button', { type: 'button', class: 'linha-seta', title: 'Subir', disabled: i === 0, text: '▲', onclick: function () { Dados.moverDisciplina(d.id, i - 1); App.atualizar(); } }),
+      alca,
+      el('button', { type: 'button', class: 'linha-seta', title: 'Descer', disabled: i === total - 1, text: '▼', onclick: function () { Dados.moverDisciplina(d.id, i + 1); App.atualizar(); } })
+    ]);
+  }
+  function soltavel(linha, i) {
+    linha.addEventListener('dragover', function (e) {
+      if (!arrastando) return;
+      e.preventDefault();
+      var r = linha.getBoundingClientRect(), antes = e.clientY < r.top + r.height / 2;
+      linha.classList.toggle('soltar-antes', antes); linha.classList.toggle('soltar-depois', !antes);
+    });
+    linha.addEventListener('dragleave', function () { linha.classList.remove('soltar-antes', 'soltar-depois'); });
+    linha.addEventListener('drop', function (e) {
+      if (!arrastando) return;
+      e.preventDefault();
+      var r = linha.getBoundingClientRect(), antes = e.clientY < r.top + r.height / 2;
+      var atual = Dados.disciplinas().map(function (x) { return x.id; }).indexOf(arrastando);
+      var pos = antes ? i : i + 1;
+      if (atual < pos) pos--; // a própria matéria sai da lista antes de entrar na nova posição
+      var id = arrastando; arrastando = null;
+      Dados.moverDisciplina(id, pos);
+      App.atualizar();
+    });
+    return linha;
+  }
+
+  function linhaDisciplina(d, i, total) {
     var p = Dados.progressoTeoria(d.id);
     var completa = p.total > 0 && p.feitos === p.total;
-    return el('div', { class: 'linha-disciplina', style: { borderLeftColor: d.cor } }, [
+    return soltavel(el('div', { class: 'linha-disciplina com-ordem', style: { borderLeftColor: d.cor } }, [
+      alcaOrdem(d, i, total),
       el('div', { class: 'linha-nome' + (completa ? ' completo' : ''), text: d.nome }),
       el('div', { class: 'linha-config' }, [
         UI.botaoEngrenagem(function () { editarDisciplina(d); }, 'Editar disciplina'),
@@ -46,7 +89,7 @@ var Teoria = (function () {
         UI.metrica('Último estudo', UI.haQuanto(Dados.ultimoEstudo(d.id, 'teoria')))
       ]),
       el('a', { class: 'btn btn-abrir', href: '#/teoria/' + d.id }, ['Abrir disciplina', UI.icone('seta')])
-    ]);
+    ]), i);
   }
 
   function editarDisciplina(d) {
