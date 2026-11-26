@@ -861,5 +861,5 @@ var Leitor = (function () {
     v.timerTam = setTimeout(function () { var n = v.atual; v.base = Math.min(2.2, Math.max(0.5, (v.area.clientWidth - 48) / v.larguraPdf)); dimensionar(); irPara(n, true); atualizarInfo(); }, 250);
   });
 
-  return { render: render, enviarPdf: enviarPdf, contarPaginas: contarPaginas, leituraDoDia: leituraDoDia, trazerLeitura: trazerLeitura, limparLeitura: limparLeitura, marcador: marcadorDe };
+  return { render: render, carregarPdfJs: carregarPdfJs, CORES: CORES, enviarPdf: enviarPdf, contarPaginas: contarPaginas, leituraDoDia: leituraDoDia, trazerLeitura: trazerLeitura, limparLeitura: limparLeitura, marcador: marcadorDe };
 })();

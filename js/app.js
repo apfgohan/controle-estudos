@@ -8,6 +8,7 @@ var App = (function () {
     estatisticas: Estatisticas.render,
     historico: Historico.render,
     resumos: Resumos.render,
+    'lei-seca': LeiSeca.render,
     backup: Backup.render,
     configuracoes: Configuracoes.render,
     leitor: Leitor.render

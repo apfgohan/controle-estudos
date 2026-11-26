@@ -1851,3 +1851,73 @@ a.rec-caderno:hover { text-decoration: underline; }
 .leitor-grossura.ativa { border-color: var(--azul-borda); background: var(--azul-claro); color: var(--azul-escuro); }
 .leitor-grossura-traco { display: block; width: 30px; border-radius: 999px; }
 .pdf-traco { pointer-events: none; }
+/* ---------- Lei Seca ---------- */
+.leis-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.lei-item { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: var(--raio); border: 1px solid var(--borda); background: var(--superficie); color: var(--texto); text-decoration: none; }
+.lei-item:hover { border-color: var(--azul-borda); }
+.lei-item-nome { display: flex; align-items: center; gap: 8px; font-weight: 800; }
+.lei-item-nome .icone { width: 18px; height: 18px; color: var(--azul); flex: none; }
+.lei-item-info { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--texto-2); }
+.lei-conferir { margin: 8px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.lei-previa { max-height: 220px; overflow: auto; padding: 10px 14px; border-radius: 10px; background: var(--superficie-2); font-size: 14px; line-height: 1.6; }
+.lei-previa p { margin: 0 0 6px; }
+.lei-topo { align-items: flex-start; }
+.lei-topo-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.lei-barra { position: sticky; top: 64px; z-index: 5; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin-bottom: 14px; border-radius: var(--raio); border: 1px solid var(--borda); background: var(--superficie); }
+.lei-barra-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lei-busca { flex: 1; min-width: 220px; }
+.chip-filtro { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--borda); background: var(--superficie-2); color: var(--texto-2); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.chip-filtro.ativo { background: var(--azul-claro); border-color: var(--azul); color: var(--azul-escuro); }
+.lei-destaques { gap: 6px; }
+.lei-cor { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--superficie); box-shadow: 0 0 0 1px var(--borda); cursor: pointer; }
+.lei-cmd { min-width: 32px; height: 30px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--borda); background: var(--superficie-2); color: var(--texto); font: inherit; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.lei-cmd:hover { border-color: var(--azul-borda); }
+.lei-cmd .icone { width: 16px; height: 16px; }
+.lei-a-vermelho { color: #e24b4a; font-weight: 800; }
+.lei-sep { width: 1px; height: 22px; background: var(--borda); margin: 0 2px; }
+.lei-cartoes { display: flex; flex-direction: column; gap: 10px; }
+.lei-divisao { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 14px 0 2px; text-align: center; color: var(--texto-2); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.lei-divisao strong { color: var(--texto); font-size: 14px; letter-spacing: .02em; }
+.lei-divisao.nivel-0, .lei-divisao.nivel-1, .lei-divisao.nivel-2 { margin-top: 22px; }
+.lei-divisao.nivel-2 strong { font-size: 16px; }
+.lei-cartao { border-radius: var(--raio); border: 1px solid var(--borda); background: var(--superficie); overflow: hidden; scroll-margin-top: 180px; box-shadow: inset 4px 0 0 var(--borda); }
+.lei-cartao.calor-1, .lei-cartao.calor-2 { box-shadow: inset 4px 0 0 var(--amarelo-borda); }
+.lei-cartao.calor-3 { box-shadow: inset 4px 0 0 var(--amarelo); }
+.lei-cartao.calor-4 { box-shadow: inset 4px 0 0 var(--laranja-texto); }
+.lei-cartao.calor-5 { box-shadow: inset 4px 0 0 #e24b4a; }
+.lei-cartao.lei-piscar { outline: 2px solid var(--azul); }
+.lei-cartao-topo { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px 8px 20px; border-bottom: 1px solid var(--borda); background: var(--superficie-2); }
+.lei-cartao-titulo { font-size: 15px; }
+.lei-cartao-titulo span { color: var(--texto-2); }
+.lei-cartao-info { display: flex; align-items: center; gap: 10px; }
+.lei-estrelas { letter-spacing: 1px; color: var(--borda-forte); font-size: 14px; }
+.lei-estrelas .cheia { color: var(--amarelo-texto); }
+.lei-selo-q { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--amarelo-borda); background: var(--amarelo-claro); color: var(--amarelo-texto); font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.lei-cartao-corpo { padding: 10px 18px 12px 22px; font-size: 15.5px; line-height: 1.75; }
+.lei-parte { margin: 3px 0; padding: 2px 6px; border-radius: 6px; }
+.lei-parte.tipo-par { margin-top: 6px; }
+.lei-parte.tipo-inc { padding-left: 28px; }
+.lei-parte.tipo-ali { padding-left: 52px; }
+.lei-parte.atencao { background: var(--vermelho-claro); box-shadow: inset 3px 0 0 #e24b4a; border-radius: 0 6px 6px 0; }
+.lei-parte.removida { opacity: .4; text-decoration: line-through; }
+.lei-rotulo { font-weight: 800; }
+.lei-rubrica { font-size: 13px; font-weight: 700; color: var(--texto-2); font-style: italic; margin-top: 4px; }
+.lei-texto { outline: none; }
+.lei-texto:focus { box-shadow: 0 1px 0 var(--azul-borda); }
+.lei-cobrado { border-bottom: 2px solid var(--amarelo); background: rgba(255, 226, 131, .14); }
+.lei-ref { display: inline; margin-left: 2px; padding: 1px 6px; border-radius: 5px; background: var(--azul-claro); color: var(--azul-escuro); font-size: 13.5px; user-select: none; }
+.lei-ref-mais { margin-left: 6px; border: 0; background: none; color: var(--azul); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0; }
+.lei-parte-acoes { display: inline-flex; gap: 10px; margin-left: 10px; font-size: 12px; }
+.lei-questoes { display: flex; flex-direction: column; gap: 12px; max-height: 65vh; overflow: auto; }
+.lei-questao { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--borda); background: var(--superficie-2); font-size: 14px; }
+.lei-questao-topo { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; font-size: 13px; }
+.lei-questao-enunciado { margin: 0 0 6px; line-height: 1.6; }
+.lei-questao-alts { margin: 0 0 6px; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; line-height: 1.5; }
+.lei-questao-alts li.certa { color: var(--verde-texto); }
+.lei-questao-alts li.certa::after { content: ' ✓'; font-weight: 800; }
+.lei-questao-gab { font-weight: 700; margin-bottom: 6px; }
+.lei-questao-ligar { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--texto-2); }
+.lei-ligar { max-width: 100%; flex: 1; min-width: 0; }
+.lei-sem-ligacao { margin-top: 14px; }
+.lei-sem-ligacao summary { cursor: pointer; font-weight: 700; margin-bottom: 10px; }
+@media (max-width: 640px) { .lei-barra { position: static; } .lei-busca { min-width: 0; width: 100%; } .lei-cartao { scroll-margin-top: 70px; } .lei-cartao-corpo { padding: 8px 12px 10px 14px; font-size: 15px; } .lei-parte.tipo-inc { padding-left: 16px; } .lei-parte.tipo-ali { padding-left: 30px; } }

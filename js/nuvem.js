@@ -243,6 +243,12 @@ var Nuvem = (function () {
   // Índice leve dos resumos (data, títulos, tamanho): a lista mostra o que existe sem baixar todos os textos.
   function salvarResumoInfo(id, info) { return ref.child('resumosInfo/' + id).set(info); }
   function listarResumosInfo() { return ref.child('resumosInfo').once('value').then(function (s) { return s.val() || {}; }); }
+  // Lei Seca: uma lei por registro (texto estruturado, marcações e questões, em JSON) e um índice leve.
+  function salvarLei(id, rec) { return ref.child('leis/' + id).set(rec); }
+  function buscarLei(id) { return ref.child('leis/' + id).once('value').then(function (s) { return s.val(); }); }
+  function apagarLei(id) { return Promise.all([ref.child('leis/' + id).remove(), ref.child('leisInfo/' + id).remove()]); }
+  function salvarLeiInfo(id, info) { return ref.child('leisInfo/' + id).set(info); }
+  function listarLeisInfo() { return ref.child('leisInfo').once('value').then(function (s) { return s.val() || {}; }); }
   // Grifos e anotações dos PDFs, um registro por aula.
   function salvarGrifos(id, rec) { return ref.child('grifos/' + id).set(rec); }
   function buscarGrifos(id) { return ref.child('grifos/' + id).once('value').then(function (s) { return s.val(); }); }
@@ -359,6 +365,7 @@ var Nuvem = (function () {
     regrasSugeridas: regrasSugeridas, VERSAO_SDK: VERSAO_SDK, pelaWeb: pelaWeb,
     podeGravar: podeGravar, salvarResumo: salvarResumo, buscarResumo: buscarResumo, apagarResumo: apagarResumo,
     salvarResumoInfo: salvarResumoInfo, listarResumosInfo: listarResumosInfo,
+    salvarLei: salvarLei, buscarLei: buscarLei, apagarLei: apagarLei, salvarLeiInfo: salvarLeiInfo, listarLeisInfo: listarLeisInfo,
     listarCopias: listarCopias, baixarCopia: baixarCopia, salvarCron: salvarCron, ouvirCron: ouvirCron,
     salvarGrifos: salvarGrifos, buscarGrifos: buscarGrifos, apagarGrifos: apagarGrifos,
     ativa: function () { return ativa; },
