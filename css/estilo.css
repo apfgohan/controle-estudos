@@ -771,6 +771,53 @@ a.item-link:hover .chip-link.ativo { background: var(--teal); color: #fff; }
 .cont.importante { background: hsl(35, 92%, 57%); color: #3d2200; }
 .tabela-arvore .revisto .arvore-texto { text-decoration: line-through; color: var(--texto-3); }
 .tabela-arvore .revisto .selo-erro { opacity: .45; }
+/* Desempenho por assunto: tudo neutro; ponto fraco ganha só uma marca à esquerda e o % em cor. */
+.tabela-arvore .txt-acerto, .tabela-arvore .txt-erro { color: var(--texto-2); font-weight: 500; }
+.tabela-arvore .arvore-texto { font-weight: 500; }
+.tabela-arvore .nivel-0 .arvore-texto { font-weight: 800; }
+.tabela-arvore .nivel-1 .arvore-texto { font-weight: 600; }
+.tabela-arvore .cont { background: none; border: 1px solid currentColor; padding: 0 6px; font-weight: 700; }
+.tabela-arvore .cont.muito { color: #f07a7a; background: none; }
+.tabela-arvore .cont.importante { color: var(--amarelo-texto); background: none; }
+.pct-erro { font-variant-numeric: tabular-nums; color: var(--texto-2); }
+.pct-erro.muito { color: #f07a7a; font-weight: 800; }
+.pct-erro.importante { color: var(--amarelo-texto); font-weight: 700; }
+.pct-erro.pequena { color: var(--texto-3); }
+.tabela-arvore tr.fraco td.arvore-nome { box-shadow: inset 3px 0 0 var(--amarelo-borda); }
+.tabela-arvore tr.fraco-muito td.arvore-nome { box-shadow: inset 3px 0 0 #b34848; }
+.ponto-fraco { display: inline-block; width: 4px; height: 13px; border-radius: 2px; margin-right: 6px; vertical-align: -2px; }
+.ponto-fraco.muito { background: #b34848; }
+.ponto-fraco.importante { background: var(--amarelo-borda); }
+.tag-meta { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 800; color: var(--azul); border: 1px solid var(--azul-borda); }
+.tag-meta.feito { color: var(--verde-texto); border-color: var(--verde-borda); }
+.filtro-meses { display: inline-block; padding: 8px 0; color: var(--texto-2); font-weight: 600; }
+/* Histórico mensal */
+.meses-historico { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.mes-historico { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--borda); background: var(--superficie-2); font-size: 13px; color: var(--texto-2); }
+.mes-historico strong { color: var(--texto); font-size: 14px; }
+.mes-historico.ok span { color: var(--verde-texto); }
+.mes-historico.incompleto { border-color: var(--amarelo-borda); }
+.mes-historico.incompleto span { color: var(--amarelo-texto); }
+.mes-historico.falta { border-style: dashed; }
+.txt-alerta { color: var(--amarelo-texto); }
+.txt-ok { color: var(--verde-texto); }
+.aviso-mensal { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.aviso-mensal > span { flex: 1; }
+.inc-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 16px; }
+.inc-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; font-size: 14px; }
+.inc-item-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inc-item.falta .inc-item-nome { color: var(--amarelo-texto); }
+/* Meta de pontos fracos */
+.fracos-meta { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.fracos-meta-nome { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.fracos-meta-nome .icone { width: 15px; height: 15px; color: var(--verde-texto); }
+.fracos-meta li.feito .fracos-meta-nome span { text-decoration: line-through; color: var(--texto-3); }
+.fracos-meta-caminho { font-size: 12px; color: var(--texto-3); }
+.fracos-meta-num { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--texto-2); }
+.assuntos-grupo { padding: 6px 8px 2px; font-size: 12px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: var(--texto-3); }
+.assunto-linha.assunto-meta { background: var(--superficie-2); }
+.assunto-terminei { flex: none; font-size: 13px; white-space: nowrap; }
+@media (max-width: 640px) { .meses-historico { grid-template-columns: 1fr; } }
 
 /* Alerta de pontos fracos (cartão "Próxima matéria") */
 /* Recomendação do Modo Teoria (cartão "Próxima matéria") */

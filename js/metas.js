@@ -55,8 +55,9 @@ var Metas = (function () {
         titulo = 'Ler o resumo da matéria';
         detalhe = 'Resumo feito no programa, antes do próximo simulado';
       } else if (e.tipo === 'fracos') {
-        titulo = 'Revisar os assuntos em que estou mais fraco';
-        detalhe = 'Questões dos pontos fracos das Estatísticas';
+        titulo = 'Revisar os 3 assuntos em que estou mais fraco';
+        var falta = (e.trio || []).filter(function (a) { return !a.concluido; });
+        detalhe = falta.length ? falta.map(function (a) { return a.nome; }).join(' · ') : 'Um caderno de 10 a 15 questões por assunto';
       } else {
         titulo = e.tipo === 'duvidas' ? 'Resolver as questões favoritadas em que fiquei em dúvida' : 'Resolver as questões favoritadas que errei 2x ou mais';
         detalhe = e.caderno ? e.caderno.nome : 'Cadastre o caderno de favoritadas';
@@ -114,7 +115,7 @@ var Metas = (function () {
       blocos.forEach(function (b) { var c = Dados.cadernoDoBloco(b.id); if (c) cadernos.push(c.id); });
       nome = blocos.length === 1 ? 'do ' + blocos[0].nome : blocos.length ? 'dos ' + Dados.nomePar(x.it.par) : '';
     } else if (x.e.tipo === 'fracos') {
-      var f = Dados.planoRevisao(d.id).fracos || [], n = 0, erros = 0;
+      var pl = Dados.planoRevisao(d.id), f = pl.trio && pl.trio.length ? pl.trio : pl.fracos || [], n = 0, erros = 0;
       f.forEach(function (t) { n += t.feitas || 0; erros += t.erros || 0; });
       return { pct: n ? (n - erros) / n * 100 : null, texto: 'Acerto nos pontos fracos (TEC)' };
     } else if (x.e.caderno) {
@@ -282,6 +283,9 @@ var Metas = (function () {
       ]));
       return;
     }
+    // Histórico do TEC do mês anterior ainda não importado (só para quem já usa as Estatísticas).
+    var mensal = Dados.importacoes().length && window.Estatisticas ? Estatisticas.avisoMensal(true) : null;
+    if (mensal) raiz.appendChild(mensal);
     raiz.appendChild(Dashboard.linhaTopo());
     raiz.appendChild(Dashboard.indicadores());
     raiz.appendChild(el('div', { class: 'grade-topo' }, [

@@ -26,6 +26,9 @@ var Dados = (function () {
       // Pontos fracos (das Estatísticas) marcados como revistos numa sessão de Revisão.
       // 'disciplinaId|chaveDoAssunto' -> { data, ate } ; 'ate' = fim da última planilha quando foi marcado.
       revistos: {},
+      // Meta de pontos fracos do Modo Revisão: os 3 assuntos escolhidos quando a etapa começa, até serem concluídos.
+      // disciplinaId -> { rodada, assuntos: [{ chave, nome, codigo, caminho }] }
+      metaFracos: {},
       // Perfil mostrado no Dashboard: só nome e foto (caminho do arquivo ou imagem enviada, em data URL).
       perfil: { nome: 'APF Gohan - Rumo ao fisco!', foto: 'img/perfil.webp' },
       // Metas da semana (segunda a domingo) no Dashboard. 0 = sem meta.
@@ -47,7 +50,7 @@ var Dados = (function () {
 
   // ---------- Fases (Pré-Edital / Pós-Edital) ----------
   // Campos que pertencem a cada espaço; o resto (perfil, pausas, metas da semana, patente) é comum a todas as fases.
-  var CAMPOS_ESPACO = ['disciplinas', 'blocos', 'topicos', 'pastas', 'cadernos', 'sessoes', 'ciclo', 'importacoes', 'apelidos', 'incidencias', 'revistos'];
+  var CAMPOS_ESPACO = ['disciplinas', 'blocos', 'topicos', 'pastas', 'cadernos', 'sessoes', 'ciclo', 'importacoes', 'apelidos', 'incidencias', 'revistos', 'metaFracos'];
   var LISTAS_ESPACO = ['disciplinas', 'blocos', 'topicos', 'pastas', 'cadernos', 'sessoes', 'importacoes', 'incidencias'];
   var ESFERAS = [['federal', 'Federal'], ['estadual', 'Estadual'], ['municipal', 'Municipal']];
   var BANCAS_EDITAL = [['cebraspe', 'Cebraspe'], ['fcc', 'FCC'], ['fgv', 'FGV'], ['outra', 'Outra']];
@@ -437,6 +440,7 @@ var Dados = (function () {
     });
     for (var ap in db.apelidos) if (db.apelidos[ap] === id) delete db.apelidos[ap];
     for (var rv in db.revistos) if (rv.indexOf(id + '|') === 0) delete db.revistos[rv];
+    delete db.metaFracos[id];
     db.ciclo.itens = db.ciclo.itens.filter(function (i) { return i.disciplinaId !== id; });
     if (db.ciclo.posicaoAtual >= db.ciclo.itens.length) db.ciclo.posicaoAtual = 0;
     remover('disciplinas', function (d) { return d.id === id; });
@@ -1114,13 +1118,15 @@ var Dados = (function () {
     var ps = pastaSimulado(disciplinaId);
     var simulados = ps ? cadernosDe(ps.id) : [];
     var fav = { duvidas: cadernoFavorito(disciplinaId, 'duvidas'), erros2x: cadernoFavorito(disciplinaId, 'erros2x') };
-    var fracos = window.Estatisticas ? Estatisticas.pontosFracos(disciplinaId) : [];
+    // Candidatos já ordenados pela prioridade (erro ajustado × relevância); os revistos ficam de fora até o mês seguinte.
+    var fracos = (window.Estatisticas ? Estatisticas.pontosFracos(disciplinaId) : []).filter(function (t) { return !t.revisto; });
+    var guardada = db.metaFracos[disciplinaId] || null;
     var metaAssuntos = Math.min(FRACOS_ASSUNTOS, fracos.length);
     var sessoes = db.sessoes.filter(function (s) { return s.disciplinaId === disciplinaId; }).sort(function (a, b) {
       return a.data === b.data ? (a.criadoEm || 0) - (b.criadoEm || 0) : (a.data < b.data ? -1 : 1);
     });
     var acum = {}, hoje = UI.hoje();
-    var est = { etapa: 'simulado', indice: 0, rodada: 1, somaSimulado: 0, fracosQuestoes: 0, fracosAssuntos: {} };
+    var est = { etapa: 'simulado', indice: 0, rodada: 1, somaSimulado: 0, fracosQuestoes: 0, fracosAssuntos: {}, fracosConcluidos: {}, fracosPorAssunto: {} };
     var historico = []; // etapas já concluídas: { rodada, tipo, caderno?, questoes?, assuntos? }
 
     function avancar(s) {
@@ -1139,10 +1145,17 @@ var Dados = (function () {
         } else if (est.etapa === 'duvidas' || est.etapa === 'erros2x') {
           var cad = fav[est.etapa];
           var fim = s && cad && (s.cadernos || []).some(function (l) { return l.cadernoId === cad.id && l.finalizado; });
-          if (fim) { historico.push({ rodada: est.rodada, tipo: est.etapa, caderno: cad }); est.etapa = est.etapa === 'duvidas' ? 'erros2x' : 'fracos'; est.fracosQuestoes = 0; est.fracosAssuntos = {}; mudou = true; }
+          if (fim) { historico.push({ rodada: est.rodada, tipo: est.etapa, caderno: cad }); est.etapa = est.etapa === 'duvidas' ? 'erros2x' : 'fracos'; est.fracosQuestoes = 0; est.fracosAssuntos = {}; est.fracosConcluidos = {}; est.fracosPorAssunto = {}; mudou = true; }
         } else if (est.etapa === 'fracos') {
-          if (!fracos.length || est.fracosQuestoes >= FRACOS_QUESTOES || Object.keys(est.fracosAssuntos).length >= Math.max(1, metaAssuntos)) {
-            if (fracos.length) historico.push({ rodada: est.rodada, tipo: 'fracos', questoes: est.fracosQuestoes, assuntos: Object.keys(est.fracosAssuntos).length });
+          // Termina quando os 3 assuntos da meta têm o caderno marcado como terminado. Rodada sem meta guardada
+          // (antiga): vale terminar 3 assuntos quaisquer.
+          var trio = guardada && guardada.rodada === est.rodada ? guardada.assuntos : null;
+          var feitos = Object.keys(est.fracosConcluidos);
+          var pronto = trio ? trio.length && trio.every(function (a) { return est.fracosConcluidos[a.chave]; })
+            : feitos.length >= Math.max(1, metaAssuntos);
+          var semNada = trio ? !trio.length : !fracos.length;
+          if (semNada || pronto) {
+            if (!semNada) historico.push({ rodada: est.rodada, tipo: 'fracos', questoes: est.fracosQuestoes, assuntos: feitos.length });
             // Depois dos pontos fracos, a leitura do resumo (só nas voltas que chegaram aqui depois da criação desta etapa).
             if ((s ? s.data : hoje) >= ATIVACAO_RESUMO) { est.etapa = 'resumo'; est.resumoDe = s ? s.id : null; }
             else { est.etapa = 'simulado'; est.rodada++; est.somaSimulado = 0; }
@@ -1163,11 +1176,32 @@ var Dados = (function () {
       (s.cadernos || []).forEach(function (l) {
         var n = (l.acertos || 0) + (l.erros || 0);
         if (l.cadernoId) acum[l.cadernoId] = (acum[l.cadernoId] || 0) + n;
-        if (etapaAntes === 'fracos' && l.assunto && n > 0) { est.fracosQuestoes += n; est.fracosAssuntos[l.assunto.chave] = l.assunto.nome; }
+        if (etapaAntes === 'fracos' && l.assunto) {
+          if (n > 0) {
+            est.fracosQuestoes += n; est.fracosAssuntos[l.assunto.chave] = l.assunto.nome;
+            est.fracosPorAssunto[l.assunto.chave] = (est.fracosPorAssunto[l.assunto.chave] || 0) + n;
+          }
+          if (l.finalizado) est.fracosConcluidos[l.assunto.chave] = true;
+        }
       });
       avancar(s);
     });
     avancar(null);
+
+    // Os 3 assuntos da meta são escolhidos quando a etapa começa e ficam guardados até serem concluídos.
+    var trioAtual = [];
+    if (est.etapa === 'fracos') {
+      if (!(guardada && guardada.rodada === est.rodada)) {
+        guardada = { rodada: est.rodada, assuntos: fracos.slice(0, FRACOS_ASSUNTOS).map(function (t) {
+          return { chave: t.chave, nome: t.nome, codigo: t.codigo || '', caminho: (t.caminho || []).slice() };
+        }) };
+        if (guardada.assuntos.length) { db.metaFracos[disciplinaId] = guardada; salvar(); }
+      }
+      trioAtual = guardada.assuntos.map(function (a) {
+        var info = (window.Estatisticas ? Estatisticas.assunto(disciplinaId, a.chave) : null) || {};
+        return Object.assign({}, info, a, { concluido: !!est.fracosConcluidos[a.chave], questoes: est.fracosPorAssunto[a.chave] || 0 });
+      });
+    }
 
     var atual = simulados[est.indice] || null;
     // O que ainda falta nesta volta, na ordem. A primeira é a etapa atual.
@@ -1184,7 +1218,7 @@ var Dados = (function () {
     }
     if (est.etapa === 'simulado' || est.etapa === 'duvidas') faltam.push({ tipo: 'duvidas', caderno: fav.duvidas });
     if (est.etapa !== 'fracos' && est.etapa !== 'resumo') faltam.push({ tipo: 'erros2x', caderno: fav.erros2x });
-    if (fracos.length && est.etapa !== 'resumo') faltam.push({ tipo: 'fracos' });
+    if (est.etapa === 'fracos' ? trioAtual.length : fracos.length && est.etapa !== 'resumo') faltam.push({ tipo: 'fracos', trio: est.etapa === 'fracos' ? trioAtual : null });
     faltam.push({ tipo: 'resumo' });
     return {
       historico: historico, faltam: faltam,
@@ -1194,9 +1228,12 @@ var Dados = (function () {
       somaSimulado: est.somaSimulado, minimoSimulado: SIMULADO_MINIMO,
       favoritas: fav, fracos: fracos,
       fracosQuestoes: est.fracosQuestoes, fracosAssuntos: est.fracosAssuntos,
-      metaQuestoes: FRACOS_QUESTOES, metaAssuntos: metaAssuntos
+      metaQuestoes: FRACOS_QUESTOES, metaAssuntos: metaAssuntos,
+      trio: trioAtual // assuntos da meta de pontos fracos (etapa atual): { chave, nome, caminho, concluido, questoes, ... }
     };
   }
+
+  function metaFracosDe(disciplinaId) { return db.metaFracos[disciplinaId] || null; }
 
   function excluirCaderno(id) {
     remover('cadernos', function (c) { return c.id === id; });
@@ -1229,7 +1266,7 @@ var Dados = (function () {
       // finalizado: caderno de favoritadas terminado nesta sessão; assunto: questões avulsas de um ponto fraco (Revisão).
       cadernos: teoria ? [] : (campos.cadernos || []).map(function (c) {
         var l = { cadernoId: c.cadernoId || null, acertos: Number(c.acertos) || 0, erros: Number(c.erros) || 0 };
-        if (c.finalizado && c.cadernoId) l.finalizado = true;
+        if (c.finalizado && (c.cadernoId || c.assunto)) l.finalizado = true; // caderno de favoritadas ou de ponto fraco terminado
         if (c.rodada && c.cadernoId) { l.rodada = c.rodada; l.totalRodada = Number(c.totalRodada) || 0; }
         if (c.assunto && !c.cadernoId) l.assunto = { chave: c.assunto.chave, nome: c.assunto.nome };
         // Questões do próprio PDF (Modo Leitura sem TEC): a etapa que a linha conclui.
@@ -1242,13 +1279,16 @@ var Dados = (function () {
   }
 
   // ---------- Pontos fracos revistos ----------
-  // Uma marca vale até chegar uma planilha mais nova; aí, se o assunto continuar fraco, volta a ser pendente.
+  // Um assunto revisto no mês M fica fora das recomendações até chegar o histórico do mês M (importado no mês
+  // seguinte). Aí volta a ser avaliado: se continuar fraco, pode ser recomendado de novo.
   function revisto(disciplinaId, chave) {
     var m = db.revistos[disciplinaId + '|' + chave];
     if (!m) return null;
-    var fim = fimUltimaImportacao();
-    return fim && m.ate && m.ate < fim ? null : m;
+    var mes = String(m.data || '').slice(0, 7);
+    return db.importacoes.some(function (i) { return mesImportacao(i) >= mes; }) ? null : m;
   }
+  // Marca guardada (mesmo vencida): para avaliar o assunto só com o histórico de depois da revisão.
+  function registroRevisto(disciplinaId, chave) { return db.revistos[disciplinaId + '|' + chave] || null; }
 
   function marcarRevisto(disciplinaId, chave, marcado, data) {
     var k = disciplinaId + '|' + chave;
@@ -1693,11 +1733,39 @@ var Dados = (function () {
     return db.importacoes.reduce(function (m, i) { return !m || i.fim > m ? i.fim : m; }, null);
   }
 
+  // ---------- Histórico mensal ----------
+  // Cada importação é um mês inteiro ('AAAA-MM'); ficam só os 3 meses mais recentes. As antigas (por período) valem
+  // pelo mês da data inicial.
+  var MESES_HISTORICO = 3;
+  function mesImportacao(i) { return i.mes || String(i.inicio || '').slice(0, 7); }
+  function ultimoDiaMes(mes) { var p = mes.split('-'); return mes + '-' + String(new Date(Number(p[0]), Number(p[1]), 0).getDate()).padStart(2, '0'); }
+  function somarMeses(mes, n) {
+    var p = mes.split('-'), d = new Date(Number(p[0]), Number(p[1]) - 1 + n, 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  function importacaoDoMes(mes) { return db.importacoes.filter(function (i) { return mesImportacao(i) === mes; })[0] || null; }
+  // Mês inteiro: do dia 1 ao último dia.
+  function importacaoCompleta(i) { var m = mesImportacao(i); return i.inicio === m + '-01' && i.fim >= ultimoDiaMes(m); }
+  // Situação dos meses: o pendente é o mês anterior ao atual (ou um dos 3 meses da janela que falta / está incompleto).
+  function situacaoHistorico() {
+    var atual = UI.hoje().slice(0, 7), janela = [];
+    for (var k = MESES_HISTORICO; k >= 1; k--) janela.push(somarMeses(atual, -k));
+    var pendentes = janela.filter(function (m) { var i = importacaoDoMes(m); return !i || !importacaoCompleta(i); });
+    return { janela: janela, pendentes: pendentes, anterior: somarMeses(atual, -1) };
+  }
+
+  // Importa (ou substitui) um mês e apaga os meses fora da janela dos 3 mais recentes. Devolve os meses apagados.
   function adicionarImportacao(imp) {
     imp.id = novoId();
     imp.importadoEm = Date.now();
+    if (imp.mes) remover('importacoes', function (i) { return mesImportacao(i) === imp.mes; });
     db.importacoes.push(imp);
+    var maisRecente = db.importacoes.reduce(function (m, i) { var x = mesImportacao(i); return x > m ? x : m; }, '');
+    var corte = somarMeses(maisRecente, -(MESES_HISTORICO - 1)), apagados = [];
+    db.importacoes.forEach(function (i) { if (mesImportacao(i) < corte) apagados.push(mesImportacao(i)); });
+    if (apagados.length) remover('importacoes', function (i) { return mesImportacao(i) < corte; });
     salvar();
+    imp.apagados = apagados;
     return imp;
   }
 
@@ -2134,7 +2202,10 @@ var Dados = (function () {
     grupoAfinidade: grupoAfinidade, vagasNoCiclo: vagasNoCiclo, gerarOrdemCiclo: gerarOrdemCiclo, ordemDaLista: ordemDaLista,
     mudancasDeModo: mudancasDeModo, materiasForaDoCiclo: materiasForaDoCiclo, atualizarCicloPorModo: atualizarCicloPorModo,
     aceitarModosAtuais: aceitarModosAtuais, lugarMaisLonge: lugarMaisLonge,
-    revisto: revisto, marcarRevisto: marcarRevisto,
+    revisto: revisto, marcarRevisto: marcarRevisto, registroRevisto: registroRevisto,
+    mesImportacao: mesImportacao, ultimoDiaMes: ultimoDiaMes, somarMeses: somarMeses, importacaoDoMes: importacaoDoMes,
+    importacaoCompleta: importacaoCompleta, situacaoHistorico: situacaoHistorico, MESES_HISTORICO: MESES_HISTORICO,
+    metaFracosDe: metaFracosDe, FRACOS_ASSUNTOS: FRACOS_ASSUNTOS,
     sessao: sessao, criarSessao: criarSessao, atualizarSessao: atualizarSessao, excluirSessao: excluirSessao,
     statsQuestoes: statsQuestoes, statsCaderno: statsCaderno, statsPasta: statsPasta,
     progressoTeoria: progressoTeoria, progressoBloco: progressoBloco,

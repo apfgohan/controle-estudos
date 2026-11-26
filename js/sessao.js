@@ -222,7 +222,7 @@ var Sessao = (function () {
       assuntos: {}
     };
     if (existente) existente.cadernos.forEach(function (c) {
-      if (c.assunto) est.assuntos[c.assunto.chave] = { nome: c.assunto.nome, acertos: c.acertos, erros: c.erros };
+      if (c.assunto) est.assuntos[c.assunto.chave] = { nome: c.assunto.nome, acertos: c.acertos, erros: c.erros, finalizado: !!c.finalizado };
     });
     if (!est.linhas.length) est.linhas.push({ cadernoId: '', acertos: '', erros: '' });
 
@@ -295,11 +295,11 @@ var Sessao = (function () {
         if (est.tipo === 'revisao') {
           for (var ch in est.assuntos) {
             var a = est.assuntos[ch];
-            if ((Number(a.acertos) || 0) + (Number(a.erros) || 0) > 0) porAssunto.push({ cadernoId: null, acertos: a.acertos, erros: a.erros, assunto: { chave: ch, nome: a.nome } });
+            if ((Number(a.acertos) || 0) + (Number(a.erros) || 0) > 0 || a.finalizado) porAssunto.push({ cadernoId: null, acertos: a.acertos, erros: a.erros, assunto: { chave: ch, nome: a.nome }, finalizado: !!a.finalizado });
           }
           if (!linhas.length && !porAssunto.length) return mostrarErro('Informe os acertos e erros de pelo menos um assunto.');
-          // Assunto com questões lançadas conta como revisto (sai das recomendações até uma planilha nova).
-          campos.revisados = porAssunto.map(function (l) { return l.assunto; })
+          // Assunto com o caderno terminado conta como revisto: sai das recomendações até chegar o histórico do mês.
+          campos.revisados = porAssunto.filter(function (l) { return l.finalizado; }).map(function (l) { return l.assunto; })
             .concat(existente ? (existente.revisados || []).filter(function (r) { return !est.assuntos[r.chave]; }) : []);
         } else if (!linhas.length) {
           return mostrarErro('Informe os acertos e erros de pelo menos um caderno.');
@@ -514,12 +514,20 @@ var Sessao = (function () {
   // Revisão: pontos fracos da disciplina (das Estatísticas), com acertos e erros lançados por assunto
   // (sem caderno). Os já revistos ficam no fim da lista. Abaixo, outras questões opcionais com caderno.
   function areaRevisao(est, redesenhar) {
-    var fracos = window.Estatisticas ? Estatisticas.pontosFracos(est.disciplinaId) : [];
+    var todos = window.Estatisticas ? Estatisticas.pontosFracos(est.disciplinaId) : [];
+    // Os 3 assuntos da meta (etapa de pontos fracos do Modo Revisão) vêm primeiro, com "Terminei o caderno".
+    var plano = Dados.modoDeEstudo(est.disciplinaId).modo === 'revisao' ? Dados.planoRevisao(est.disciplinaId) : null;
+    var trio = plano && plano.etapa === 'fracos' ? plano.trio.filter(function (a) { return !a.concluido || est.assuntos[a.chave]; }) : [];
+    var naMeta = {};
+    trio.forEach(function (a) { naMeta[a.chave] = true; });
+    // Fora da meta: os outros pontos fracos (opcionais). Na meta travada, só os da meta.
+    var fracos = trio.map(function (a) { return Object.assign({}, a, { meta: true }); })
+      .concat(est.travado && trio.length ? [] : todos.filter(function (t) { return !naMeta[t.chave]; }));
     // Assuntos já lançados nesta sessão aparecem mesmo que tenham saído das Estatísticas.
     Object.keys(est.assuntos).forEach(function (ch) {
       if (!fracos.some(function (t) { return t.chave === ch; })) fracos.push({ chave: ch, nome: est.assuntos[ch].nome, caminho: [], revisto: true });
     });
-    fracos.sort(function (a, b) { return (!!a.revisto && !est.assuntos[a.chave]) - (!!b.revisto && !est.assuntos[b.chave]); });
+    fracos.sort(function (a, b) { return (!!b.meta - !!a.meta) || ((!!a.revisto && !est.assuntos[a.chave]) - (!!b.revisto && !est.assuntos[b.chave])); });
     var total = el('span', { class: 'data-fraca' });
     function atualizarTotal() {
       var q = 0, n = 0;
@@ -533,8 +541,8 @@ var Sessao = (function () {
     } else if (!fracos.length) {
       lista = el('p', { class: 'aviso-suave aviso-ok', text: 'Nenhum assunto desta disciplina com 20% de erro ou mais nas Estatísticas.' });
     } else {
-      lista = el('div', { class: 'lista-assuntos' }, fracos.map(function (t) {
-        var v = est.assuntos[t.chave] || { nome: t.nome, acertos: '', erros: '' };
+      lista = el('div', { class: 'lista-assuntos' }, fracos.map(function (t, i) {
+        var v = est.assuntos[t.chave] || { nome: t.nome, acertos: '', erros: '', finalizado: false };
         function numero(campo, rotulo) {
           return el('label', { class: 'assunto-num' }, [
             el('span', { text: rotulo }),
@@ -545,16 +553,23 @@ var Sessao = (function () {
             } })
           ]);
         }
-        return el('div', { class: 'assunto-linha' + (t.revisto && !est.assuntos[t.chave] ? ' revisto' : '') }, [
+        var titulo = t.meta && (i === 0) ? el('div', { class: 'assuntos-grupo', text: 'Assuntos da meta · um caderno de 10 a 15 questões de cada' })
+          : !t.meta && i > 0 && fracos[i - 1].meta ? el('div', { class: 'assuntos-grupo', text: 'Outros pontos fracos (opcional)' }) : null;
+        var terminei = t.meta ? el('label', { class: 'opcao-check assunto-terminei', title: 'O assunto sai da meta e só volta a ser avaliado com o histórico do mês' }, [
+          el('input', { type: 'checkbox', checked: !!v.finalizado, onchange: function (e) { v.finalizado = e.target.checked; est.assuntos[t.chave] = v; } }),
+          'Terminei o caderno'
+        ]) : null;
+        return el('div', null, [titulo, el('div', { class: 'assunto-linha' + (t.meta ? ' assunto-meta' : '') + (t.revisto && !est.assuntos[t.chave] ? ' revisto' : '') }, [
           el('div', { class: 'revisao-assunto' }, [
             el('span', { class: 'revisao-nome', text: t.nome }),
             t.caminho && t.caminho.length ? el('span', { class: 'revisao-caminho', text: t.caminho.join(' › ') }) : null,
             t.revisto && !est.assuntos[t.chave] ? el('span', { class: 'revisao-caminho', text: 'já revisto' }) : null
           ]),
-          t.pctErro != null ? Estatisticas.seloErro(t) : null,
+          t.pctErro != null && t.feitas != null ? Estatisticas.seloErro(t) : null,
           numero('acertos', 'Acertos'),
-          numero('erros', 'Erros')
-        ]);
+          numero('erros', 'Erros'),
+          terminei
+        ])]);
       }));
     }
     atualizarTotal();
@@ -563,7 +578,7 @@ var Sessao = (function () {
       el('div', { class: 'campo' }, [
         el('div', { class: 'revisao-cabecalho' }, [el('span', { class: 'campo-rotulo', text: 'Questões por assunto (pontos fracos das Estatísticas)' }), total]),
         lista,
-        fracos.length ? el('span', { class: 'campo-ajuda', text: 'Lance quantas questões resolveu de cada assunto. Assunto com questões lançadas fica como revisto e sai das recomendações; se continuar fraco na próxima planilha, volta.' }) : null
+        fracos.length ? el('span', { class: 'campo-ajuda', text: 'Lance quantas questões resolveu de cada assunto. Marque "Terminei o caderno" quando concluir o assunto: ele sai da meta e só volta a ser avaliado com o histórico do mês; se continuar fraco, pode voltar a ser recomendado.' }) : null
       ]),
       est.travado ? null : el('div', { class: 'campo-rotulo rotulo-cadernos', text: 'Outras questões desta revisão (opcional)' })
     ].concat(est.travado ? [] : areaQuestoes(est, redesenhar));

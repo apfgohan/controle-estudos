@@ -474,7 +474,7 @@ var Dashboard = (function () {
     if (etapa === 'duvidas') return 'Resolver as questões favoritadas em que fiquei em dúvida';
     if (etapa === 'erros2x') return 'Resolver as questões favoritadas que errei 2x ou mais';
     if (etapa === 'resumo') return 'Ler o resumo da matéria';
-    return 'Revisar os assuntos em que estou mais fraco';
+    return 'Revisar os 3 assuntos em que estou mais fraco';
   }
 
   function linkQuestoes(d, texto) { return el('a', { href: '#/questoes/' + d.id, text: texto }); }
@@ -522,17 +522,27 @@ var Dashboard = (function () {
       ]);
       op = { tipo: 'teoria', resumo: true };
     } else {
-      var pendentes = plano.fracos.filter(function (t) { return !t.revisto; });
-      var nAssuntos = Object.keys(plano.fracosAssuntos).length;
-      var progresso = Math.max(plano.fracosQuestoes / plano.metaQuestoes, plano.metaAssuntos ? nAssuntos / plano.metaAssuntos : 0);
+      // Os 3 assuntos da meta: um caderno do TEC (10 a 15 questões) para cada; a meta volta até os 3 terminarem.
+      var trio = plano.trio || [];
+      var feitos = trio.filter(function (a) { return a.concluido; }).length;
+      function pct1(v) { return UI.fmtPct(Math.round(v * 10) / 10); }
       detalhe = el('div', { class: 'rec-bateria' }, [
-        pendentes.length ? el('ul', { class: 'alerta-lista' }, pendentes.slice(0, 4).map(function (t) {
-          return el('li', null, [Estatisticas.seloErro(t), el('span', { class: 'alerta-assunto', text: t.nome }), el('span', { class: 'data-fraca alerta-num', text: t.erros + ' erros em ' + t.feitas })]);
-        }).concat(pendentes.length > 4 ? [el('li', { class: 'data-fraca', text: '+ ' + (pendentes.length - 4) + ' outros' })] : []))
-          : el('p', { class: 'data-fraca', text: 'Todos os pontos fracos já foram revistos; lance questões de qualquer um deles.' }),
-        el('span', { class: 'rec-faltam', text: 'Termina com ' + plano.metaQuestoes + ' questões (' + plano.fracosQuestoes + ' feitas) ou ' +
-          plano.metaAssuntos + (plano.metaAssuntos === 1 ? ' assunto' : ' assuntos diferentes') + ' (' + nAssuntos + ' revisto' + (nAssuntos === 1 ? '' : 's') + ')' }),
-        progresso ? UI.barra(Math.min(1, progresso) * 100) : null
+        el('ol', { class: 'fracos-meta' }, trio.map(function (a) {
+          return el('li', { class: a.concluido ? 'feito' : '' }, [
+            el('div', { class: 'fracos-meta-nome' }, [a.concluido ? UI.icone('check') : null, el('span', { text: a.nome })]),
+            a.caminho && a.caminho.length ? el('div', { class: 'fracos-meta-caminho', text: a.caminho.join(' › ') }) : null,
+            el('div', { class: 'fracos-meta-num' }, [
+              a.feitas != null ? el('span', { class: 'pct-erro ' + (a.classe || ''), text: pct1(a.pctErro) + ' de erro' }) : null,
+              a.feitas != null ? el('span', { text: a.erros + ' erros em ' + a.feitas }) : null,
+              a.relevancia != null ? el('span', { text: 'incidência ' + pct1(a.relevancia) }) : null,
+              a.questoes ? el('span', { text: a.questoes + ' lançadas' }) : null,
+              el('span', { class: a.concluido ? 'txt-ok' : '', text: a.concluido ? 'caderno terminado' : 'caderno pendente' })
+            ])
+          ]);
+        })),
+        el('p', { class: 'data-fraca', text: 'No TEC, monte um caderno de 10 a 15 questões de cada assunto. Ao lançar, marque "Terminei o caderno" no assunto concluído; a meta volta até os 3 terminarem.' }),
+        trio.length ? el('span', { class: 'rec-faltam', text: feitos + ' de ' + trio.length + ' cadernos terminados' }) : null,
+        trio.length ? UI.barra(feitos / trio.length * 100) : null
       ]);
       op = { tipo: 'revisao' };
     }

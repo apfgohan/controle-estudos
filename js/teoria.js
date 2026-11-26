@@ -742,5 +742,5 @@ var Teoria = (function () {
     else renderLista(raiz);
   }
 
-  return { render: render, editarDisciplina: editarDisciplina, trocarDisciplina: trocarDisciplina, historico: historico };
+  return { render: render, editarDisciplina: editarDisciplina, trocarDisciplina: trocarDisciplina, historico: historico, importarIncidencia: importarIncidencia };
 })();
