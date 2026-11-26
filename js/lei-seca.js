@@ -126,17 +126,28 @@ var LeiSeca = (function () {
   function ligacoesDe(rec, mapa, q) {
     if (rec.manuais && Object.prototype.hasOwnProperty.call(rec.manuais, q.id)) {
       var alvo = rec.manuais[q.id];
-      return alvo && mapa.partes[alvo] ? [{ parte: alvo, art: mapa.partes[alvo].a.id, principal: true, manual: true, trecho: '' }] : [];
+      return alvo && mapa.partes[alvo] ? [{ parte: alvo, art: mapa.partes[alvo].a.id, principal: true, manual: true, confianca: 'certa', trecho: '' }] : [];
     }
     return ((rec.ligacoes || {})[q.id] || []).filter(function (l) { return mapa.partes[l.parte]; });
+  }
+  // Ligação só pelo intervalo de artigos do assunto (sem texto da lei na questão): fica "a conferir" e não conta.
+  function aConferir(l) { return !l.manual && l.como === 'assunto'; }
+
+  // Recalcula as ligações automáticas (as feitas à mão ficam). Usado ao abrir uma lei com ligações do formato antigo.
+  function refazerLigacoes(rec) {
+    var ix = LeiSecaQuestoes.indice(rec);
+    rec.ligacoes = {};
+    todasQuestoes(rec).forEach(function (q) { rec.ligacoes[q.id] = LeiSecaQuestoes.ligar(ix, q); });
+    rec.versaoLigacao = 2;
   }
 
   // Questões por dispositivo e por artigo; peso: principal 1, secundária 0,5; mais de 5 anos vale metade.
   function estatistica(rec, mapa) {
-    var porParte = {}, porArt = {}, semLigacao = [], questoes = todasQuestoes(rec), limite = anoAtual() - 4;
+    var porParte = {}, porArt = {}, semLigacao = [], conferir = [], questoes = todasQuestoes(rec), limite = anoAtual() - 4;
     questoes.forEach(function (q) {
       var ligs = ligacoesDe(rec, mapa, q);
       if (!ligs.length) { semLigacao.push(q); return; }
+      if (ligs.some(aConferir)) { conferir.push(q); return; }
       var fator = q.ano && q.ano < limite ? 0.5 : 1;
       ligs.forEach(function (l) {
         (porParte[l.parte] = porParte[l.parte] || []).push({ q: q, l: l });
@@ -151,7 +162,7 @@ var LeiSeca = (function () {
       a.n = Object.keys(a.questoes).length;
       a.estrelas = media > 0 ? Dados.estrelasPorRazao(a.peso / media) : 0;
     });
-    return { porParte: porParte, porArt: porArt, semLigacao: semLigacao, total: questoes.length, ligadas: questoes.length - semLigacao.length };
+    return { porParte: porParte, porArt: porArt, semLigacao: semLigacao, conferir: conferir, total: questoes.length, ligadas: questoes.length - semLigacao.length - conferir.length };
   }
 
   // ---------- Lei aberta ----------
@@ -178,6 +189,8 @@ var LeiSeca = (function () {
   // com uma linha entre os artigos (como nos Resumos).
   function desenhar() {
     var rec = v.rec, raiz = v.raiz;
+    // Lei com ligações do formato antigo: refaz com a regra nova (as ligações feitas à mão ficam).
+    if ((rec.lotes || []).length && rec.versaoLigacao !== 2) { refazerLigacoes(rec); salvarRec(); }
     v.mapa = mapear(rec);
     v.estat = estatistica(rec, v.mapa);
     var e = v.estat;
@@ -191,7 +204,10 @@ var LeiSeca = (function () {
           UI.fmtNum(rec.artigos.length) + ' artigos · ' + UI.fmtNum(e.total) + ' questões' + (e.total ? ' (' + UI.fmtNum(e.ligadas) + ' ligadas a artigos)' : '')
         ])
       ]),
-      el('div', { class: 'lei-topo-acoes' }, [botaoImportarQuestoes(), UI.botao('Dados da lei', editarDados, 'btn-secundario')])
+      el('div', { class: 'lei-topo-acoes' }, [
+        e.conferir.length ? UI.botao('Conferir ligações (' + e.conferir.length + ')', function () { conferirLigacoes(); }, 'btn-contorno', 'check') : null,
+        botaoImportarQuestoes(), UI.botao('Dados da lei', editarDados, 'btn-secundario')
+      ])
     ]));
     raiz.appendChild(barraDestaque());
     var nav = el('aside', { class: 'lei-nav' });
@@ -668,11 +684,11 @@ var LeiSeca = (function () {
 
   // ---------- Questões ----------
   function botaoImportarQuestoes() {
-    var arq = el('input', { type: 'file', accept: '.pdf,application/pdf', multiple: true, hidden: true, onchange: function () {
+    var arq = el('input', { type: 'file', accept: '.pdf,.html,.htm,application/pdf,text/html', multiple: true, hidden: true, onchange: function () {
       var fs = Array.prototype.slice.call(arq.files); arq.value = '';
       if (fs.length) importarQuestoes(fs);
     } });
-    return el('span', null, [UI.botao('Importar questões (PDF do TEC)', function () { arq.click(); }, 'btn-primario', 'upload'), arq]);
+    return el('span', null, [UI.botao('Importar questões (PDF ou HTML do TEC)', function () { arq.click(); }, 'btn-primario', 'upload'), arq]);
   }
 
   function importarQuestoes(arquivos) {
@@ -680,15 +696,18 @@ var LeiSeca = (function () {
     UI.aviso('Lendo ' + (arquivos.length === 1 ? 'o caderno' : arquivos.length + ' arquivos') + '…');
     var ix = LeiSecaQuestoes.indice(rec);
     var jaTem = {}; todasQuestoes(rec).forEach(function (q) { jaTem[q.id] = true; });
-    Promise.all(arquivos.map(function (f) { return LeiSecaQuestoes.lerPdf(f).then(function (r) { r.arquivo = f; return r; }); })).then(function (lidos) {
+    Promise.all(arquivos.map(function (f) { return LeiSecaQuestoes.lerArquivo(f).then(function (r) { r.arquivo = f; return r; }); })).then(function (lidos) {
       var novos = [], repetidas = 0, avisos = [];
       lidos.forEach(function (r) {
         r.avisos.forEach(function (a) { avisos.push(r.arquivo.name + ': ' + a); });
         var qs = r.questoes.filter(function (q) { if (jaTem[q.id]) { repetidas++; return false; } jaTem[q.id] = true; return true; });
         if (qs.length) novos.push({ id: LeiSecaDados.novoId(), nomeArquivo: r.arquivo.name, titulo: r.titulo, importadoEm: Date.now(), questoes: qs });
       });
-      var ligs = {}, ligadas = 0, total = 0;
-      novos.forEach(function (l) { l.questoes.forEach(function (q) { total++; ligs[q.id] = LeiSecaQuestoes.ligar(ix, q); if (ligs[q.id].length) ligadas++; }); });
+      var ligs = {}, ligadas = 0, conferir = 0, total = 0;
+      novos.forEach(function (l) { l.questoes.forEach(function (q) {
+        total++; ligs[q.id] = LeiSecaQuestoes.ligar(ix, q);
+        if (ligs[q.id].length && ligs[q.id][0].como === 'assunto') conferir++; else if (ligs[q.id].length) ligadas++;
+      }); });
       if (!total) {
         if (repetidas && !avisos.length) return UI.modal('Nada novo para importar', el('p', { text: 'Todas as ' + repetidas + ' questões destes arquivos já estavam importadas.' }), [{ texto: 'Fechar', classe: 'btn-secundario' }]);
         return erro(avisos.length ? avisos.join(' ') : 'Nenhuma questão encontrada.');
@@ -697,14 +716,16 @@ var LeiSeca = (function () {
         el('ul', { class: 'lei-conferir' }, [
           el('li', null, [el('strong', { text: UI.fmtNum(total) + ' questões novas' }), ' em ' + novos.length + (novos.length === 1 ? ' arquivo' : ' arquivos')]),
           repetidas ? el('li', { text: UI.fmtNum(repetidas) + ' já estavam importadas e foram ignoradas' }) : null,
-          el('li', { text: UI.fmtNum(ligadas) + ' ligadas a artigos desta lei' }),
-          total - ligadas ? el('li', { text: UI.fmtNum(total - ligadas) + ' sem ligação (podem ser de outra lei; dá para ligar à mão depois)' }) : null
+          el('li', { text: UI.fmtNum(ligadas) + ' ligadas a artigos desta lei (pelo texto da lei ou pela citação do artigo)' }),
+          conferir ? el('li', { text: UI.fmtNum(conferir) + ' a conferir: o assunto do TEC indica os artigos, mas a questão não traz o texto da lei' }) : null,
+          total - ligadas - conferir ? el('li', { text: UI.fmtNum(total - ligadas - conferir) + ' sem ligação (doutrina, Constituição ou outra lei; dá para ligar à mão depois)' }) : null
         ].concat(avisos.map(function (a) { return el('li', { class: 'txt-alerta', text: a }); })))
       ], [
         { texto: 'Cancelar', classe: 'btn-secundario' },
         { texto: 'Importar', classe: 'btn-primario', acao: function () {
           novos.forEach(function (l) { rec.lotes.push(l); });
           Object.keys(ligs).forEach(function (id) { rec.ligacoes[id] = ligs[id]; });
+          rec.versaoLigacao = 2;
           LeiSecaDados.salvar(rec).then(function () { App.atualizar(); UI.aviso(UI.fmtNum(total) + ' questões importadas'); });
         } }
       ]);
@@ -767,12 +788,64 @@ var LeiSeca = (function () {
     m.caixa.classList.add('modal-largo');
   }
 
+  // Revisão rápida das ligações "a conferir" (só pelo assunto): uma questão por vez.
+  // Enter confirma, N = não é desta lei (ou é doutrina), → pula; "Ligar a" escolhe outro dispositivo.
+  function conferirLigacoes() {
+    var fila = v.estat.conferir.slice(), i = 0, mudou = false;
+    if (!fila.length) { UI.aviso('Nada a conferir'); return; }
+    var corpo = el('div', { class: 'lei-conferir-corpo' });
+    var m = UI.modal('Conferir ligações', corpo, [{ texto: 'Fechar', classe: 'btn-secundario', acao: function () { fim(); } }]);
+    m.caixa.classList.add('modal-largo');
+    function fim() { document.removeEventListener('keydown', teclas, true); if (mudou) { LeiSecaDados.salvar(v.rec).then(function () { App.atualizar(); }); } }
+    function decidir(valor) {
+      var q = fila[i];
+      if (valor !== null) { v.rec.manuais[q.id] = valor; mudou = true; }
+      i++;
+      if (i >= fila.length) { m.fechar(); fim(); UI.aviso('Ligações conferidas'); return; }
+      desenharQuestao();
+    }
+    function teclas(e) {
+      if (!document.body.contains(corpo) || /^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); var l = ligacoesDe(v.rec, v.mapa, fila[i])[0]; decidir(l ? l.parte : null); }
+      else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); decidir(''); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); decidir(null); }
+    }
+    document.addEventListener('keydown', teclas, true);
+    function desenharQuestao() {
+      var q = fila[i], l = ligacoesDe(v.rec, v.mapa, q)[0], x = l && v.mapa.partes[l.parte];
+      corpo.innerHTML = '';
+      corpo.appendChild(el('div', { class: 'lei-conferir-topo' }, [
+        el('span', { class: 'data-fraca', text: 'Questão ' + (i + 1) + ' de ' + fila.length + ' · ' + q.assunto }),
+        UI.barra(i / fila.length * 100)
+      ]));
+      corpo.appendChild(el('div', { class: 'lei-questao' }, [
+        el('div', { class: 'lei-questao-topo' }, [el('a', { href: 'https://www.tecconcursos.com.br/questoes/' + q.id, target: '_blank', rel: 'noopener', text: q.cabecalho || q.banca })]),
+        el('p', { class: 'lei-questao-enunciado', text: q.enunciado }),
+        q.tipo === 'ce' ? el('div', { class: 'lei-questao-gab', text: 'Gabarito: ' + (q.gabarito || '?') })
+          : el('ol', { class: 'lei-questao-alts' }, q.alternativas.map(function (a) {
+              return el('li', { class: a.letra === String(q.gabarito).toUpperCase() ? 'certa' : '' }, [el('strong', { text: a.letra.toLowerCase() + ') ' }), a.texto]);
+            }))
+      ]));
+      corpo.appendChild(el('div', { class: 'lei-conferir-sugestao' }, x ? [
+        el('div', { class: 'lei-conferir-rotulo', text: 'Sugestão: ' + rotuloCompleto(v.mapa, l.parte) }),
+        el('div', { class: 'lei-conferir-texto', text: x.p.texto })
+      ] : [el('div', { text: 'Sem sugestão.' })]));
+      corpo.appendChild(el('div', { class: 'lei-conferir-acoes' }, [
+        x ? UI.botao('Confirmar (Enter)', function () { decidir(l.parte); }, 'btn-primario') : null,
+        UI.botao('Não é desta lei (N)', function () { decidir(''); }, 'btn-secundario'),
+        UI.botao('Pular (→)', function () { decidir(null); }, 'btn-secundario'),
+        el('label', { class: 'lei-questao-ligar' }, ['Outro: ', seletorDispositivo(null, function (valor) { if (valor !== '__auto') decidir(valor); })])
+      ]));
+    }
+    desenharQuestao();
+  }
+
   // Arquivos de questões e as questões sem ligação.
   function painelQuestoes() {
     var rec = v.rec, e = v.estat;
     if (!rec.lotes.length) return el('section', { class: 'painel' }, [
       el('h2', { class: 'secao-titulo', text: 'Questões' }),
-      el('p', { class: 'data-fraca', text: 'No TEC, abra um caderno com as questões desta lei e use "Imprimir" → salvar em PDF. Dá para importar vários PDFs; as questões repetidas contam uma vez.' })
+      el('p', { class: 'data-fraca', text: 'No TEC, abra um caderno com as questões desta lei e clique em "Imprimir". Escolha o destino "Salvar como PDF" (não use "Microsoft Print to PDF", que grava o texto como desenho) ou, na página de impressão, salve como HTML (Ctrl+S). Dá para importar vários arquivos; as questões repetidas contam uma vez.' })
     ]);
     return el('section', { class: 'painel' }, [
       el('h2', { class: 'secao-titulo', text: 'Arquivos de questões' }),

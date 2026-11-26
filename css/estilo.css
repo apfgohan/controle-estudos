@@ -2025,3 +2025,10 @@ a.rec-caderno:hover { text-decoration: underline; }
 .lei-nav-num.imp-4 { background: #4d2a12; border-color: #8a4a1c; color: #ffb27a; }
 .lei-nav-num.imp-5 { background: #4d1c22; border-color: #8f2f3a; color: #ff9ea8; }
 .lei-nav-num.atual { outline: 2px solid var(--azul); outline-offset: 1px; color: var(--texto); }
+/* Lei Seca: conferir ligações */
+.lei-conferir-corpo { display: flex; flex-direction: column; gap: 12px; }
+.lei-conferir-topo { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.lei-conferir-sugestao { padding: 12px 14px; border-radius: 10px; background: #fbfbfd; color: #1f2330; border: 1px solid #cdd6e6; line-height: 1.6; }
+.lei-conferir-rotulo { font-weight: 800; color: #17306b; margin-bottom: 4px; }
+.lei-conferir-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lei-conferir-acoes .lei-questao-ligar { flex: 1; min-width: 220px; }
